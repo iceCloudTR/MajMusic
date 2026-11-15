@@ -137,7 +137,6 @@ namespace MajMusic.Presentation.Views
         {
             ReleaseSection();
             this.FindControl<Navbar>("MobileNavbar")!.Title = SectionTitles[SelectedSectionIndex];
-            this.FindControl<IconButton>("MobileSearchButton")!.IsVisible = SelectedSectionIndex == 0;
             if (DataContext is not MainViewModel owner)
             {
                 return;
@@ -231,7 +230,6 @@ namespace MajMusic.Presentation.Views
                     modes.SelectedIndex = owner.IsLibraryMode ? 2 : owner.IsPlaylistsMode ? 1 : 0;
                 }
 
-                this.FindControl<IconButton>("MobileSearchButton")!.Icon = (Avalonia.Media.Geometry)Resources[owner.IsSearchExpanded ? "MobileCloseIcon" : "MobileSearchIcon"]!;
             }
             finally
             {

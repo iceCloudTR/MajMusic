@@ -18,7 +18,8 @@ namespace MajMusic.Presentation.ViewModels
         public IReadOnlyList<SongCardViewModel> CardTracks { get; private set; } = Array.Empty<SongCardViewModel>();
 
         /// <summary>Reconciles the browsed entries in one binding update while reusing unchanged card instances.</summary>
-        private void RefreshCardTracks()
+        /// <param name="appendRows">Whether a recommendation continuation should preserve existing row containers.</param>
+        private void RefreshCardTracks(bool appendRows = false)
         {
             _retiredCardResources.RemoveAll(task => task.IsCompletedSuccessfully);
             var next = new Dictionary<(string, string, string?), SongCardViewModel>();
@@ -57,7 +58,7 @@ namespace MajMusic.Presentation.ViewModels
             CardTracks = ordered;
             RefreshCardSelection();
             OnPropertyChanged(nameof(CardTracks));
-            RefreshBrowseRows();
+            RefreshBrowseRows(appendRows);
         }
 
         /// <summary>Updates audio properties on an existing card without replacing its cover or resource ownership.</summary>

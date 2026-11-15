@@ -15,6 +15,7 @@ using MajMusic.Core.Playback;
 using MajMusic.Infrastructure.Application;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
+using MajMusic.Presentation.Theme;
 using SkiaSharp;
 using ArcSlider = TKCode.Arc.Slider;
 using ArcSegments = TKCode.Arc.SegmentedControl;
@@ -72,6 +73,8 @@ namespace MajMusic.Tests
                             AssertTransport(view);
                         }
 
+                        await AssertSearchToolbarAsync(view, window, viewModel, timeout.Token);
+
                         await playback.PauseAsync(timeout.Token);
                         await WaitForPlaybackAsync(viewModel, false, timeout.Token);
                         AssertTransport(view);
@@ -96,6 +99,7 @@ namespace MajMusic.Tests
                             AssertSegments(view);
                             AssertTransport(view);
                             AssertVolumeAndPlaylistGeometry(view, window);
+                            await AssertSearchToolbarAsync(view, window, viewModel, timeout.Token);
                             if (scale == 1.25 && size.Width == 1100)
                             {
                                 using var scaled = new RenderTargetBitmap(new PixelSize(1375, 950), new Vector(120, 120));
@@ -129,6 +133,50 @@ namespace MajMusic.Tests
 
                 return true;
             }, timeout.Token);
+        }
+
+        /// <summary>Checks the closed search icon and expanded painted input share the menu's edges without changing its bounds.</summary>
+        /// <param name="view">The production desktop view.</param>
+        /// <param name="window">The actual scaled rendering window.</param>
+        /// <param name="model">The existing home-mode and search owner.</param>
+        /// <param name="token">Cancels an incomplete local search update.</param>
+        /// <returns>A task representing search-toolbar geometry checks.</returns>
+        private static async Task AssertSearchToolbarAsync(MainView view, Window window, MainViewModel model, CancellationToken token)
+        {
+            var selector = view.FindControl<ArcSegments>("HomeModeSegments")!;
+            var menuFrame = selector.GetVisualDescendants().OfType<Border>().Single(control => control.Name == "PART_Frame");
+            var menu = new Rect(menuFrame.TranslatePoint(default, view)!.Value, menuFrame.Bounds.Size);
+            var panel = view.FindControl<SearchRevealPanel>("DesktopSearchReveal")!;
+            var icon = view.FindControl<Button>("BeginSearchButton")!;
+            var iconFrame = icon.GetVisualDescendants().OfType<Border>().Single(control => control.Name == "PART_Frame");
+            var collapsed = new Rect(iconFrame.TranslatePoint(default, view)!.Value, iconFrame.Bounds.Size);
+            Close(menu.Top, collapsed.Top, "The search icon and mode menu must share their painted top edge.");
+            Close(menu.Bottom, collapsed.Bottom, "The search icon and mode menu must share their painted bottom edge.");
+            TestAssert.True(panel.RevealProgress <= 0.001 && Math.Abs(panel.DisplayedSearchWidth - 44) <= 1,
+                "The closed search must reserve one complete icon at every display scale.");
+            model.BeginSearchCommand.Execute(null);
+            await model.HomeUpdate.WaitAsync(token);
+            window.UpdateLayout();
+            Dispatcher.UIThread.RunJobs();
+            var search = view.FindControl<Border>("LibrarySearchRevealHost")!;
+            var expanded = new Rect(search.TranslatePoint(default, view)!.Value, search.Bounds.Size);
+            var input = view.FindControl<TextBox>("LibrarySearch")!;
+            var inputFrame = input.GetVisualDescendants().OfType<Control>().Single(control => control.Name == "PART_Frame");
+            var paint = new Rect(inputFrame.TranslatePoint(default, view)!.Value, inputFrame.Bounds.Size);
+            Close(menu.Top, expanded.Top, "The expanded search frame and mode menu must share their top edge.");
+            Close(menu.Bottom, expanded.Bottom, "The expanded search frame and mode menu must share their bottom edge.");
+            Close(menu.Top, paint.Top, "The actual Arc input border must begin at the menu's painted top edge.");
+            Close(menu.Bottom, paint.Bottom, "The actual Arc input border must end at the menu's painted bottom edge.");
+            Close(panel.Bounds.Width, expanded.Width, "Search must fill its available right-hand lane when fully expanded.");
+            var after = new Rect(menuFrame.TranslatePoint(default, view)!.Value, menuFrame.Bounds.Size);
+            TestAssert.True(after == menu, "Opening search must leave the neighboring menu's complete rectangle unchanged.");
+            model.CancelSearchCommand.Execute(null);
+            await model.HomeUpdate.WaitAsync(token);
+            window.UpdateLayout();
+            Dispatcher.UIThread.RunJobs();
+            TestAssert.True(panel.RevealProgress <= 0.001 && Math.Abs(panel.DisplayedSearchWidth - 44) <= 1
+                && new Rect(menuFrame.TranslatePoint(default, view)!.Value, menuFrame.Bounds.Size) == menu,
+                "Closing search must restore only its icon and retain the same menu geometry.");
         }
 
         /// <summary>Checks the Arc mode choices remain complete, separated and consistent with the current browse mode.</summary>

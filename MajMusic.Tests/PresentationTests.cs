@@ -36,7 +36,7 @@ namespace MajMusic.Tests
             await playback.NextAsync();
             await using var viewModel = new MainViewModel(workspace, playback, _ => { });
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             viewModel.SelectedTrack = viewModel.Tracks[0];
             viewModel.PauseCommand.Execute(null);
             TestAssert.Equal(PlaybackState.Paused, playback.Snapshot.State, "The backend pauses before a delayed visual refresh.");
@@ -54,7 +54,7 @@ namespace MajMusic.Tests
             var workspace = new FakeWorkspace();
             await using var viewModel = CreateViewModel(workspace, new UnavailablePlaybackBackend());
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             TestAssert.True(viewModel.Playlists.Any(item => item.IsFavorite), "The local favorites collection must always be available.");
             await viewModel.ImportDirectoryAsync("synthetic-source-root");
             TestAssert.Equal(1, workspace.IndexCount, "The folder action must use recursive read-only indexing.");
@@ -63,14 +63,14 @@ namespace MajMusic.Tests
                 "The selected root must be remembered for rescan and source protection.");
             TestAssert.True(!viewModel.OnlineEnabled && workspace.SynchronizationCount == 0, "Indexing must stay local.");
             viewModel.SelectedTrack = viewModel.Tracks[0];
-            viewModel.ToggleFavoriteCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ToggleFavoriteCommand);
             TestAssert.True(viewModel.IsSelectedFavorite, "Favorite actions must persist the selected music locally.");
-            viewModel.OpenFavoritesCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.OpenFavoritesCommand);
             TestAssert.Equal(1, viewModel.Tracks.Count, "The favorites view must include the liked music.");
             TestAssert.Equal("MyFavorites.json", viewModel.ExportFileName, "Favorites must suggest Maj's recognized filename.");
-            viewModel.ToggleFavoriteCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ToggleFavoriteCommand);
             TestAssert.Equal(0, viewModel.Tracks.Count, "Removing a favorite must update the open favorites list.");
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             TestAssert.Equal(3, viewModel.Tracks.Count, "Removing favorites cannot remove library entries.");
         }
 
@@ -83,7 +83,7 @@ namespace MajMusic.Tests
             workspace.Playlists.Add(new MusicPlaylist { Id = "ordered", Name = "Ordered", TrackIds = new[] { "c", "a" } });
             await using var viewModel = CreateViewModel(workspace, new UnavailablePlaybackBackend());
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             TestAssert.Equal(0, workspace.SynchronizationCount, "Initialization must not synchronize any source.");
             TestAssert.True(!viewModel.OnlineEnabled, "A fresh view must be offline.");
             TestAssert.True(!viewModel.PlayCommand.CanExecute(null), "An unavailable audio backend must keep playback disabled.");
@@ -91,15 +91,15 @@ namespace MajMusic.Tests
             viewModel.SelectedPlaylist = viewModel.Playlists.Single(item => item.Id == "empty");
             TestAssert.Equal(3, viewModel.Tracks.Count, "Choosing an add target must not filter the library.");
             TestAssert.True(viewModel.AddToPlaylistCommand.CanExecute(null), "An empty playlist must accept the selected track.");
-            viewModel.AddToPlaylistCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.AddToPlaylistCommand);
             TestAssert.Equal("a", workspace.Playlists.Single(item => item.Id == "empty").TrackIds.Single(), "The selected track must be added to an empty playlist.");
             TestAssert.Equal(3, viewModel.Tracks.Count, "Adding to a playlist must preserve library browsing.");
             viewModel.SelectedPlaylist = viewModel.Playlists.Single(item => item.Id == "ordered");
-            viewModel.OpenPlaylistCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.OpenPlaylistCommand);
             TestAssert.Equal("c,a", string.Join(',', viewModel.Tracks.Select(item => item.Id)), "An explicitly opened playlist must preserve saved order.");
             viewModel.SelectedPlaylist = viewModel.Playlists.Single(item => item.Id == "empty");
             TestAssert.Equal("c,a", string.Join(',', viewModel.Tracks.Select(item => item.Id)), "Changing the add target must not replace the open list.");
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             TestAssert.Equal(3, viewModel.Tracks.Count, "Showing all music must clear only the active filter.");
             TestAssert.Equal("empty", viewModel.SelectedPlaylist?.Id, "Showing all music must preserve the add target.");
         }
@@ -112,7 +112,7 @@ namespace MajMusic.Tests
             var backend = new FakePlaybackBackend();
             var viewModel = CreateViewModel(workspace, backend);
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             viewModel.SelectedTrack = viewModel.Tracks[0];
             var import = viewModel.ImportDirectoryAsync("synthetic-directory");
             var cover = viewModel.LoadCoverAsync();
@@ -140,7 +140,7 @@ namespace MajMusic.Tests
             var backend = new FakePlaybackBackend();
             await using var viewModel = CreateViewModel(workspace, backend);
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             viewModel.SelectedTrack = viewModel.Tracks[0];
             viewModel.PlayCommand.Execute(null);
             TestAssert.Equal("Track a", viewModel.PlaybackTitle, "Now-playing metadata must come from the actual loaded track.");
@@ -179,7 +179,7 @@ namespace MajMusic.Tests
             var backend = new FakePlaybackBackend();
             await using var viewModel = CreateViewModel(workspace, backend);
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             viewModel.SelectedTrack = viewModel.Tracks[0];
             await viewModel.PlaySelectedAsync();
             TestAssert.True(viewModel.CanSeek, "Prepared seekable media must enable its timeline.");
@@ -240,7 +240,7 @@ namespace MajMusic.Tests
             var backend = new FakePlaybackBackend();
             await using var viewModel = CreateViewModel(new FakeWorkspace(), backend);
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             viewModel.SelectedTrack = viewModel.Tracks[0];
             await viewModel.PlaySelectedAsync();
             await ObservePropertyAsync(viewModel, nameof(MainViewModel.DurationText), () => viewModel.DurationText == "--:--",
@@ -258,7 +258,7 @@ namespace MajMusic.Tests
 
             await using var noSeeking = CreateViewModel(new FakeWorkspace(), new FakePlaybackBackend { SupportsSeeking = false });
             await noSeeking.InitializeAsync();
-            noSeeking.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(noSeeking.ShowAllCommand);
             noSeeking.SelectedTrack = noSeeking.Tracks[0];
             await noSeeking.PlaySelectedAsync();
             TestAssert.True(noSeeking.CanPlay && !noSeeking.CanSeek, "A nonseekable backend still supports ordinary playback.");
@@ -271,7 +271,7 @@ namespace MajMusic.Tests
             var backend = new FakePlaybackBackend { BlockSeek = true };
             var viewModel = CreateViewModel(new FakeWorkspace(), backend);
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             viewModel.SelectedTrack = viewModel.Tracks[0];
             await viewModel.PlaySelectedAsync();
             viewModel.BeginSeek();

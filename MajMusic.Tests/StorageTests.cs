@@ -1,8 +1,10 @@
 #nullable enable
 
+using System.Collections.Concurrent;
 using MajMusic.Core.Models;
 using MajMusic.Infrastructure.Import;
 using MajMusic.Infrastructure.Storage;
+using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -20,6 +22,7 @@ namespace MajMusic.Tests
             try
             {
                 await VerifyRepositoryAsync(temporaryRoot);
+                await VerifySearchResponsivenessAsync(temporaryRoot);
                 await VerifySettingsAsync(temporaryRoot);
                 await VerifyImportAsync(temporaryRoot);
                 await VerifyReadOnlyScannerAsync(temporaryRoot);
@@ -179,6 +182,144 @@ namespace MajMusic.Tests
             await TestAssert.ThrowsAsync<OperationCanceledException>(() => reopened.UpsertTracksAsync(
                 [CreateTrack("canceled", "Canceled", "local")], cancellation.Token));
             TestAssert.Equal(2, (await reopened.SearchAsync(null)).Count, "A canceled write publishes no new entry");
+        }
+
+        /// <summary>Allows UI callbacks to advance while a real SQLite read waits for a deliberately held database lock.</summary>
+        /// <param name="root">The isolated storage fixture directory.</param>
+        /// <returns>A task representing deterministic UI progress and canceled-read assertions.</returns>
+        private static async Task VerifySearchResponsivenessAsync(string root)
+        {
+            var path = Path.Combine(root, "responsive-search.db");
+            var repository = new SqliteLibraryRepository(path);
+            await repository.UpsertTracksAsync(Enumerable.Range(0, 32)
+                .Select(index => CreateTrack("responsive:" + index, $"Responsive song {index:00}", "local")).ToArray());
+            using var blocker = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
+            await blocker.OpenAsync();
+            await using var command = blocker.CreateCommand();
+            command.CommandText = "PRAGMA journal_mode=DELETE;";
+            await command.ExecuteNonQueryAsync();
+            await using var context = new SearchSynchronizationContext();
+            foreach (var cancelQuery in new[] { false, true })
+            {
+                command.CommandText = "BEGIN EXCLUSIVE;";
+                await command.ExecuteNonQueryAsync();
+                using var cancellation = new CancellationTokenSource();
+                var marker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var completed = new TaskCompletionSource<IReadOnlyList<MusicTrack>>(TaskCreationOptions.RunContinuationsAsynchronously);
+                context.Post(async _ =>
+                {
+                    try
+                    {
+                        var search = repository.SearchAsync("Responsive song", cancellation.Token);
+                        context.Post(_ =>
+                        {
+                            if (cancelQuery)
+                            {
+                                cancellation.Cancel();
+                            }
+
+                            marker.TrySetResult();
+                        }, null);
+                        completed.TrySetResult(await search);
+                    }
+                    catch (OperationCanceledException exception)
+                    {
+                        completed.TrySetCanceled(exception.CancellationToken);
+                    }
+                    catch (Exception exception)
+                    {
+                        completed.TrySetException(exception);
+                    }
+                }, null);
+                try
+                {
+                    await marker.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    TestAssert.True(!completed.Task.IsCompleted || cancelQuery && completed.Task.IsCanceled,
+                        "The UI marker must advance while the genuine database read is still locked or already canceled.");
+                }
+                finally
+                {
+                    command.CommandText = "ROLLBACK;";
+                    await command.ExecuteNonQueryAsync();
+                    try
+                    {
+                        await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    }
+                    catch (OperationCanceledException) when (cancelQuery)
+                    {
+                        // Drain the canceled continuation before closing the single-thread callback pump.
+                    }
+                }
+
+                if (cancelQuery)
+                {
+                    await TestAssert.ThrowsAsync<OperationCanceledException>(() => completed.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+                }
+                else
+                {
+                    var tracks = await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    TestAssert.Equal(32, tracks.Count, "A UI-owned search must return its complete SQLite snapshot after the controlled lock is released.");
+                    TestAssert.Equal("Responsive song 00", tracks[0].Title, "Background execution must preserve the original title order.");
+                }
+            }
+
+            using var canceled = new CancellationTokenSource();
+            canceled.Cancel();
+            await TestAssert.ThrowsAsync<OperationCanceledException>(() => repository.SearchAsync(null, canceled.Token));
+        }
+
+        /// <summary>Pumps a dedicated UI-like thread so a blocked query cannot hide behind a thread-pool continuation.</summary>
+        private sealed class SearchSynchronizationContext : SynchronizationContext, IAsyncDisposable
+        {
+            /// <summary>Queues callbacks belonging to the single fixture UI thread.</summary>
+            private readonly BlockingCollection<(SendOrPostCallback Callback, object? State)> _callbacks = new();
+            /// <summary>Observes termination of the isolated UI callback pump.</summary>
+            private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            /// <summary>Starts the isolated callback pump without borrowing a production application thread.</summary>
+            public SearchSynchronizationContext()
+            {
+                var thread = new Thread(Run) { IsBackground = true, Name = "MajMusic storage search fixture" };
+                thread.Start();
+            }
+
+            /// <inheritdoc />
+            public override void Post(SendOrPostCallback callback, object? state)
+            {
+                _callbacks.Add((callback, state));
+            }
+
+            /// <summary>Drains queued continuations and releases the fixture callback pump.</summary>
+            /// <returns>A task representing completed fixture-thread shutdown.</returns>
+            public async ValueTask DisposeAsync()
+            {
+                _callbacks.CompleteAdding();
+                await _stopped.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                _callbacks.Dispose();
+            }
+
+            /// <summary>Processes callbacks serially with this context installed as their UI continuation target.</summary>
+            private void Run()
+            {
+                SetSynchronizationContext(this);
+                try
+                {
+                    foreach (var (callback, state) in _callbacks.GetConsumingEnumerable())
+                    {
+                        callback(state);
+                    }
+
+                    _stopped.TrySetResult();
+                }
+                catch (Exception exception)
+                {
+                    _stopped.TrySetException(exception);
+                }
+                finally
+                {
+                    SetSynchronizationContext(null);
+                }
+            }
         }
 
         /// <summary>Checks default offline behavior, round trips, secret exclusion, and corrupt-file preservation.</summary>

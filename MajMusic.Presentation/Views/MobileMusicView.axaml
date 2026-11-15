@@ -66,19 +66,23 @@
         <StreamGeometry x:Key="MobileShuffleIcon">M 3,6 L 6,6 C 10,6 14,18 18,18 L 21,18 M 17,14 L 21,18 L 17,22 M 3,18 L 6,18 C 10,18 14,6 18,6 L 21,6 M 17,2 L 21,6 L 17,10</StreamGeometry>
         <StreamGeometry x:Key="MobileRepeatIcon">M 3,10 C 3,6 5,5 8,5 L 21,5 M 17,1 L 21,5 L 17,9 M 21,14 C 21,18 19,19 16,19 L 3,19 M 7,15 L 3,19 L 7,23</StreamGeometry>
         <DataTemplate x:Key="MobileHomeTemplate" x:DataType="vm:MainViewModel">
-            <Grid RowDefinitions="44,Auto,*,Auto" RowSpacing="8">
+            <Grid RowDefinitions="44,44,*,Auto" RowSpacing="8">
                 <arcm:Segmented x:Name="MobileHomeModes" SelectionChanged="OnHomeModeChanged">
                     <arcm:SegmentedItem Content="推荐" />
                     <arcm:SegmentedItem Content="歌单" />
                     <arcm:SegmentedItem Content="曲库" />
                 </arcm:Segmented>
-                <Grid Grid.Row="1">
-                    <Grid IsVisible="{Binding !IsSearchExpanded}" theme:MusicMotion.RevealChanges="True">
+                <theme:SearchRevealPanel x:Name="MobileSearchReveal" Grid.Row="1" IsExpanded="{Binding IsSearchExpanded}" Height="44" UseLayoutRounding="False">
+                    <Grid ClipToBounds="True">
                         <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.Endpoint}" ItemsSource="{Binding EndpointProfiles}" SelectedItem="{Binding SelectedEndpointProfile}" Placeholder="接入点" IsVisible="{Binding IsRecommendationsMode}" />
                         <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.Playlist}" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedHomePlaylist}" Placeholder="选择歌单" IsVisible="{Binding IsPlaylistsMode}" />
                     </Grid>
-                    <arcm:Searchbar x:Name="MobileSearchBox" Text="{Binding SearchText, Mode=TwoWay}" PlaceholderText="搜索音乐" IsVisible="{Binding IsSearchExpanded}" Submitted="OnSearchSubmitted" theme:MusicMotion.RevealChanges="True" />
-                </Grid>
+                    <Border Height="44" ClipToBounds="True">
+                        <arcm:Searchbar x:Name="MobileSearchBox" Text="{Binding SearchText, Mode=TwoWay}" PlaceholderText="搜索音乐" Height="44" Padding="8,0,44,0" ShowClearButton="False" Submitted="OnSearchSubmitted" />
+                    </Border>
+                    <arcm:IconButton x:Name="MobileSearchButton" Icon="{StaticResource MobileSearchIcon}" Variant="Plain" Transitions="{x:Null}" Click="OnSearchClicked" AutomationProperties.Name="搜索音乐" />
+                    <arcm:IconButton x:Name="MobileCancelSearchButton" Icon="{StaticResource MobileCloseIcon}" Variant="Plain" Transitions="{x:Null}" Click="OnSearchClicked" AutomationProperties.Name="关闭搜索" />
+                </theme:SearchRevealPanel>
                 <views:BrowseTracksView x:Name="MobileSongBrowser" Grid.Row="2" ForceSingleColumn="True" />
                 <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                     <TextBlock Text="{Binding BrowseSummary}" Classes="mobileLabel" VerticalAlignment="Center" />
@@ -249,11 +253,7 @@
     </UserControl.DataTemplates>
     <arcm:Page x:Name="MobilePage" IsScrollable="False" AvoidKeyboard="True">
         <arcm:Page.Header>
-            <arcm:Navbar x:Name="MobileNavbar" Title="MajMusic">
-                <arcm:Navbar.Trailing>
-                    <arcm:IconButton x:Name="MobileSearchButton" Icon="{StaticResource MobileSearchIcon}" Variant="Plain" Click="OnSearchClicked" AutomationProperties.Name="搜索音乐" />
-                </arcm:Navbar.Trailing>
-            </arcm:Navbar>
+            <arcm:Navbar x:Name="MobileNavbar" Title="MajMusic" />
         </arcm:Page.Header>
         <arcm:Page.Footer>
             <Grid RowDefinitions="Auto,Auto">

@@ -122,7 +122,15 @@ namespace MajMusic.Presentation.ViewModels
                 _metadataCancellation = cancellation;
             }
 
-            _metadataRefresh = RunTrackedAsync(() => RefreshMetadataAsync(VisibleTracks.ToArray(), cancellation));
+            var tracks = VisibleTracks.ToArray();
+            // Publish completion before a parser can signal that work has begun.
+            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _metadataRefresh = RunTrackedAsync(async () =>
+            {
+                await start.Task;
+                await RefreshMetadataAsync(tracks, cancellation);
+            });
+            start.SetResult();
         }
 
         /// <summary>Enriches one bounded page and isolates unreadable media from unrelated rows.</summary>

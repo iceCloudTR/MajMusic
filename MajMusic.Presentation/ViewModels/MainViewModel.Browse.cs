@@ -22,11 +22,13 @@ namespace MajMusic.Presentation.ViewModels
         private readonly ConcurrentDictionary<string, byte> _browseMetadataRead = new(StringComparer.Ordinal);
         /// <summary>Lets another visible control retry after the current request owner's viewport interest ends.</summary>
         private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _browseMetadataPending = new(StringComparer.Ordinal);
+        /// <summary>Publishes row replacements as one virtualized-list reset.</summary>
+        private readonly SnapshotCollection<SongCardRow> _browseRows = new();
 
         /// <summary>Gets whether browsing uses the shared artwork-card presentation in every mode.</summary>
         public bool IsCardBrowse => true;
         /// <summary>Gets the rows rendered by the virtualized artwork list.</summary>
-        public ObservableCollection<SongCardRow> BrowseRows { get; } = new();
+        public ObservableCollection<SongCardRow> BrowseRows => _browseRows;
         /// <summary>Gets the responsive number of card columns.</summary>
         public int BrowseColumns => _browseColumns;
         /// <summary>Gets the committed mode or search generation used to reset only a new browsing query.</summary>
@@ -66,31 +68,47 @@ namespace MajMusic.Presentation.ViewModels
         }
 
         /// <summary>Replaces row grouping while preserving song presentations and their loaded covers.</summary>
-        private void RefreshBrowseRows()
+        /// <param name="appendRows">Whether to retain existing containers when extending a recommendation feed.</param>
+        private void RefreshBrowseRows(bool appendRows = false)
         {
             var next = CardTracks.Chunk(_browseColumns).ToArray();
+            var rows = new SongCardRow[next.Length];
+            var unchangedPrefix = true;
             for (var index = 0; index < next.Length; index++)
             {
                 if (index < BrowseRows.Count && BrowseRows[index].Columns == _browseColumns
                     && BrowseRows[index].Tracks.SequenceEqual(next[index]))
                 {
+                    rows[index] = BrowseRows[index];
                     continue;
                 }
 
-                var row = new SongCardRow(next[index], _browseColumns);
-                if (index < BrowseRows.Count)
-                {
-                    BrowseRows[index] = row;
-                }
-                else
-                {
-                    BrowseRows.Add(row);
-                }
+                rows[index] = new SongCardRow(next[index], _browseColumns);
+                unchangedPrefix &= index >= BrowseRows.Count;
             }
 
-            while (BrowseRows.Count > next.Length)
+            if (appendRows)
             {
-                BrowseRows.RemoveAt(BrowseRows.Count - 1);
+                for (var index = 0; index < rows.Length; index++)
+                {
+                    if (index >= BrowseRows.Count)
+                    {
+                        BrowseRows.Add(rows[index]);
+                    }
+                    else if (!ReferenceEquals(rows[index], BrowseRows[index]))
+                    {
+                        BrowseRows[index] = rows[index];
+                    }
+                }
+
+                while (BrowseRows.Count > rows.Length)
+                {
+                    BrowseRows.RemoveAt(BrowseRows.Count - 1);
+                }
+            }
+            else if (!unchangedPrefix || rows.Length != BrowseRows.Count)
+            {
+                _browseRows.ReplaceAll(rows);
             }
 
             OnPropertyChanged(nameof(BrowseColumns));

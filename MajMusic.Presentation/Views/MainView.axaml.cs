@@ -96,6 +96,17 @@ namespace MajMusic.Presentation.Views
             Dispatcher.UIThread.Post(() => this.FindControl<TextBox>("LibrarySearch")!.Focus(), DispatcherPriority.Input);
         }
 
+        /// <summary>Closes search through its existing command while preserving focus for the toolbar's return transition.</summary>
+        /// <param name="sender">The close icon whose focus will return to the search trigger.</param>
+        /// <param name="e">The routed click notification.</param>
+        private void OnCancelSearchClicked(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel viewModel && viewModel.CancelSearchCommand.CanExecute(null))
+            {
+                viewModel.CancelSearchCommand.Execute(null);
+            }
+        }
+
         /// <summary>Runs the existing observed search command when Enter is pressed in the search box.</summary>
         /// <param name="sender">The search field.</param>
         /// <param name="e">The keyboard event.</param>

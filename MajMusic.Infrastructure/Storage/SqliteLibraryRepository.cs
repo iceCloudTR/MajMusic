@@ -86,8 +86,18 @@ namespace MajMusic.Infrastructure.Storage
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<MusicTrack>> SearchAsync(string? query, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<MusicTrack>> SearchAsync(string? query, CancellationToken cancellationToken = default)
         {
+            return Task.Run(() => SearchCoreAsync(query, cancellationToken), cancellationToken);
+        }
+
+        /// <summary>Runs synchronous SQLite I/O and document decoding on a worker with an independently owned connection.</summary>
+        /// <param name="query">The optional literal keyword.</param>
+        /// <param name="cancellationToken">Cancels the query before or between decoded rows.</param>
+        /// <returns>The matching metadata in the repository's stable title order.</returns>
+        private async Task<IReadOnlyList<MusicTrack>> SearchCoreAsync(string? query, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
             await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
@@ -104,11 +114,19 @@ namespace MajMusic.Infrastructure.Storage
             command.Parameters.AddWithValue("$query", $"%{EscapeLike(keyword)}%");
             var tracks = new List<MusicTrack>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            while (true)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    break;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
                 tracks.Add(Deserialize<MusicTrack>(reader.GetString(0)));
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             return tracks;
         }
 

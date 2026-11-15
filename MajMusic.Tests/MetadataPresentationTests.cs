@@ -32,13 +32,13 @@ namespace MajMusic.Tests
             await using var viewModel = new MainViewModel(workspace, new PlaybackService(new UnavailablePlaybackBackend()),
                 action => action(), metadata: local);
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             await viewModel.MetadataRefresh.WaitAsync(TimeSpan.FromSeconds(3));
             TestAssert.Equal(2, local.ReadCount, "An unavailable endpoint cannot prevent the other local row from being parsed.");
             TestAssert.True(viewModel.VisibleTracks.All(track => track.AudioInfo?.BitrateBitsPerSecond == 192000),
                 "Every available local bitrate remains visible when its remote source fails.");
             TestAssert.Equal(1, workspace.RemoteCalls.Values.Sum(), "One failed source should not receive a failed request for every row in a page.");
-            viewModel.SearchCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.SearchCommand);
             await viewModel.MetadataRefresh.WaitAsync(TimeSpan.FromSeconds(3));
             TestAssert.True(viewModel.VisibleTracks.All(track => track.Duration == TimeSpan.FromSeconds(95)),
                 "A later search may retry all rows whose source was previously unavailable.");
@@ -53,7 +53,7 @@ namespace MajMusic.Tests
             await using var viewModel = new MainViewModel(workspace, new PlaybackService(new UnavailablePlaybackBackend()),
                 action => action(), metadata: local);
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             await viewModel.MetadataRefresh.WaitAsync(TimeSpan.FromSeconds(3));
             TestAssert.Equal(1, local.ReadCount, "Visible rows must be parsed without requiring a selection or playback.");
             TestAssert.Equal(1, workspace.RemoteCalls.GetValueOrDefault("cached"), "Missing duration should attempt optional source metadata.");
@@ -62,7 +62,7 @@ namespace MajMusic.Tests
             TestAssert.True(viewModel.VisibleTracks.Single().Duration is null, "Failed remote metadata cannot invent a music duration.");
             TestAssert.True(viewModel.SelectedTrack is null, "Progressive metadata must not require selecting the row.");
 
-            viewModel.SearchCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.SearchCommand);
             await viewModel.MetadataRefresh.WaitAsync(TimeSpan.FromSeconds(3));
             TestAssert.Equal(2, workspace.RemoteCalls.GetValueOrDefault("cached"), "A failed source lookup must be retried by a later search.");
             TestAssert.Equal(TimeSpan.FromSeconds(95), viewModel.VisibleTracks.Single().Duration, "A later successful source lookup must fill the duration.");
@@ -78,7 +78,7 @@ namespace MajMusic.Tests
             var workspace = new MetadataWorkspace(tracks) { BlockFirstRemote = true };
             await using var viewModel = new MainViewModel(workspace, new PlaybackService(new UnavailablePlaybackBackend()), action => action());
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             await workspace.FirstRemoteStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
             var obsolete = viewModel.MetadataRefresh;
             viewModel.NextLibraryPageCommand.Execute(null);
@@ -103,7 +103,7 @@ namespace MajMusic.Tests
             var backend = new MetadataPlaybackBackend();
             await using var viewModel = new MainViewModel(workspace, new PlaybackService(backend), action => action());
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             await viewModel.MetadataRefresh.WaitAsync(TimeSpan.FromSeconds(3));
             viewModel.SelectedTrack = viewModel.Tracks.Single();
             await viewModel.PlaySelectedAsync();
@@ -120,7 +120,7 @@ namespace MajMusic.Tests
                 AudioInfo = new AudioStreamInfo { BitrateBitsPerSecond = 320000, SampleRateHz = 48000 }
             };
             workspace.ReplaceTrack(replacement);
-            viewModel.SearchCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.SearchCommand);
             await viewModel.MetadataRefresh.WaitAsync(TimeSpan.FromSeconds(3));
             TestAssert.Equal(replacement.Revision, viewModel.SelectedTrack?.Revision, "A refresh must retain the selected identity using its latest indexed revision.");
             var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

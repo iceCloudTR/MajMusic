@@ -19,6 +19,79 @@ namespace MajMusic.Tests
             await ValidateAccountSnapshotsAsync();
             await ValidateLateSearchAsync();
             await ValidateFeedDuringSearchAsync();
+            await ValidateLargeLibraryPublicationAsync();
+            await ValidateInterruptedModeLoadAsync();
+        }
+
+        /// <summary>Publishes a large catalog and its row grouping as complete snapshots instead of one event per song.</summary>
+        /// <returns>A task representing large-library, playlist ordering and collection notification assertions.</returns>
+        private static async Task ValidateLargeLibraryPublicationAsync()
+        {
+            var workspace = Workspace(24000);
+            await using var view = View(workspace, new LibraryExperienceTests.ExperienceBackend());
+            await view.InitializeAsync();
+            var trackChanges = 0;
+            var rowChanges = 0;
+            view.Tracks.CollectionChanged += (_, _) => trackChanges++;
+            view.BrowseRows.CollectionChanged += (_, _) => rowChanges++;
+            await ExecuteHomeAsync(view, view.ShowLibraryModeCommand);
+            TestAssert.True(view.Tracks.Count == 24000 && view.BrowseRows.Count == 12000,
+                "The complete catalog must remain available through the virtualized card rows.");
+            TestAssert.True(trackChanges == 1 && rowChanges == 1,
+                "A large library must publish exactly one track snapshot and one row snapshot, independent of its song count.");
+            trackChanges = 0;
+            rowChanges = 0;
+            view.SelectedPlaylist = view.Playlists.Single(item => item.Id == "ordered");
+            await ExecuteHomeAsync(view, view.ShowPlaylistsModeCommand);
+            TestAssert.True(view.Tracks.Select(item => item.Id).SequenceEqual(["local-04", "local-02"])
+                && trackChanges == 1 && rowChanges == 1,
+                "Switching from a large library to a small ordered playlist must replace both snapshots once.");
+        }
+
+        /// <summary>Keeps mode navigation available while an earlier catalog read waits and rejects its late result.</summary>
+        /// <returns>A task representing cancellation, repeated navigation and latest-result ownership assertions.</returns>
+        private static async Task ValidateInterruptedModeLoadAsync()
+        {
+            var workspace = Workspace(5);
+            await using var view = View(workspace, new LibraryExperienceTests.ExperienceBackend());
+            await view.InitializeAsync();
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<IReadOnlyList<MusicTrack>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reads = 0;
+            var obsoleteToken = CancellationToken.None;
+            workspace.SearchOverride = (_, token) =>
+            {
+                if (Interlocked.Increment(ref reads) == 1)
+                {
+                    obsoleteToken = token;
+                    started.TrySetResult();
+                    return release.Task;
+                }
+
+                return Task.FromResult<IReadOnlyList<MusicTrack>>(workspace.Library.ToArray());
+            };
+            try
+            {
+                view.ShowLibraryModeCommand.Execute(null);
+                var obsoleteUpdate = view.HomeUpdate;
+                await started.Task.WaitAsync(TimeSpan.FromSeconds(3));
+                TestAssert.True(view.ShowLibraryModeCommand.CanExecute(null),
+                    "A pending catalog read cannot hold its navigation command disabled.");
+                await ExecuteHomeAsync(view, view.ShowRecommendationsModeCommand);
+                TestAssert.True(obsoleteToken.IsCancellationRequested && view.IsRecommendationsMode && view.Tracks.Count == 0,
+                    "Changing modes must cancel an obsolete catalog query without waiting for its storage result.");
+                await ExecuteHomeAsync(view, view.ShowLibraryModeCommand);
+                TestAssert.True(view.IsLibraryMode && view.Tracks.Count == 5,
+                    "Returning to the library must start a current query while the obsolete read still waits.");
+                release.SetResult([Track("obsolete", "Obsolete catalog")]);
+                await obsoleteUpdate.WaitAsync(TimeSpan.FromSeconds(3));
+                TestAssert.True(view.IsLibraryMode && view.Tracks.Count == 5 && view.Tracks.All(item => item.Id != "obsolete"),
+                    "An older result must never replace the latest explicitly selected mode.");
+            }
+            finally
+            {
+                release.TrySetResult([]);
+            }
         }
 
         /// <summary>Starts with recommendations and keeps the inspector stable while explicitly browsing local content.</summary>

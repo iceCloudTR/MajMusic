@@ -35,7 +35,7 @@ namespace MajMusic.Tests
             try
             {
                 await viewModel.InitializeAsync();
-                viewModel.ShowAllCommand.Execute(null);
+                await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
                 await provider.Started.Task.WaitAsync(TimeSpan.FromSeconds(3));
                 TestAssert.True(viewModel.SelectedTrack is null && backend.OpenCount == 0,
                     "Library metadata preparation must not require selection or playback");
@@ -79,7 +79,7 @@ namespace MajMusic.Tests
             try
             {
                 await viewModel.InitializeAsync();
-                viewModel.ShowAllCommand.Execute(null);
+                await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
                 await provider.Started.Task.WaitAsync(TimeSpan.FromSeconds(3));
                 var obsolete = viewModel.MetadataRefresh;
                 viewModel.SearchText = "New result";
@@ -133,7 +133,7 @@ namespace MajMusic.Tests
             var playback = new PlaybackService(backend, resolveAudioPath: (track, token) => workspace.ResolveAudioAsync(track, false, token));
             await using var viewModel = new MainViewModel(workspace, playback, static action => action());
             await viewModel.InitializeAsync();
-            viewModel.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
             await viewModel.MetadataRefresh.WaitAsync(TimeSpan.FromSeconds(3));
             TestAssert.True(viewModel.EndpointProfiles.All(profile => !profile.IsLoggedIn), "Every saved configuration initially uses its own Guest session");
             AssertCurrentFavorites(viewModel);

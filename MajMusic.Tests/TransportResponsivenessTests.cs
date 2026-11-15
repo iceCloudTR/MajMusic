@@ -369,7 +369,7 @@ namespace MajMusic.Tests
             workspace.Library.AddRange(tracks);
             var view = new MainViewModel(workspace, fixture.Service, static action => action());
             await view.InitializeAsync();
-            view.ShowAllCommand.Execute(null);
+            await TestAssert.ExecuteAsync(view.ShowAllCommand);
             view.SelectedTrack = view.Tracks[0];
             return view;
         }

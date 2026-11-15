@@ -17,6 +17,8 @@ namespace MajMusic.Presentation.ViewModels
     {
         /// <summary>Coordinates storage and optional sources.</summary>
         private readonly IMusicWorkspace _workspace;
+        /// <summary>Publishes complete query snapshots without notifying once per indexed song.</summary>
+        private readonly SnapshotCollection<MusicTrack> _tracks = new();
         /// <summary>Exchanges Maj-compatible files without allowing writes to music sources.</summary>
         private readonly IMajCollectionExchange? _collections;
         /// <summary>Identifies the fixed local favorites collection.</summary>
@@ -144,7 +146,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Occurs when a bound property changes.</summary>
         public event PropertyChangedEventHandler? PropertyChanged;
         /// <summary>Gets the visible search results.</summary>
-        public ObservableCollection<MusicTrack> Tracks { get; } = new();
+        public ObservableCollection<MusicTrack> Tracks => _tracks;
         /// <summary>Gets the local playlists.</summary>
         public ObservableCollection<MusicPlaylist> Playlists { get; } = new();
         /// <summary>Gets the search command.</summary>
@@ -895,12 +897,26 @@ namespace MajMusic.Presentation.ViewModels
             var version = _homeVersion;
             var searching = IsSearching;
             var mode = _homeMode;
-            IReadOnlyList<MusicTrack> found = !searching && mode == HomeBrowseMode.Recommendations
-                ? _recommendationTracks ?? (IReadOnlyList<MusicTrack>)Array.Empty<MusicTrack>()
-                : await _workspace.SearchAsync(searching ? SearchText : null, cancellationToken);
+            var playlistIds = Playlists.FirstOrDefault(item => item.Id == _activePlaylistId)?.TrackIds.ToArray();
             var sourceNames = _settings.Endpoints.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
-            var tracks = found.Select(track => track.EndpointId is { } endpointId && sourceNames.TryGetValue(endpointId, out var name)
-                ? track with { SourceName = name } : track).ToArray();
+            IReadOnlyList<MusicTrack> found = !searching && mode == HomeBrowseMode.Recommendations
+                ? _recommendationTracks?.ToArray() ?? (IReadOnlyList<MusicTrack>)Array.Empty<MusicTrack>()
+                : await _workspace.SearchAsync(searching ? SearchText : null, cancellationToken);
+            var entries = await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                IEnumerable<MusicTrack> visible = found;
+                if (!searching && mode == HomeBrowseMode.Playlists)
+                {
+                    var byId = found.ToDictionary(item => item.Id, StringComparer.Ordinal);
+                    visible = playlistIds is null ? [] : playlistIds.Where(byId.ContainsKey).Select(id => byId[id]);
+                }
+
+                var prepared = visible.Select(track => track.EndpointId is { } endpointId && sourceNames.TryGetValue(endpointId, out var name)
+                    && name != track.SourceName ? track with { SourceName = name } : track).ToArray();
+                cancellationToken.ThrowIfCancellationRequested();
+                return prepared;
+            }, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (version != _homeVersion)
             {
@@ -908,27 +924,10 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             var inspected = SelectedTrack;
-            var playlist = Playlists.FirstOrDefault(item => item.Id == _activePlaylistId);
-            IEnumerable<MusicTrack> visible = tracks;
-            if (!searching && mode == HomeBrowseMode.Recommendations)
-            {
-                visible = tracks;
-            }
-            else if (!searching && mode == HomeBrowseMode.Playlists)
-            {
-                var byId = tracks.ToDictionary(item => item.Id, StringComparer.Ordinal);
-                visible = playlist is null ? Enumerable.Empty<MusicTrack>() : playlist.TrackIds.Where(byId.ContainsKey).Select(id => byId[id]);
-            }
-
-            var entries = visible.ToArray();
-            Tracks.Clear();
-            foreach (var track in entries)
-            {
-                Tracks.Add(track);
-            }
+            _tracks.ReplaceAll(entries);
 
             SelectedTrack = Tracks.FirstOrDefault(item => item.Id == inspected?.Id) ?? inspected;
-            RefreshCardTracks();
+            RefreshCardTracks(preservePage);
             _libraryPageIndex = preservePage ? Math.Clamp(_libraryPageIndex, 0, Math.Max(0, (Tracks.Count - 1) / LibraryPageSize)) : 0;
             RefreshVisibleTracks();
             OnPropertyChanged(nameof(LibrarySummary));

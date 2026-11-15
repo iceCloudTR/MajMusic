@@ -93,7 +93,17 @@ namespace MajMusic.Tests
 
             model.ShowRecommendationsModeCommand.Execute(null);
             await model.HomeUpdate;
-            await SampleAsync(window, static () => 0, 300, token);
+            model.BeginSearchCommand.Execute(null);
+            await model.HomeUpdate;
+            await SampleAsync(window, static () => 0, 400, token);
+            using (var frame = new RenderTargetBitmap(new PixelSize((int)window.Width, (int)window.Height)))
+            {
+                frame.Render(window);
+            }
+
+            model.CancelSearchCommand.Execute(null);
+            await model.HomeUpdate;
+            await SampleAsync(window, static () => 0, 400, token);
         }
 
         /// <summary>Verifies restoring ordinary button motion does not compress large song artwork.</summary>
@@ -194,24 +204,234 @@ namespace MajMusic.Tests
             Tap(window, view.FindControl<ArcButton>("NavigateHome")!);
             await SampleAsync(window, () => tabs.Opacity, 270, token);
             TestAssert.True(tabs.SelectedIndex == 0 && Math.Abs(tabs.Opacity - 1) < 0.001, "Rapid page changes must cancel older fades without leaving the latest page translucent.");
-            Tap(window, view.FindControl<ArcButton>("BeginSearchButton")!);
-            await model.HomeUpdate;
+            await ValidateSearchExtensionAsync(window, view, model, output, token);
+        }
+
+        /// <summary>Observes the actual search frame expand from and retract to its fixed right-hand icon without moving the home menu.</summary>
+        /// <param name="window">The real rendering and input window.</param>
+        /// <param name="view">The production desktop home.</param>
+        /// <param name="model">The unchanged search and browsing owner.</param>
+        /// <param name="output">The ignored intermediate-frame directory.</param>
+        /// <param name="token">Cancels stalled animation or search work.</param>
+        /// <returns>A task representing search geometry, keyboard and interruption checks.</returns>
+        private static async Task ValidateSearchExtensionAsync(Window window, MainView view, MainViewModel model, string output, CancellationToken token)
+        {
+            var panel = view.FindControl<SearchRevealPanel>("DesktopSearchReveal")!;
+            var host = view.FindControl<Border>("LibrarySearchRevealHost")!;
             var input = view.FindControl<TextBox>("LibrarySearch")!;
-            var searchFrames = await SampleAsync(window, () => input.Opacity, 110, token,
-                () => SaveFrame(window, Path.Combine(output, "ui-arc-motion-search-middle.png")));
-            await SampleAsync(window, () => input.Opacity, 180, token);
-            TestAssert.True(model.IsSearchExpanded && searchFrames.Any(value => value > 0.36 && value < 0.99)
-                && Math.Abs(input.Opacity - 1) < 0.001, "Expanding the actual search must fade into complete visibility.");
-            model.CancelSearchCommand.Execute(null);
-            await model.HomeUpdate;
+            var selector = view.FindControl<SegmentedControl>("HomeModeSegments")!;
+            var menuFrame = selector.GetVisualDescendants().OfType<Border>().Single(control => control.Name == "PART_Frame");
+            foreach (var width in new[] { 720d, 1100d })
+            {
+                window.Width = width;
+                window.Height = width == 720 ? 540 : 760;
+                Pump(window);
+                model.CancelSearchCommand.Execute(null);
+                await model.HomeUpdate;
+                await SettleSearchAsync(window, panel, token);
+                var menu = BoundsIn(menuFrame, window);
+                var collapsed = panel.DisplayedSearchWidth;
+                TestAssert.True(Math.Abs(collapsed - 44) <= 1 && panel.RevealProgress <= 0.001,
+                    "A closed desktop search must reserve exactly its 44-DIP icon rather than a persistent input.");
+                Tap(window, view.FindControl<ArcButton>("BeginSearchButton")!);
+                var opening = await SampleAsync(window, () => ReadSearchWidth(window, panel, host, menuFrame, menu), 140, token,
+                    () => SaveFrame(window, Path.Combine(output, $"ui-search-extension-opening-{width:0}.png")));
+                await SettleSearchAsync(window, panel, token, () => ReadSearchWidth(window, panel, host, menuFrame, menu));
+                await model.HomeUpdate;
+                var expanded = panel.DisplayedSearchWidth;
+                TestAssert.True(model.IsSearchExpanded && input.IsFocused && panel.RevealProgress >= 0.999
+                    && Math.Abs(expanded - panel.Bounds.Width) <= 1, "Expanding search must fill its available lane, retain keyboard focus and preserve the mode menu.");
+                AssertWidthTravel(opening, collapsed, expanded, true);
+                var sources = view.FindControl<Grid>("HomeSourceSelectors")!;
+                TestAssert.True(!sources.IsEffectivelyVisible && !view.FindControl<TKCode.Arc.Select>("HomeEndpointPicker")!.Focus(),
+                    "Source selectors covered by expanded search must not remain focusable through an invisible toolbar.");
+                window.KeyPressQwerty(PhysicalKey.Tab, RawInputModifiers.Shift);
+                window.KeyReleaseQwerty(PhysicalKey.Tab, RawInputModifiers.Shift);
+                var keyboardFocus = window.FocusManager!.GetFocusedElement() as Control;
+                TestAssert.True(keyboardFocus is null || !keyboardFocus.GetVisualAncestors().Contains(sources),
+                    "Backward tab navigation from search must skip its hidden source selectors.");
+                input.Text = "Motion";
+                input.Focus();
+                window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                await model.HomeUpdate;
+                TestAssert.True(model.IsSearching && model.Tracks.All(track => track.Title.Contains("Motion", StringComparison.OrdinalIgnoreCase)),
+                    "Enter in the extending search must continue to run the original indexed search.");
+                TestAssert.True(input.IsFocused, "Replacing search results must retain the actual search field's keyboard focus for Escape.");
+                input.Text = string.Concat(Enumerable.Repeat("Long search text ", 30));
+                input.CaretIndex = input.Text.Length;
+                Pump(window);
+                var textViewport = input.GetVisualDescendants().OfType<ScrollViewer>().Single(control => control.Name == "PART_ScrollViewer");
+                var cancel = view.FindControl<ArcButton>("CancelSearchButton")!;
+                var clearPresence = input.GetVisualDescendants().OfType<PresenceHost>().Single(control => control.Name == "PART_ClearPresence");
+                TestAssert.True(!clearPresence.IsEffectivelyVisible,
+                    "A filled extending search must expose one closing action instead of overlapping it with the field's internal clear button.");
+                TestAssert.True(BoundsIn(textViewport, window).Right <= BoundsIn(cancel, window).Left + 1,
+                    "Long search text must stay inside its text viewport instead of painting beneath the fixed closing icon.");
+                Tap(window, view.FindControl<ArcButton>("CancelSearchButton")!);
+                var checkedClosingFocus = false;
+                double ReadClosingWidth()
+                {
+                    if (!checkedClosingFocus)
+                    {
+                        checkedClosingFocus = true;
+                        var focus = window.FocusManager!.GetFocusedElement() as Control;
+                        TestAssert.True(!input.IsFocused && view.FindControl<ArcButton>("BeginSearchButton")!.IsFocused,
+                            $"The first rendered closing frame must return focus to its icon: model={model.IsSearchExpanded}, panel={panel.IsExpanded}, inputFocus={input.IsFocused}, beginFocus={view.FindControl<ArcButton>("BeginSearchButton")!.IsFocused}, actualFocus={focus?.GetType().Name}/{focus?.Name}.");
+                    }
+
+                    return ReadSearchWidth(window, panel, host, menuFrame, menu);
+                }
+
+                var closing = await SampleAsync(window, ReadClosingWidth, 140, token,
+                    () => SaveFrame(window, Path.Combine(output, $"ui-search-extension-closing-{width:0}.png")));
+                await SettleSearchAsync(window, panel, token, () => ReadSearchWidth(window, panel, host, menuFrame, menu));
+                await model.HomeUpdate;
+                AssertWidthTravel(closing, collapsed, expanded, false);
+                TestAssert.True(!model.IsSearchExpanded && panel.RevealProgress <= 0.001 && Math.Abs(panel.DisplayedSearchWidth - collapsed) <= 1
+                    && !input.IsVisible && view.FindControl<ArcButton>("BeginSearchButton")!.IsVisible,
+                    $"Closing search must animate all the way back to the same icon before hiding the input frame: viewport={width}, model={model.IsSearchExpanded}, panel={panel.IsExpanded}, progress={panel.RevealProgress}, width={panel.DisplayedSearchWidth}, inputVisible={input.IsVisible}, beginVisible={view.FindControl<ArcButton>("BeginSearchButton")!.IsVisible}.");
+                Tap(window, view.FindControl<ArcButton>("BeginSearchButton")!);
+                await SettleSearchAsync(window, panel, token);
+                input.Focus();
+                window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+                await SettleSearchAsync(window, panel, token);
+                await model.HomeUpdate;
+                TestAssert.True(!model.IsSearchExpanded && panel.RevealProgress <= 0.001 && !input.IsVisible,
+                    "Escape in the actual search input must close the same extending toolbar and restore the icon.");
+            }
+
+            var stableMenu = BoundsIn(menuFrame, window);
             Tap(window, view.FindControl<ArcButton>("BeginSearchButton")!);
+            await SampleAsync(window, () => ReadSearchWidth(window, panel, host, menuFrame, stableMenu), 30, token);
+            Tap(window, view.FindControl<ArcButton>("CancelSearchButton")!);
+            await SampleAsync(window, () => ReadSearchWidth(window, panel, host, menuFrame, stableMenu), 30, token);
+            Tap(window, view.FindControl<ArcButton>("BeginSearchButton")!);
+            await SettleSearchAsync(window, panel, token, () => ReadSearchWidth(window, panel, host, menuFrame, stableMenu));
+            TestAssert.True(model.IsSearchExpanded && panel.RevealProgress >= 0.999 && Math.Abs(panel.DisplayedSearchWidth - panel.Bounds.Width) <= 1,
+                "Rapid opening and closing must reverse the current search motion and settle at the newest open intent.");
+            Tap(window, view.FindControl<ArcButton>("CancelSearchButton")!);
+            await SampleAsync(window, () => panel.DisplayedSearchWidth, 30, token);
+            window.Width = 900;
+            Pump(window);
+            var resizedMenu = BoundsIn(menuFrame, window);
+            Tap(window, view.FindControl<ArcButton>("BeginSearchButton")!);
+            await SettleSearchAsync(window, panel, token, () => ReadSearchWidth(window, panel, host, menuFrame, resizedMenu));
+            TestAssert.True(model.IsSearchExpanded && panel.RevealProgress >= 0.999 && Math.Abs(panel.DisplayedSearchWidth - panel.Bounds.Width) <= 1,
+                "Resizing during a reversing search must use the new lane width and retain a complete expanded input.");
+            Tap(window, view.FindControl<ArcButton>("CancelSearchButton")!);
             await model.HomeUpdate;
-            await SampleAsync(window, () => input.Opacity, 25, token);
-            model.CancelSearchCommand.Execute(null);
-            await model.HomeUpdate;
-            await SampleAsync(window, () => input.Opacity, 240, token);
-            TestAssert.True(!model.IsSearchExpanded && Math.Abs(input.Opacity - 1) < 0.001 && Math.Abs(tabs.Opacity - 1) < 0.001,
-                "Closing a moving search must restore its opacity and leave the current page fully visible.");
+            await SettleSearchAsync(window, panel, token);
+            window.Width = 1100;
+            window.Height = 760;
+            Pump(window);
+            TestAssert.True(!model.IsSearchExpanded && panel.RevealProgress <= 0.001 && Math.Abs(panel.DisplayedSearchWidth - 44) <= 1,
+                "The final closed search must remain a single icon after resize and cancellation.");
+            foreach (var policy in new[] { ArcMotionLevel.Reduced, ArcMotionLevel.Off })
+            {
+                ArcMotion.SetLevel(window, policy);
+                Pump(window);
+                Tap(window, view.FindControl<ArcButton>("BeginSearchButton")!);
+                Pump(window);
+                TestAssert.True(model.IsSearchExpanded && panel.RevealProgress == 1 && panel.RevealUpdate.IsCompleted
+                    && Math.Abs(panel.DisplayedSearchWidth - panel.Bounds.Width) <= 1 && !view.FindControl<Grid>("HomeSourceSelectors")!.IsVisible,
+                    "Reduced or disabled motion must open search immediately and remove covered selectors from navigation.");
+                Tap(window, view.FindControl<ArcButton>("CancelSearchButton")!);
+                Pump(window);
+                TestAssert.True(!model.IsSearchExpanded && panel.RevealProgress == 0 && panel.RevealUpdate.IsCompleted
+                    && Math.Abs(panel.DisplayedSearchWidth - 44) <= 1 && !input.IsVisible
+                    && view.FindControl<ArcButton>("BeginSearchButton")!.IsFocused,
+                    "Reduced or disabled motion must close immediately with the input hidden and the icon ready for keyboard use.");
+            }
+
+            ArcMotion.SetLevel(window, ArcMotionLevel.Full);
+            Pump(window);
+        }
+
+        /// <summary>Observes the current Arc spring to its actual completion instead of assuming a fixed settling duration.</summary>
+        /// <param name="window">The real rendering window.</param>
+        /// <param name="panel">The interruptible search presentation.</param>
+        /// <param name="token">Cancels a stalled transition.</param>
+        /// <param name="read">Optionally checks each remaining frame's actual geometry.</param>
+        /// <returns>A task representing the completed current reveal generation.</returns>
+        private static async Task SettleSearchAsync(Window window, SearchRevealPanel panel, CancellationToken token, Func<double>? read = null)
+        {
+            var timer = Stopwatch.StartNew();
+            do
+            {
+                Pump(window);
+                read?.Invoke();
+                TestAssert.True(timer.Elapsed < TimeSpan.FromSeconds(3), "The current search animation must settle within a finite interaction interval.");
+                if (!panel.RevealUpdate.IsCompleted)
+                {
+                    await Task.Delay(12, token);
+                }
+            }
+            while (!panel.RevealUpdate.IsCompleted);
+
+            Pump(window);
+            read?.Invoke();
+        }
+
+        /// <summary>Reads the actual displayed search width while checking every observed frame's stable menu, right anchor and aligned paint.</summary>
+        /// <param name="window">The shared visual coordinate owner.</param>
+        /// <param name="panel">The fixed search lane.</param>
+        /// <param name="host">The animated search frame.</param>
+        /// <param name="menuFrame">The neighboring menu's painted border.</param>
+        /// <param name="menu">The menu rectangle captured before the user gesture.</param>
+        /// <returns>The real arranged animated-frame width.</returns>
+        private static double ReadSearchWidth(Window window, SearchRevealPanel panel, Border host, Border menuFrame, Rect menu)
+        {
+            AssertSearchIconProgress(panel);
+            var currentMenu = BoundsIn(menuFrame, window);
+            TestAssert.True(Math.Abs(currentMenu.X - menu.X) <= 1 && Math.Abs(currentMenu.Y - menu.Y) <= 1
+                && Math.Abs(currentMenu.Width - menu.Width) <= 1 && Math.Abs(currentMenu.Height - menu.Height) <= 1,
+                "Extending and retracting search must not move or resize the neighboring mode menu in any frame.");
+            if (host.IsVisible)
+            {
+                var search = BoundsIn(host, window);
+                var lane = BoundsIn(panel, window);
+                TestAssert.True(Math.Abs(search.Right - lane.Right) <= 1 && Math.Abs(search.Top - menu.Top) <= 1
+                    && Math.Abs(search.Bottom - menu.Bottom) <= 1,
+                    "The moving search frame must remain anchored at the right and share the menu's painted top and bottom edges.");
+                return host.Bounds.Width;
+            }
+
+            return panel.DisplayedSearchWidth;
+        }
+
+        /// <summary>Checks search glyphs follow the same frame progress without a second opacity transition lagging behind.</summary>
+        /// <param name="panel">The shared desktop or phone search presentation.</param>
+        private static void AssertSearchIconProgress(SearchRevealPanel panel)
+        {
+            TestAssert.True(Math.Abs(panel.Children[2].Opacity - (1 - panel.RevealProgress)) < 0.0001
+                && Math.Abs(panel.Children[3].Opacity - panel.RevealProgress) < 0.0001,
+                "Search and cancel glyph opacity must follow the current reveal progress directly without another animation delaying their state.");
+        }
+
+        /// <summary>Requires multiple distinct real widths between the search's two endpoints in the intended direction.</summary>
+        /// <param name="samples">The real widths observed while the clock advanced.</param>
+        /// <param name="collapsed">The icon endpoint width.</param>
+        /// <param name="expanded">The available-lane endpoint width.</param>
+        /// <param name="opening">Whether the observed motion grows toward the left.</param>
+        private static void AssertWidthTravel(IReadOnlyList<double> samples, double collapsed, double expanded, bool opening)
+        {
+            var middle = samples.Where(width => width > collapsed + 2 && width < expanded - 2).ToArray();
+            TestAssert.True(middle.Length >= 2 && middle.Max() - middle.Min() > 2,
+                $"Search must render multiple distinct intermediate widths rather than appear or disappear at its endpoint. Opening={opening}, range={collapsed:0.##}..{expanded:0.##}, samples="
+                + string.Join(",", samples.Select(value => value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))));
+            TestAssert.True(opening ? samples[^1] > samples[0] + 2 : samples[^1] < samples[0] - 2,
+                "The actual search frame must move continuously in the requested expansion or retraction direction.");
+        }
+
+        /// <summary>Expresses a rendered control rectangle in the common window coordinates.</summary>
+        /// <param name="control">The painted control or lane being measured.</param>
+        /// <param name="window">The common coordinate owner.</param>
+        /// <returns>The current rendered bounds in window coordinates.</returns>
+        private static Rect BoundsIn(Control control, Window window)
+        {
+            return new Rect(control.TranslatePoint(default, window)!.Value, control.Bounds.Size);
         }
 
         /// <summary>Checks live mobile content fades and cancels old page motion when a resize replaces the presentation tree.</summary>
@@ -238,22 +458,40 @@ namespace MajMusic.Tests
                 "Actual mobile page replacement must render intermediate opacity and then settle fully visible.");
             view.NavigateToSection(0);
             await SampleAsync(window, () => host.Opacity, 270, token);
-            Tap(window, mobile.FindControl<Control>("MobileSearchButton")!);
-            if (view.DataContext is MainViewModel model)
+            var mobileSearch = mobile.GetVisualDescendants().OfType<SearchRevealPanel>().Single(control => control.Name == "MobileSearchReveal");
+            var searchHost = (Border)mobileSearch.Children[1];
+            var browser = mobile.GetVisualDescendants().OfType<BrowseTracksView>().Single(control => control.Name == "MobileSongBrowser");
+            var initialBrowser = BoundsIn(browser, window);
+            var modes = mobile.GetVisualDescendants().OfType<Control>().Single(control => control.Name == "MobileHomeModes");
+            var initialModes = BoundsIn(modes, window);
+            var collapsedWidth = mobileSearch.DisplayedSearchWidth;
+            double ReadMobileWidth()
             {
-                await model.HomeUpdate;
+                AssertSearchIconProgress(mobileSearch);
+                TestAssert.True(BoundsIn(browser, window) == initialBrowser && BoundsIn(modes, window) == initialModes,
+                    "Phone search motion must retain the browser viewport and mode menu rectangles in every frame.");
+                var frame = BoundsIn(searchHost, window);
+                var lane = BoundsIn(mobileSearch, window);
+                TestAssert.True(Math.Abs(frame.Right - lane.Right) <= 1 && Math.Abs(frame.Top - lane.Top) <= 1 && Math.Abs(frame.Bottom - lane.Bottom) <= 1,
+                    "The phone's growing search must remain in its fixed 44-DIP lane with a stable right anchor.");
+                return searchHost.Bounds.Width;
             }
 
+            Tap(window, mobile.GetVisualDescendants().OfType<Control>().Single(control => control.Name == "MobileSearchButton"));
             var search = mobile.GetVisualDescendants().OfType<TextBox>().Single(control => control.Name == "MobileSearchBox");
-            var searchFrames = await SampleAsync(window, () => search.Opacity, 110, token,
+            var searchFrames = await SampleAsync(window, ReadMobileWidth, 140, token,
                 () => SaveFrame(window, Path.Combine(output, "ui-arc-motion-mobile-search-middle.png")));
-            await SampleAsync(window, () => search.Opacity, 180, token);
-            TestAssert.True(search.IsVisible && searchFrames.Any(value => value > 0.36 && value < 0.99) && Math.Abs(search.Opacity - 1) < 0.001,
-                "Expanding the actual phone search must produce intermediate fade frames and settle fully visible.");
-            Tap(window, mobile.FindControl<Control>("MobileSearchButton")!);
-            await SampleAsync(window, () => search.Opacity, 210, token);
-            TestAssert.True(!search.IsVisible && Math.Abs(search.Opacity - 1) < 0.001,
-                "Closing the phone search must restore its opacity without retaining a translucent inactive input.");
+            await SettleSearchAsync(window, mobileSearch, token, ReadMobileWidth);
+            var expandedWidth = mobileSearch.DisplayedSearchWidth;
+            AssertWidthTravel(searchFrames, collapsedWidth, expandedWidth, true);
+            TestAssert.True(search.IsVisible && mobileSearch.RevealProgress >= 0.999 && Math.Abs(expandedWidth - mobileSearch.Bounds.Width) <= 1,
+                "The actual phone search must grow from its icon into the whole reserved toolbar lane.");
+            Tap(window, mobile.GetVisualDescendants().OfType<Control>().Single(control => control.Name == "MobileCancelSearchButton"));
+            var closingFrames = await SampleAsync(window, ReadMobileWidth, 140, token);
+            await SettleSearchAsync(window, mobileSearch, token, ReadMobileWidth);
+            AssertWidthTravel(closingFrames, collapsedWidth, expandedWidth, false);
+            TestAssert.True(!search.IsVisible && mobileSearch.RevealProgress <= 0.001 && Math.Abs(mobileSearch.DisplayedSearchWidth - 44) <= 1,
+                "Closing phone search must retract continuously to its icon without moving the browser.");
             view.NavigateToSection(2);
             await SampleAsync(window, () => host.Opacity, 25, token);
             window.Width = 1100;
@@ -318,7 +556,6 @@ namespace MajMusic.Tests
             var point = Center(control, window);
             window.MouseDown(point, MouseButton.Left);
             window.MouseUp(point, MouseButton.Left);
-            Pump(window);
         }
 
         /// <summary>Completes layout and advances the actual in-memory rendering clock.</summary>

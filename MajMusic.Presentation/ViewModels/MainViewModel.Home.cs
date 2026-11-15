@@ -105,14 +105,14 @@ namespace MajMusic.Presentation.ViewModels
             ShowRecommendationsModeCommand = CreateHomeModeCommand(HomeBrowseMode.Recommendations);
             ShowPlaylistsModeCommand = CreateHomeModeCommand(HomeBrowseMode.Playlists);
             ShowLibraryModeCommand = CreateHomeModeCommand(HomeBrowseMode.Library);
-            BeginSearchCommand = new AsyncCommand(() => _homeUpdate = RunTrackedAsync(async () =>
+            BeginSearchCommand = new AsyncCommand(() =>
             {
                 UseHomeMode(HomeBrowseMode.Recommendations);
                 _isSearchExpanded = true;
                 NotifyHomeState();
-                await ReloadLibraryAsync();
-                await EnsureHomeRecommendationsAsync();
-            }), ReportError, () => !Volatile.Read(ref _isDisposing));
+                QueueHomeUpdate(false);
+                return Task.CompletedTask;
+            }, ReportError, () => !Volatile.Read(ref _isDisposing));
             CancelSearchCommand = CreateHomeModeCommand(HomeBrowseMode.Recommendations);
         }
 
@@ -121,15 +121,12 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>The observed navigation action.</returns>
         private AsyncCommand CreateHomeModeCommand(HomeBrowseMode mode)
         {
-            return new AsyncCommand(() => _homeUpdate = RunTrackedAsync(async () =>
+            return new AsyncCommand(() =>
             {
                 UseHomeMode(mode);
-                await ReloadLibraryAsync();
-                if (mode == HomeBrowseMode.Recommendations)
-                {
-                    await EnsureHomeRecommendationsAsync();
-                }
-            }), ReportError, () => !Volatile.Read(ref _isDisposing));
+                QueueHomeUpdate(false);
+                return Task.CompletedTask;
+            }, ReportError, () => !Volatile.Read(ref _isDisposing));
         }
 
         /// <summary>Attaches the initial source account without initiating a network request.</summary>

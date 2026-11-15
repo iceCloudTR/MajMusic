@@ -13,6 +13,12 @@
              Background="{DynamicResource MusicCanvasBrush}">
     <UserControl.Styles>
         <StyleInclude Source="avares://MajMusic.Presentation/Styles/MusicStyles.axaml" />
+        <Style Selector="arc|SearchField.toolbarSearch /template/ arc|PresenceHost#PART_ClearPresence">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="arc|SearchField.toolbarSearch /template/ arc|FieldFrame#PART_Frame">
+            <Setter Property="Padding" Value="12,0,20,0" />
+        </Style>
     </UserControl.Styles>
     <UserControl.Resources>
         <converters:MusicDisplayConverter x:Key="MusicDisplay" />
@@ -69,7 +75,7 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="0.24*" MinWidth="180" MaxWidth="220" />
                     </Grid.ColumnDefinitions>
-                    <Grid Grid.ColumnSpan="2" ColumnDefinitions="210,*,38" ColumnSpacing="10">
+                    <Grid Grid.ColumnSpan="2" ColumnDefinitions="210,*" ColumnSpacing="10">
                         <arc:SegmentedControl x:Name="HomeModeSegments" SelectedValue="{Binding HomeMode, Mode=OneWay}" SelectionChanged="OnHomeModeSelectionChanged" PointerReleased="OnHomeModePointerReleased" KeyDown="OnHomeModeKeyDown" HorizontalAlignment="Stretch">
                             <arc:SegmentedControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -80,19 +86,21 @@
                             <arc:SegmentedOption Value="{x:Static vm:HomeBrowseMode.Playlists}" Label="歌单" />
                             <arc:SegmentedOption Value="{x:Static vm:HomeBrowseMode.Library}" Label="曲库" />
                         </arc:SegmentedControl>
-                        <Grid Grid.Column="1">
-                            <Grid IsVisible="{Binding !IsSearchExpanded}" theme:MusicMotion.RevealChanges="True">
-                                <arc:Select x:Name="HomeEndpointPicker" ItemsSource="{Binding EndpointProfiles}" TextSelector="{x:Static converters:MusicSelectLabels.Endpoint}" SelectedItem="{Binding SelectedEndpointProfile}" Placeholder="接入点" HorizontalAlignment="Stretch" IsVisible="{Binding IsRecommendationsMode}" IsEnabled="{Binding IsIdle}" />
-                                <arc:Select x:Name="HomePlaylistPicker" ItemsSource="{Binding Playlists}" TextSelector="{x:Static converters:MusicSelectLabels.Playlist}" SelectedItem="{Binding SelectedHomePlaylist}" Placeholder="选择歌单" HorizontalAlignment="Stretch" IsVisible="{Binding IsPlaylistsMode}" />
+                        <theme:SearchRevealPanel x:Name="DesktopSearchReveal" Grid.Column="1" IsExpanded="{Binding IsSearchExpanded}" Height="44" UseLayoutRounding="False">
+                            <Grid x:Name="HomeSourceSelectors" ClipToBounds="True">
+                                <arc:Select x:Name="HomeEndpointPicker" ItemsSource="{Binding EndpointProfiles}" TextSelector="{x:Static converters:MusicSelectLabels.Endpoint}" SelectedItem="{Binding SelectedEndpointProfile}" Placeholder="接入点" Size="Medium" Height="44" MinHeight="44" HorizontalAlignment="Stretch" IsVisible="{Binding IsRecommendationsMode}" IsEnabled="{Binding IsIdle}" />
+                                <arc:Select x:Name="HomePlaylistPicker" ItemsSource="{Binding Playlists}" TextSelector="{x:Static converters:MusicSelectLabels.Playlist}" SelectedItem="{Binding SelectedHomePlaylist}" Placeholder="选择歌单" Size="Medium" Height="44" MinHeight="44" HorizontalAlignment="Stretch" IsVisible="{Binding IsPlaylistsMode}" />
                             </Grid>
-                            <arc:SearchField x:Name="LibrarySearch" Text="{Binding SearchText}" Placeholder="搜索音乐" IsVisible="{Binding IsSearchExpanded}" theme:MusicMotion.RevealChanges="True" />
-                        </Grid>
-                        <Grid Grid.Column="2">
-                            <arc:Button x:Name="BeginSearchButton" Classes="icon" Command="{Binding BeginSearchCommand}" Click="OnBeginSearchClicked" IsVisible="{Binding !IsSearchExpanded}" ToolTip.Tip="搜索音乐" AutomationProperties.Name="搜索音乐">
+                            <Border x:Name="LibrarySearchRevealHost" Height="44" ClipToBounds="True">
+                                <arc:SearchField x:Name="LibrarySearch" Classes="toolbarSearch" Text="{Binding SearchText}" Placeholder="搜索音乐" Size="Medium" Height="44" MinHeight="44" />
+                            </Border>
+                            <arc:Button x:Name="BeginSearchButton" Classes="icon" Width="44" Height="44" CornerRadius="22" IsPressScaleEnabled="False" LabelSwapMode="None" Transitions="{x:Null}" Command="{Binding BeginSearchCommand}" Click="OnBeginSearchClicked" ToolTip.Tip="搜索音乐" AutomationProperties.Name="搜索音乐">
                                 <Path Data="M 8,2 A 6,6 0 1 0 8,14 A 6,6 0 1 0 8,2 M 12.5,12.5 L 18,18" Stroke="{DynamicResource MusicTextBrush}" StrokeThickness="1.8" Width="17" Height="17" Stretch="Uniform" />
                             </arc:Button>
-                            <arc:Button x:Name="CancelSearchButton" Classes="icon" Content="×" FontSize="21" Command="{Binding CancelSearchCommand}" IsVisible="{Binding IsSearchExpanded}" ToolTip.Tip="返回推荐" AutomationProperties.Name="返回推荐" />
-                        </Grid>
+                            <arc:Button x:Name="CancelSearchButton" Classes="icon" Width="44" Height="44" CornerRadius="22" Background="Transparent" IsPressScaleEnabled="False" LabelSwapMode="None" Transitions="{x:Null}" Click="OnCancelSearchClicked" ToolTip.Tip="返回推荐" AutomationProperties.Name="返回推荐">
+                                <Path Data="M 3,3 L 13,13 M 13,3 L 3,13" Stroke="{DynamicResource MusicTextBrush}" StrokeThickness="1.8" StrokeLineCap="Round" Width="16" Height="16" Stretch="None" />
+                            </arc:Button>
+                        </theme:SearchRevealPanel>
                     </Grid>
                     <Border x:Name="LibraryListPanel" Grid.Row="1" Classes="card" Padding="6">
                         <views:BrowseTracksView x:Name="SongBrowser" />

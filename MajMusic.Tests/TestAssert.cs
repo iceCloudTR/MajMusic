@@ -1,10 +1,51 @@
 #nullable enable
 
+using MajMusic.Presentation.Commands;
+
 namespace MajMusic.Tests
 {
     /// <summary>Provides assertions for the dependency-free regression runner.</summary>
     internal static class TestAssert
     {
+        /// <summary>Runs an available command and observes its return to availability without assuming synchronous query completion.</summary>
+        /// <param name="command">The finite command expected to remain available after completing its work.</param>
+        /// <returns>A task representing the command's completed observed execution.</returns>
+        /// <exception cref="InvalidOperationException">The command is not initially available.</exception>
+        /// <exception cref="TimeoutException">The command does not return to availability within three seconds.</exception>
+        public static async Task ExecuteAsync(AsyncCommand command)
+        {
+            True(command.CanExecute(null), "The requested command must be available before execution.");
+            var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var executionObserved = false;
+            void OnAvailabilityChanged(object? sender, EventArgs args)
+            {
+                if (!command.CanExecute(null))
+                {
+                    executionObserved = true;
+                }
+                else if (executionObserved)
+                {
+                    completed.TrySetResult();
+                }
+            }
+
+            command.CanExecuteChanged += OnAvailabilityChanged;
+            try
+            {
+                command.Execute(null);
+                if (command.CanExecute(null))
+                {
+                    completed.TrySetResult();
+                }
+
+                await completed.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            }
+            finally
+            {
+                command.CanExecuteChanged -= OnAvailabilityChanged;
+            }
+        }
+
         /// <summary>Checks a condition and reports its purpose on failure.</summary>
         /// <param name="condition">The condition expected to be true.</param>
         /// <param name="message">The failure description.</param>
