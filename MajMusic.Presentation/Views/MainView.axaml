@@ -5,6 +5,7 @@
              xmlns:converters="using:MajMusic.Presentation.Converters"
              xmlns:ac="using:Avalonia.Data.Converters"
              xmlns:views="using:MajMusic.Presentation.Views"
+             xmlns:theme="using:MajMusic.Presentation.Theme"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              x:Class="MajMusic.Presentation.Views.MainView"
              x:Name="ViewRoot"
@@ -61,7 +62,7 @@
                 <arc:Button x:Name="NavigateSettings" Classes="navigation" Variant="Ghost" Content="设置" Tag="4" Click="OnNavigateSectionClicked" />
             </StackPanel>
         </Grid>
-        <TabControl x:Name="MainTabs" Classes="desktopPages" Grid.Row="1" Padding="0" SelectionChanged="OnDesktopSectionChanged">
+        <TabControl x:Name="MainTabs" Classes="desktopPages" Grid.Row="1" Padding="0" SelectionChanged="OnDesktopSectionChanged" theme:MusicMotion.RevealChanges="True">
             <TabItem x:Name="LibraryTab" Header="主页">
                 <Grid x:Name="LibraryLayout" RowDefinitions="44,*,28" RowSpacing="10" ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
@@ -80,11 +81,11 @@
                             <arc:SegmentedOption Value="{x:Static vm:HomeBrowseMode.Library}" Label="曲库" />
                         </arc:SegmentedControl>
                         <Grid Grid.Column="1">
-                            <Grid IsVisible="{Binding !IsSearchExpanded}">
+                            <Grid IsVisible="{Binding !IsSearchExpanded}" theme:MusicMotion.RevealChanges="True">
                                 <arc:Select x:Name="HomeEndpointPicker" ItemsSource="{Binding EndpointProfiles}" TextSelector="{x:Static converters:MusicSelectLabels.Endpoint}" SelectedItem="{Binding SelectedEndpointProfile}" Placeholder="接入点" HorizontalAlignment="Stretch" IsVisible="{Binding IsRecommendationsMode}" IsEnabled="{Binding IsIdle}" />
                                 <arc:Select x:Name="HomePlaylistPicker" ItemsSource="{Binding Playlists}" TextSelector="{x:Static converters:MusicSelectLabels.Playlist}" SelectedItem="{Binding SelectedHomePlaylist}" Placeholder="选择歌单" HorizontalAlignment="Stretch" IsVisible="{Binding IsPlaylistsMode}" />
                             </Grid>
-                            <arc:SearchField x:Name="LibrarySearch" Text="{Binding SearchText}" Placeholder="搜索音乐" IsVisible="{Binding IsSearchExpanded}" />
+                            <arc:SearchField x:Name="LibrarySearch" Text="{Binding SearchText}" Placeholder="搜索音乐" IsVisible="{Binding IsSearchExpanded}" theme:MusicMotion.RevealChanges="True" />
                         </Grid>
                         <Grid Grid.Column="2">
                             <arc:Button x:Name="BeginSearchButton" Classes="icon" Command="{Binding BeginSearchCommand}" Click="OnBeginSearchClicked" IsVisible="{Binding !IsSearchExpanded}" ToolTip.Tip="搜索音乐" AutomationProperties.Name="搜索音乐">

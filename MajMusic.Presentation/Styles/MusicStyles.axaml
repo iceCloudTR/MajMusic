@@ -55,8 +55,8 @@
         <Setter Property="CornerRadius" Value="12" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
-        <Setter Property="IsPressScaleEnabled" Value="False" />
-        <Setter Property="LabelSwapMode" Value="None" />
+        <Setter Property="IsPressScaleEnabled" Value="True" />
+        <Setter Property="LabelSwapMode" Value="Label" />
     </Style>
     <Style Selector="arc|Button.primary">
         <Setter Property="Variant" Value="Primary" />

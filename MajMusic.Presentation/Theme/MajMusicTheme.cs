@@ -38,7 +38,7 @@ namespace MajMusic.Presentation.Theme
         /// <param name="motion">The application motion policy; rendering checks can disable motion.</param>
         /// <param name="appearance">The initial dark, light or system appearance.</param>
         /// <returns>The configured Avalonia builder.</returns>
-        public static AppBuilder UseMajMusicArc(this AppBuilder builder, ArcMotionLevel motion = ArcMotionLevel.Reduced,
+        public static AppBuilder UseMajMusicArc(this AppBuilder builder, ArcMotionLevel motion = ArcMotionLevel.Full,
             ArcAppearance appearance = ArcAppearance.Dark)
         {
             return builder.UseArc(arc => arc.UseArcControls().UseArcMobile()

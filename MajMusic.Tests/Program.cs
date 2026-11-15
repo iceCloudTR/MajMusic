@@ -55,6 +55,7 @@ namespace MajMusic.Tests
                 ("headless", HeadlessTests.RunAsync, true),
                 ("alignment", AlignmentTests.RunAsync, true),
                 ("arc-responsive", ArcResponsiveLayoutTests.RunAsync, true),
+                ("arc-motion", ArcMotionTests.RunAsync, true),
                 ("desktop-audio", DesktopAudioTests.RunAsync, false),
                 ("desktop-output", DesktopAudioTests.RunOutputAsync, false),
                 ("desktop-integration", LocalPlaybackIntegrationTests.RunAsync, false),

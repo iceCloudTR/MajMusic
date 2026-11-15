@@ -10,7 +10,7 @@
             <Grid x:Name="EndpointEditorPanel" RowDefinitions="26,36,36,36,36" RowSpacing="8" VerticalAlignment="Top">
                 <Grid ColumnDefinitions="*,26" ColumnSpacing="8">
                     <TextBlock Text="接入点" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    <arc:Button x:Name="RemoveEndpointButton" Grid.Column="1" Classes="quiet" Variant="Ghost" IsPressScaleEnabled="False" Width="26" Height="26" MinHeight="0" Padding="6"
+                    <arc:Button x:Name="RemoveEndpointButton" Grid.Column="1" Classes="quiet" Variant="Ghost" Width="26" Height="26" MinHeight="0" Padding="6"
                             Command="{Binding RemoveEndpointCommand}" ToolTip.Tip="移除接入点" AutomationProperties.Name="移除接入点">
                         <Path Data="M 2,2 L 10,10 M 10,2 L 2,10" Width="12" Height="12" Stretch="None" Stroke="{DynamicResource MusicMutedBrush}" StrokeThickness="1.5" />
                     </arc:Button>
@@ -35,8 +35,8 @@
                     <arc:Select x:Name="SavedAccountPicker" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount, Mode=TwoWay}"
                               TextSelector="{x:Static converters:MusicSelectLabels.Account}" Size="Small"
                               SelectionChanged="OnSavedAccountSelectionChanged" Placeholder="选择账号" Height="36" HorizontalAlignment="Stretch" IsEnabled="{Binding IsIdle}" />
-                    <arc:Button Grid.Column="1" Classes="iconSmall" Variant="Ghost" IsPressScaleEnabled="False" Content="+" FontSize="18" MinHeight="0" Command="{Binding NewAccountCommand}" ToolTip.Tip="新增账号" AutomationProperties.Name="新增账号" VerticalAlignment="Center" />
-                    <arc:Button Grid.Column="2" Classes="iconSmall" Variant="Ghost" IsPressScaleEnabled="False" Content="−" FontSize="18" MinHeight="0" Command="{Binding RemoveAccountCommand}" ToolTip.Tip="移除账号" AutomationProperties.Name="移除账号" VerticalAlignment="Center" />
+                    <arc:Button Grid.Column="1" Classes="iconSmall" Variant="Ghost" Content="+" FontSize="18" MinHeight="0" Command="{Binding NewAccountCommand}" ToolTip.Tip="新增账号" AutomationProperties.Name="新增账号" VerticalAlignment="Center" />
+                    <arc:Button Grid.Column="2" Classes="iconSmall" Variant="Ghost" Content="−" FontSize="18" MinHeight="0" Command="{Binding RemoveAccountCommand}" ToolTip.Tip="移除账号" AutomationProperties.Name="移除账号" VerticalAlignment="Center" />
                 </Grid>
                 <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="6">
                     <arc:Input x:Name="UsernameEditor" Text="{Binding Username, Mode=TwoWay}" Placeholder="账号" Size="Small" Height="36" IsEnabled="{Binding CanEditAccount}" />
