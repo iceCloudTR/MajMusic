@@ -142,6 +142,7 @@ namespace MajMusic.Presentation.ViewModels
 
             SelectedEndpointProfile = EndpointProfiles.FirstOrDefault(item => item.Configuration.Id == selectedId)
                 ?? EndpointProfiles.FirstOrDefault();
+            RefreshEndpointCards();
             RefreshCommands();
         }
 

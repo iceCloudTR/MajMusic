@@ -27,7 +27,7 @@ namespace MajMusic.Tests
         {
             await using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApplication));
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            await session.Dispatch(async () =>
+            await session.Dispatch<bool>(async () =>
             {
                 var root = Path.Combine(Path.GetTempPath(), "MajMusic-alignment-" + Guid.NewGuid().ToString("N"));
                 var output = Path.Combine(Environment.CurrentDirectory, ".work");
@@ -77,30 +77,34 @@ namespace MajMusic.Tests
                         AssertTransport(view);
                     }
 
-                    window.Width = 1100;
-                    window.Height = 760;
                     foreach (var scale in new[] { 1d, 1.25, 1.5, 1.75, 2 })
                     {
                         window.SetRenderScaling(scale);
-                        window.UpdateLayout();
-                        Dispatcher.UIThread.RunJobs();
-                        TestAssert.Equal(scale, window.RenderScaling, "The window must use actual platform layout scaling.");
-                        await playback.PauseAsync(timeout.Token);
-                        await WaitForPlaybackAsync(viewModel, false, timeout.Token);
-                        window.UpdateLayout();
-                        AssertSegments(view);
-                        AssertTransport(view);
-                        if (scale == 1.25)
+                        foreach (var size in new[] { new Size(720, 540), new Size(1100, 760) })
                         {
-                            using var scaled = new RenderTargetBitmap(new PixelSize(1375, 950), new Vector(120, 120));
-                            scaled.Render(window);
-                            scaled.Save(Path.Combine(output, "ui-alignment-125.png"), PngBitmapEncoderOptions.Default);
-                        }
+                            window.Width = size.Width;
+                            window.Height = size.Height;
+                            window.UpdateLayout();
+                            Dispatcher.UIThread.RunJobs();
+                            TestAssert.Equal(scale, window.RenderScaling, "The window must use actual platform layout scaling.");
+                            await playback.PauseAsync(timeout.Token);
+                            await WaitForPlaybackAsync(viewModel, false, timeout.Token);
+                            window.UpdateLayout();
+                            AssertSegments(view);
+                            AssertTransport(view);
+                            AssertVolumeAndPlaylistGeometry(view, window);
+                            if (scale == 1.25 && size.Width == 1100)
+                            {
+                                using var scaled = new RenderTargetBitmap(new PixelSize(1375, 950), new Vector(120, 120));
+                                scaled.Render(window);
+                                scaled.Save(Path.Combine(output, "ui-alignment-125.png"), PngBitmapEncoderOptions.Default);
+                            }
 
-                        await playback.ResumeAsync(timeout.Token);
-                        await WaitForPlaybackAsync(viewModel, true, timeout.Token);
-                        window.UpdateLayout();
-                        AssertTransport(view);
+                            await playback.ResumeAsync(timeout.Token);
+                            await WaitForPlaybackAsync(viewModel, true, timeout.Token);
+                            window.UpdateLayout();
+                            AssertTransport(view);
+                        }
                     }
                 }
                 finally
@@ -119,6 +123,8 @@ namespace MajMusic.Tests
                         Directory.Delete(resolved, true);
                     }
                 }
+
+                return true;
             }, timeout.Token);
         }
 
@@ -249,6 +255,77 @@ namespace MajMusic.Tests
         private static void Close(double expected, double actual, string message)
         {
             TestAssert.True(Math.Abs(expected - actual) <= 1, $"{message} Expected {expected:0.##}; actual {actual:0.##}.");
+        }
+
+        /// <summary>Checks painted volume baselines and the complete playlist creation row at the current platform scale.</summary>
+        /// <param name="view">The rendered shared view.</param>
+        /// <param name="window">The scaled headless window.</param>
+        private static void AssertVolumeAndPlaylistGeometry(MainView view, Window window)
+        {
+            var playbackVolume = view.FindControl<Grid>("PlaybackVolume")!;
+            var transport = view.FindControl<Grid>("TransportGroup")!;
+            var playbackCenter = transport.TranslatePoint(new Point(0, transport.Bounds.Height / 2), view)!.Value.Y;
+            AssertVolumeBaseline(playbackVolume, view, playbackCenter, window.RenderScaling, "Playback");
+            var tabs = view.FindControl<TabControl>("MainTabs")!;
+            var previousTab = tabs.SelectedItem;
+            try
+            {
+                tabs.SelectedItem = view.FindControl<TabItem>("SettingsTab");
+                window.UpdateLayout();
+                Dispatcher.UIThread.RunJobs();
+                var audio = view.FindControl<Border>("AudioSettingsPanel")!;
+                var checkbox = audio.GetVisualDescendants().OfType<CheckBox>().Single();
+                var indicator = checkbox.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "NormalRectangle");
+                var settingCenter = indicator.TranslatePoint(new Point(0, indicator.Bounds.Height / 2), view)!.Value.Y;
+                AssertVolumeBaseline(audio, view, settingCenter, window.RenderScaling, "Settings");
+
+                tabs.SelectedItem = tabs.Items.OfType<TabItem>().Single(item => Equals(item.Header, "歌单管理"));
+                window.UpdateLayout();
+                Dispatcher.UIThread.RunJobs();
+                var input = view.GetVisualDescendants().OfType<TextBox>().Single(item => item.PlaceholderText == "新歌单名称");
+                var row = (Grid)input.Parent!;
+                var border = input.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "PART_BorderElement");
+                var paintedTop = border.TranslatePoint(default, row)!.Value.Y;
+                var paintedBottom = paintedTop + border.Bounds.Height;
+                TestAssert.True(paintedTop >= -0.01 && paintedBottom <= row.Bounds.Height + 0.01,
+                    $"The complete playlist input border must fit its row at {window.RenderScaling * 100:0}%: {paintedTop:0.##}..{paintedBottom:0.##} within {row.Bounds.Height:0.##}.");
+                var rowBottom = row.TranslatePoint(new Point(0, row.Bounds.Height), tabs)!.Value.Y;
+                TestAssert.True(rowBottom <= tabs.Bounds.Height + 0.01,
+                    "The playlist creation row must remain inside the tab viewport.");
+                foreach (var button in row.Children.OfType<Button>())
+                {
+                    var center = button.TranslatePoint(new Point(0, button.Bounds.Height / 2), row)!.Value.Y;
+                    TestAssert.True(Math.Abs(center - row.Bounds.Height / 2) * window.RenderScaling <= 0.51,
+                        "Playlist creation and paging buttons must share the center of their footer row.");
+                }
+            }
+            finally
+            {
+                tabs.SelectedItem = previousTab;
+                window.UpdateLayout();
+                Dispatcher.UIThread.RunJobs();
+            }
+        }
+
+        /// <summary>Compares the actual thumb, track paint and checkbox indicator with the intended visual baseline.</summary>
+        /// <param name="container">The section containing one volume slider and mute checkbox.</param>
+        /// <param name="view">The common coordinate owner.</param>
+        /// <param name="center">The intended baseline in view coordinates.</param>
+        /// <param name="scale">The actual platform display scale.</param>
+        /// <param name="section">The section identified in assertion failures.</param>
+        private static void AssertVolumeBaseline(Control container, MainView view, double center, double scale, string section)
+        {
+            var slider = container.GetVisualDescendants().OfType<Slider>().Single();
+            var thumb = slider.GetVisualDescendants().OfType<Thumb>().Single();
+            var checkbox = container.GetVisualDescendants().OfType<CheckBox>().Single();
+            var indicator = checkbox.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "NormalRectangle");
+            var tracks = slider.GetVisualDescendants().OfType<Border>().Where(item => item.Name == "TrackBackground");
+            foreach (var paintedControl in tracks.Cast<Control>().Append(thumb).Append(indicator))
+            {
+                var paintedCenter = paintedControl.TranslatePoint(new Point(0, paintedControl.Bounds.Height / 2), view)!.Value.Y;
+                TestAssert.True(Math.Abs(paintedCenter - center) * scale <= 0.51,
+                    $"{section} {paintedControl.GetType().Name}/{paintedControl.Name} must share the painted baseline at {scale * 100:0}%: {paintedCenter:0.###} versus {center:0.###}.");
+            }
         }
 
         /// <summary>Runs layout and saves one reproducible headless rendering.</summary>

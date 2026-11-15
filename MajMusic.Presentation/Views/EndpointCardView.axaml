@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajMusic.Presentation.ViewModels"
+             x:Class="MajMusic.Presentation.Views.EndpointCardView"
+             x:DataType="vm:EndpointCardViewModel">
+    <Border x:Name="EndpointCardPanel" Classes="card" Height="232" Padding="14">
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="24">
+            <Grid x:Name="EndpointEditorPanel" RowDefinitions="26,34,34,32,32" RowSpacing="8" VerticalAlignment="Top">
+                <Grid ColumnDefinitions="*,26" ColumnSpacing="8">
+                    <TextBlock Text="接入点" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button x:Name="RemoveEndpointButton" Grid.Column="1" Classes="quiet" Width="26" Height="26" MinHeight="0" Padding="6"
+                            Command="{Binding RemoveEndpointCommand}" ToolTip.Tip="移除接入点" AutomationProperties.Name="移除接入点">
+                        <Path Data="M 2,2 L 10,10 M 10,2 L 2,10" Width="12" Height="12" Stretch="None" Stroke="{DynamicResource MusicMutedBrush}" StrokeThickness="1.5" />
+                    </Button>
+                </Grid>
+                <TextBox x:Name="EndpointNameEditor" Grid.Row="1" Text="{Binding EndpointName, Mode=TwoWay}" PlaceholderText="名称" Height="34" IsEnabled="{Binding IsIdle}" />
+                <TextBox x:Name="EndpointUrlEditor" Grid.Row="2" Text="{Binding EndpointUrl, Mode=TwoWay}" PlaceholderText="API 地址" Height="34" IsEnabled="{Binding IsIdle}" />
+                <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="6">
+                    <Button Content="保存" Height="32" Command="{Binding SaveEndpointCommand}" />
+                    <Button Content="同步" Height="32" Command="{Binding SynchronizeCommand}" />
+                </StackPanel>
+            </Grid>
+            <Grid x:Name="AccountEditorPanel" Grid.Column="1" RowDefinitions="26,34,34,32,32" RowSpacing="8" VerticalAlignment="Top">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                    <TextBlock Text="账号" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding Status}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" HorizontalAlignment="Right" ToolTip.Tip="{Binding Status}" />
+                </Grid>
+                <Grid Grid.Row="1" ColumnDefinitions="*,28,28" ColumnSpacing="4">
+                    <ComboBox x:Name="SavedAccountPicker" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount, Mode=TwoWay}"
+                              SelectionChanged="OnSavedAccountSelectionChanged" PlaceholderText="选择账号" Height="34" HorizontalAlignment="Stretch" IsEnabled="{Binding IsIdle}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SavedAccountOption">
+                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Grid.Column="1" Classes="iconSmall" Content="+" FontSize="18" Command="{Binding NewAccountCommand}" ToolTip.Tip="新增账号" AutomationProperties.Name="新增账号" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="iconSmall" Content="−" FontSize="18" Command="{Binding RemoveAccountCommand}" ToolTip.Tip="移除账号" AutomationProperties.Name="移除账号" VerticalAlignment="Center" />
+                </Grid>
+                <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="6">
+                    <TextBox x:Name="UsernameEditor" Text="{Binding Username, Mode=TwoWay}" PlaceholderText="账号" Height="34" IsEnabled="{Binding CanEditAccount}" />
+                    <TextBox x:Name="PasswordEditor" Grid.Column="1" Text="{Binding Password, Mode=TwoWay}" PlaceholderText="密码" PasswordChar="●" Height="34" IsEnabled="{Binding CanEditAccount}" />
+                </Grid>
+                <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="6">
+                    <CheckBox x:Name="RememberPasswordToggle" Content="记住密码" FontSize="12" IsChecked="{Binding RememberPassword, Mode=TwoWay}" IsEnabled="{Binding CanEditAccount}" MinHeight="32" />
+                    <CheckBox x:Name="AutoLoginToggle" Grid.Column="1" Content="自动登录" FontSize="12" IsChecked="{Binding AutoLogin, Mode=TwoWay}" IsEnabled="{Binding CanEditAccount}" MinHeight="32" />
+                </Grid>
+                <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="6">
+                    <Button Content="登录" Classes="primary" Height="32" Command="{Binding LoginCommand}" />
+                    <Button Content="保存账号" Height="32" Command="{Binding SaveAccountCommand}" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

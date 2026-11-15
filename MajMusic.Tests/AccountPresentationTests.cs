@@ -49,7 +49,7 @@ namespace MajMusic.Tests
             }
         }
 
-        /// <summary>Restores remembered account flags and Guest while waiting for explicit online activation.</summary>
+        /// <summary>Restores online mode and independent account or Guest choices after restart.</summary>
         /// <param name="directory">The isolated settings and database location.</param>
         /// <returns>A task representing restart and selected-account checks.</returns>
         private static async Task ValidateRestartAndAutomaticChoiceAsync(string directory)
@@ -84,9 +84,9 @@ namespace MajMusic.Tests
             var readsBeforeRestart = harness.Vault.ReadCount;
             await harness.ReopenAsync();
             view = harness.View!;
-            TestAssert.True(!view.OnlineEnabled && !harness.Workspace!.IsOnline, "A saved online flag cannot bypass offline startup.");
-            TestAssert.Equal(0, harness.Transport.RequestCount, "Restoring account choices cannot send an automatic login before online activation.");
-            TestAssert.Equal(readsBeforeRestart, harness.Vault.ReadCount, "Restoring account labels must not retrieve a secret for the editor.");
+            await view.AutomaticLogin.WaitAsync(TimeSpan.FromSeconds(4));
+            TestAssert.True(view.OnlineEnabled && harness.Workspace!.IsOnline, "Restart must restore the saved online choice.");
+            TestAssert.Equal(readsBeforeRestart + 1, harness.Vault.ReadCount, "Restored online mode must retrieve only the selected automatic account password.");
             SelectEndpoint(view, "a");
             TestAssert.Equal("Alice", view.LoginUsername, "The selected remembered account survives a restart.");
             TestAssert.True(view.RememberPassword && view.AutoLogin && view.LoginPassword.Length == 0,

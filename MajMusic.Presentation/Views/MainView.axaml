@@ -99,9 +99,10 @@
                                 <TextBlock Text="{Binding SelectedTrack.Title}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                 <TextBlock Text="{Binding SelectedTrack.Artist}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                            <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="6">
+                            <Grid Grid.Row="2" ColumnDefinitions="*,*,Auto" ColumnSpacing="6">
                                 <Button Content="{Binding FavoriteButtonText}" Command="{Binding ToggleFavoriteCommand}" FontSize="12" Padding="5,4" HorizontalAlignment="Stretch" />
                                 <Button Grid.Column="1" Content="下载" Command="{Binding DownloadCommand}" FontSize="12" Padding="5,4" HorizontalAlignment="Stretch" />
+                                <Button Grid.Column="2" Classes="icon" Content="−" FontSize="18" Command="{Binding RemoveFromPlaylistCommand}" IsVisible="{Binding IsLocalPlaylistView}" ToolTip.Tip="从歌单移除" AutomationProperties.Name="从歌单移除" />
                             </Grid>
                             <Grid Grid.Row="3" ColumnDefinitions="*,32" ColumnSpacing="6">
                                 <ComboBox ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}" PlaceholderText="歌单" HorizontalAlignment="Stretch" MinHeight="32" FontSize="12" Padding="6,4" />
@@ -116,18 +117,19 @@
                 </Grid>
             </TabItem>
             <TabItem Header="歌单管理">
-                <Grid Margin="0,8,0,0" RowDefinitions="34,*,34" RowSpacing="8">
-                    <Grid ColumnDefinitions="Auto,Auto,Auto,*,32" ColumnSpacing="6">
+                <Grid Margin="0,8,0,0" RowDefinitions="34,*,48" RowSpacing="8">
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,32" ColumnSpacing="6">
                         <Button Content="打开" Classes="primary" Command="{Binding OpenPlaylistCommand}" Click="OnOpenPlaylistClicked" />
-                        <Button Grid.Column="1" Content="导入" Click="OnCollectionImportClicked" IsEnabled="{Binding IsIdle}" IsVisible="{Binding CanExchangeCollections}" />
-                        <Button Grid.Column="2" Content="导出" Click="OnCollectionExportClicked" IsEnabled="{Binding IsIdle}" IsVisible="{Binding CanExchangeCollections}" />
-                        <ComboBox Grid.Column="3" ItemsSource="{Binding EndpointProfiles}" SelectedItem="{Binding SelectedEndpointProfile}" PlaceholderText="接入点" HorizontalAlignment="Stretch" IsEnabled="{Binding IsIdle}" />
-                        <Button Grid.Column="4" Classes="icon" Content="↻" FontSize="18" Command="{Binding RefreshCloudPlaylistsCommand}" ToolTip.Tip="刷新云端歌单" />
+                        <Button Grid.Column="1" Content="删除" Command="{Binding DeletePlaylistCommand}" />
+                        <Button Grid.Column="2" Content="导入" Click="OnCollectionImportClicked" IsEnabled="{Binding IsIdle}" IsVisible="{Binding CanExchangeCollections}" />
+                        <Button Grid.Column="3" Content="导出" Click="OnCollectionExportClicked" IsEnabled="{Binding IsIdle}" IsVisible="{Binding CanExchangeCollections}" />
+                        <ComboBox Grid.Column="4" ItemsSource="{Binding EndpointProfiles}" SelectedItem="{Binding SelectedEndpointProfile}" PlaceholderText="接入点" HorizontalAlignment="Stretch" IsEnabled="{Binding IsIdle}" />
+                        <Button Grid.Column="5" Classes="icon" Content="↻" FontSize="18" Command="{Binding RefreshCloudPlaylistsCommand}" ToolTip.Tip="刷新云端歌单" />
                     </Grid>
                     <Border Grid.Row="1" Classes="card" Padding="6">
                         <ListBox x:Name="PlaylistList" ItemsSource="{Binding VisiblePlaylists}" SelectedItem="{Binding SelectedPlaylist}" SizeChanged="OnPlaylistViewportSizeChanged" ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
                     </Border>
-                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,32,32" ColumnSpacing="6">
+                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,32,32" ColumnSpacing="6" VerticalAlignment="Center">
                         <TextBox Text="{Binding NewPlaylistName}" PlaceholderText="新歌单名称" />
                         <Button Grid.Column="1" Content="创建" Command="{Binding CreatePlaylistCommand}" />
                         <TextBlock Grid.Column="2" Text="{Binding PlaylistPageText}" Classes="muted" FontSize="11" VerticalAlignment="Center" Margin="8,0" />
@@ -166,52 +168,29 @@
                 </Grid>
             </TabItem>
             <TabItem x:Name="AccountsTab" Header="账号">
-                <Grid Margin="0,8,0,0" RowDefinitions="34,*" RowSpacing="8">
-                    <Grid ColumnDefinitions="*,32,32,Auto" ColumnSpacing="6">
-                        <ComboBox x:Name="EndpointPicker" ItemsSource="{Binding EndpointProfiles}" SelectedItem="{Binding SelectedEndpointProfile}" PlaceholderText="接入点" HorizontalAlignment="Stretch" IsEnabled="{Binding IsIdle}" />
-                        <Button Grid.Column="1" Classes="icon" Content="+" FontSize="19" Command="{Binding NewEndpointCommand}" ToolTip.Tip="新增接入点" />
-                        <Button Grid.Column="2" Classes="icon" Content="−" FontSize="19" Command="{Binding RemoveEndpointCommand}" ToolTip.Tip="移除接入点" />
-                        <CheckBox x:Name="OnlineModeToggle" Grid.Column="3" Content="在线" IsChecked="{Binding OnlineEnabled}" Margin="10,0,0,0" />
+                <Grid Margin="0,8,0,0" RowDefinitions="40,*" RowSpacing="8">
+                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6">
+                        <Button x:Name="AddEndpointButton" Content="添加接入点" Command="{Binding AddEndpointCardCommand}" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="同步全部" Classes="quiet" Command="{Binding SynchronizeAllCommand}" VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <TextBlock Text="在线模式" VerticalAlignment="Center" />
+                            <ToggleSwitch x:Name="OnlineModeToggle" OnContent="在线" OffContent="离线" IsChecked="{Binding OnlineEnabled, Mode=TwoWay}" VerticalAlignment="Center" AutomationProperties.Name="在线模式" />
+                        </StackPanel>
                     </Grid>
-                    <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12" Height="198" VerticalAlignment="Top">
-                        <Border x:Name="EndpointEditorPanel" Classes="card" Padding="10">
-                            <StackPanel Spacing="6">
-                                <TextBlock Text="接入点" FontWeight="SemiBold" />
-                                <TextBox Text="{Binding EndpointName}" PlaceholderText="名称" IsEnabled="{Binding IsIdle}" />
-                                <TextBox Text="{Binding EndpointUrl}" PlaceholderText="API 地址" IsEnabled="{Binding IsIdle}" />
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Content="保存" Command="{Binding SaveSettingsCommand}" />
-                                    <Button Content="同步" Command="{Binding SynchronizeCommand}" />
-                                    <Button Content="同步全部" Classes="quiet" Command="{Binding SynchronizeAllCommand}" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-                        <Border x:Name="AccountEditorPanel" Grid.Column="1" Classes="card" Padding="10">
-                            <StackPanel Spacing="6">
-                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                                    <TextBlock Text="登录账号" FontWeight="SemiBold" />
-                                    <TextBlock Grid.Column="1" Text="{Binding SelectedAccountLabel}" Classes="muted" FontSize="11" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" />
-                                </Grid>
-                                <Grid ColumnDefinitions="*,28,28" ColumnSpacing="4">
-                                    <ComboBox x:Name="SavedAccountPicker" ItemsSource="{Binding SavedAccounts}" SelectedItem="{Binding SelectedSavedAccount}" SelectionChanged="OnSavedAccountSelectionChanged" PlaceholderText="选择账号" HorizontalAlignment="Stretch" IsEnabled="{Binding IsIdle}" />
-                                    <Button Grid.Column="1" Classes="iconSmall" Content="+" FontSize="18" Command="{Binding NewAccountCommand}" ToolTip.Tip="新增账号" />
-                                    <Button Grid.Column="2" Classes="iconSmall" Content="−" FontSize="18" Command="{Binding RemoveAccountCommand}" ToolTip.Tip="移除账号" />
-                                </Grid>
-                                <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-                                    <TextBox Text="{Binding LoginUsername}" PlaceholderText="账号" IsEnabled="{Binding IsIdle}" />
-                                    <TextBox Grid.Column="1" Text="{Binding LoginPassword}" PlaceholderText="密码" PasswordChar="●" IsEnabled="{Binding IsIdle}" />
-                                </Grid>
-                                <Grid ColumnDefinitions="*,*" Height="32">
-                                    <CheckBox x:Name="RememberPasswordToggle" Content="记住密码" FontSize="12" IsChecked="{Binding RememberPassword}" IsEnabled="{Binding IsIdle}" MinHeight="32" />
-                                    <CheckBox x:Name="AutoLoginToggle" Grid.Column="1" Content="自动登录" FontSize="12" IsChecked="{Binding AutoLogin}" IsEnabled="{Binding IsIdle}" MinHeight="32" />
-                                </Grid>
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Content="登录" Classes="primary" Command="{Binding LoginCommand}" />
-                                    <Button Content="保存账号" Command="{Binding SaveAccountCommand}" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-                    </Grid>
+                    <ScrollViewer x:Name="EndpointCardsScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="EndpointCardsList" ItemsSource="{Binding EndpointCards}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Spacing="12" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:EndpointCardViewModel">
+                                    <views:EndpointCardView />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
                 </Grid>
             </TabItem>
             <TabItem x:Name="SettingsTab" Header="设置">
@@ -224,7 +203,12 @@
                                 <Button Grid.Column="1" Classes="icon" Content="↻" FontSize="18" Command="{Binding RefreshOutputDevicesCommand}" ToolTip.Tip="刷新设备" />
                             </Grid>
                             <TextBlock Grid.Row="1" Text="音量" Classes="fieldLabel" VerticalAlignment="Center" />
-                            <Slider Grid.Row="1" Grid.Column="1" Value="{Binding Volume}" Minimum="0" Maximum="100" IsEnabled="{Binding CanConfigureAudio}" />
+                            <Slider Grid.Row="1" Grid.Column="1" Value="{Binding Volume}" Minimum="0" Maximum="100" Height="32" VerticalAlignment="Center" UseLayoutRounding="False" IsEnabled="{Binding CanConfigureAudio}">
+                                <Slider.Resources>
+                                    <GridLength x:Key="SliderPreContentMargin">6</GridLength>
+                                    <GridLength x:Key="SliderPostContentMargin">6</GridLength>
+                                </Slider.Resources>
+                            </Slider>
                             <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding VolumeText}" VerticalAlignment="Center" HorizontalAlignment="Right" />
                             <CheckBox Grid.Row="1" Grid.Column="3" Content="静音" IsChecked="{Binding IsMuted}" IsEnabled="{Binding CanConfigureAudio}" />
                             <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding AudioOutputNotice}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AudioOutputNotice}" />
@@ -252,9 +236,14 @@
                             <TextBlock Text="{Binding PlaybackTitle}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                             <TextBlock Text="{Binding PlaybackArtist}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis" />
                         </StackPanel>
-                        <Grid x:Name="PlaybackVolume" Grid.Column="2" ColumnDefinitions="*,Auto,100" ColumnSpacing="8" VerticalAlignment="Center">
+                        <Grid x:Name="PlaybackVolume" Grid.Column="2" ColumnDefinitions="*,Auto,100" ColumnSpacing="8" Height="40" VerticalAlignment="Center">
                             <CheckBox Grid.Column="1" Content="静音" IsChecked="{Binding IsMuted}" IsEnabled="{Binding CanConfigureAudio}" FontSize="11" />
-                            <Slider Grid.Column="2" Value="{Binding Volume}" Minimum="0" Maximum="100" IsEnabled="{Binding CanConfigureAudio}" ToolTip.Tip="{Binding VolumeText}" />
+                            <Slider Grid.Column="2" Value="{Binding Volume}" Minimum="0" Maximum="100" Height="32" VerticalAlignment="Center" UseLayoutRounding="False" IsEnabled="{Binding CanConfigureAudio}" ToolTip.Tip="{Binding VolumeText}">
+                                <Slider.Resources>
+                                    <GridLength x:Key="SliderPreContentMargin">6</GridLength>
+                                    <GridLength x:Key="SliderPostContentMargin">6</GridLength>
+                                </Slider.Resources>
+                            </Slider>
                         </Grid>
                     </Grid>
                     <Grid x:Name="TransportGroup" Width="200" Height="40" ColumnDefinitions="40,40,40,40,40" HorizontalAlignment="Center" VerticalAlignment="Center">

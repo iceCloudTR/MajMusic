@@ -65,6 +65,7 @@ namespace MajMusic.Tests
                 TestAssert.True(stored.Cover?.Sha256 is not null && stored.Cover.LocalPath == path, "Completed images retain their digest and local path.");
                 TestAssert.Equal(path, await workspace.ResolveCoverAsync(track), "A stale view object reuses the persisted image.");
                 AssertOnlyImages(transport, 1);
+                await workspace.UpdateOnlineEnabledAsync(false);
             }
 
             transport.Requests.Clear();
@@ -103,6 +104,7 @@ namespace MajMusic.Tests
             {
                 lazy = await SynchronizeAsync(workspace);
                 originalPath = await workspace.ResolveCoverAsync(lazy);
+                await workspace.UpdateOnlineEnabledAsync(false);
             }
 
             var library = new SqliteLibraryRepository(Path.Combine(root, "library.db"));

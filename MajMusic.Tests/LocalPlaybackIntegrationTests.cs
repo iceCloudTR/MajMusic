@@ -23,7 +23,7 @@ namespace MajMusic.Tests
         {
             await using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApplication));
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            await session.Dispatch(async () =>
+            await session.Dispatch<bool>(async () =>
             {
                 var root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "MajMusic-local-playback-" + Guid.NewGuid().ToString("N")));
                 Directory.CreateDirectory(root);

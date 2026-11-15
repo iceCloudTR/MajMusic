@@ -88,15 +88,12 @@ namespace MajMusic.Tests
 
             using var reopened = new MusicWorkspace(root, client, client, credentialStore: vault);
             var restored = await reopened.LoadSettingsAsync();
-            TestAssert.True(!reopened.IsOnline && !restored.OnlineEnabled, "A remembered online checkbox must not bypass offline startup.");
+            TestAssert.True(reopened.IsOnline && restored.OnlineEnabled, "The explicitly saved online choice must be restored after restart.");
             TestAssert.Equal(firstAccount, restored.Endpoints.Single(item => item.Id == first.Id).SelectedAccountId, "The first account selection survives restart.");
             TestAssert.Equal(secondAccount, restored.Endpoints.Single(item => item.Id == second.Id).SelectedAccountId, "The second account selection survives restart.");
             TestAssert.True(restored.Endpoints.Single(item => item.Id == guest.Id).SelectedAccountId is null, "Guest survives restart independently of saved passwords.");
-            TestAssert.Equal(0, (await reopened.AutoLoginAsync()).Count, "Automatic login must remain idle while offline.");
-            TestAssert.Equal(0, vault.ReadCount, "Offline startup must not even read saved passwords.");
-            TestAssert.Equal(0, handler.Usernames.Count, "Offline startup sends no authentication requests.");
-
-            reopened.SetOnlineEnabled(true);
+            TestAssert.Equal(0, vault.ReadCount, "Loading saved online preferences cannot read passwords before the host begins automatic login.");
+            TestAssert.Equal(0, handler.Usernames.Count, "Loading saved online preferences cannot itself send authentication requests.");
             var results = await reopened.AutoLoginAsync();
             TestAssert.Equal(2, results.Count, "Only selected accounts with automatic login may authenticate.");
             TestAssert.True(results.All(item => item.Succeeded), "Independent selected automatic accounts should authenticate.");

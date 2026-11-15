@@ -48,7 +48,7 @@ namespace MajMusic.Infrastructure.Storage
                 await using var versionCommand = connection.CreateCommand();
                 versionCommand.CommandText = "PRAGMA user_version;";
                 var version = Convert.ToInt32(await versionCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
-                if (version > 1)
+                if (version > 2)
                 {
                     throw new InvalidDataException("The music database was created by a newer version of MajMusic.");
                 }
@@ -70,7 +70,10 @@ namespace MajMusic.Infrastructure.Storage
                         name TEXT NOT NULL,
                         document TEXT NOT NULL
                     );
-                    PRAGMA user_version = 1;
+                    CREATE TABLE IF NOT EXISTS deleted_playlists (
+                        id TEXT PRIMARY KEY NOT NULL
+                    );
+                    PRAGMA user_version = 2;
                     """;
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -195,15 +198,19 @@ namespace MajMusic.Infrastructure.Storage
             ArgumentNullException.ThrowIfNull(playlist.TrackIds);
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
             await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transaction = connection.BeginTransaction();
             await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
             command.CommandText = """
                 INSERT INTO playlists (id, name, document) VALUES ($id, $name, $document)
                 ON CONFLICT(id) DO UPDATE SET name = excluded.name, document = excluded.document;
+                DELETE FROM deleted_playlists WHERE id = $id;
                 """;
             command.Parameters.AddWithValue("$id", playlist.Id);
             command.Parameters.AddWithValue("$name", playlist.Name);
             command.Parameters.AddWithValue("$document", JsonSerializer.Serialize(playlist));
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
@@ -212,10 +219,31 @@ namespace MajMusic.Infrastructure.Storage
             ArgumentException.ThrowIfNullOrWhiteSpace(id);
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
             await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transaction = connection.BeginTransaction();
             await using var command = connection.CreateCommand();
-            command.CommandText = "DELETE FROM playlists WHERE id = $id;";
+            command.Transaction = transaction;
+            command.CommandText = """
+                DELETE FROM playlists WHERE id = $id;
+                INSERT INTO deleted_playlists (id) VALUES ($id) ON CONFLICT(id) DO NOTHING;
+                """;
             command.Parameters.AddWithValue("$id", id);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>Checks whether automatic collection discovery should retain a local deletion.</summary>
+        /// <param name="id">The imported playlist identity.</param>
+        /// <param name="cancellationToken">Cancels the local lookup.</param>
+        /// <returns>Whether the list has a retained deletion marker.</returns>
+        public async Task<bool> IsPlaylistDeletedAsync(string id, CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(id);
+            await InitializeAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT EXISTS(SELECT 1 FROM deleted_playlists WHERE id = $id);";
+            command.Parameters.AddWithValue("$id", id);
+            return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)) != 0;
         }
 
         /// <summary>Opens a nonpooled connection so closed repositories do not retain file handles.</summary>

@@ -130,11 +130,13 @@ namespace MajMusic.Presentation.ViewModels
             InitializeSourceCommands();
             InitializeMetadataCommands();
             InitializeAccountCommands();
+            InitializeEndpointCardCommands();
             InitializeDirectoryCommands();
             InitializeSettingsCommands();
             InitializeHomeCommands();
             InitializePanelPagingCommands();
             InitializePlaybackModeCommands();
+            InitializePlaylistManagementCommands();
             _playback.StateChanged += OnPlaybackStateChanged;
         }
 
@@ -319,6 +321,7 @@ namespace MajMusic.Presentation.ViewModels
                 if (!Volatile.Read(ref _isDisposing) && SetField(ref _onlineEnabled, value))
                 {
                     _workspace.SetOnlineEnabled(value);
+                    OnOnlinePreferenceChanged();
                     if (value)
                     {
                         BeginAutomaticLogin();
@@ -380,9 +383,10 @@ namespace MajMusic.Presentation.ViewModels
             {
                 CancelAutomaticLogin();
                 _accountSettingsLoaded = false;
+                await PrepareOnlinePreferencesAsync();
                 _settings = LocalDirectorySettings.Normalize(await _workspace.LoadSettingsAsync(_lifetime.Token));
                 _lifetime.Token.ThrowIfCancellationRequested();
-                OnlineEnabled = _settings.OnlineEnabled;
+                RestoreOnlinePreference(_settings.OnlineEnabled);
                 var endpoint = _settings.Endpoints.FirstOrDefault(item => item.Id == _settings.ActiveEndpointId)
                     ?? _settings.Endpoints.FirstOrDefault();
                 ReloadEndpointProfiles(endpoint?.Id);
@@ -393,6 +397,7 @@ namespace MajMusic.Presentation.ViewModels
                 await ReloadLibraryAsync();
                 await InitializeAudioSettingsAsync();
                 Status = string.Empty;
+                CompleteOnlinePreferencesInitialization();
                 _accountSettingsLoaded = true;
                 if (OnlineEnabled)
                 {
@@ -767,6 +772,10 @@ namespace MajMusic.Presentation.ViewModels
         private async Task DisposeCoreAsync(Task[] operations)
         {
             _lifetime.Cancel();
+            foreach (var card in EndpointCards)
+            {
+                card.Dispose();
+            }
             CancelAutomaticLogin();
             CancelMetadataRefresh();
             CancelSeek();
@@ -1002,6 +1011,9 @@ namespace MajMusic.Presentation.ViewModels
             {
                 _activePlaylistId = null;
             }
+
+            RefreshPlaylistManagementCommands();
+            RefreshEndpointCardCommands();
         }
 
         /// <summary>Toggles a favorite by portable identity when available, otherwise by local entry.</summary>
@@ -1400,6 +1412,9 @@ namespace MajMusic.Presentation.ViewModels
             {
                 command?.NotifyCanExecuteChanged();
             }
+
+            RefreshPlaylistManagementCommands();
+            RefreshEndpointCardCommands();
         }
 
         /// <summary>Updates a property and notifies the view.</summary>

@@ -5,6 +5,7 @@
 **/.vs/
 .vscode/
 .work/
+.majmusic-migration-*/
 TestResults/
 /artifacts/
 /dist/

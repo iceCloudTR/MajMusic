@@ -86,7 +86,7 @@ namespace MajMusic.Infrastructure.Application
                     ObjectDisposedException.ThrowIf(_disposed, this);
                     var firstLoad = !_settingsLoaded && _permissionRevision == 0;
                     var previousSettings = _settings;
-                    _settings = loaded with { OnlineEnabled = firstLoad ? false : _settings.OnlineEnabled };
+                    _settings = loaded with { OnlineEnabled = firstLoad ? loaded.OnlineEnabled : _settings.OnlineEnabled };
                     ReconcileConnections(previousSettings);
                     _settingsLoaded = true;
                     if (firstLoad)
@@ -215,7 +215,7 @@ namespace MajMusic.Infrastructure.Application
         }
 
         /// <inheritdoc />
-        public Task SavePlaylistAsync(MusicPlaylist playlist, CancellationToken cancellationToken = default)
+        public async Task SavePlaylistAsync(MusicPlaylist playlist, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(playlist);
             if (playlist.IsCloud)
@@ -223,7 +223,15 @@ namespace MajMusic.Infrastructure.Application
                 throw new InvalidOperationException("云端列表不能保存为本地列表。请先创建本地播放列表。");
             }
 
-            return _library.SavePlaylistAsync(playlist, cancellationToken);
+            await _metadataGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _library.SavePlaylistAsync(playlist, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _metadataGate.Release();
+            }
         }
 
         /// <inheritdoc />
@@ -594,17 +602,11 @@ namespace MajMusic.Infrastructure.Application
             }
         }
 
-        /// <summary>Locates the platform user data directory without relying on the current working directory.</summary>
-        /// <returns>The MajMusic application data directory.</returns>
+        /// <summary>Prepares portable desktop storage or the platform's mobile application-data directory.</summary>
+        /// <returns>The directory owning application settings, library and managed media.</returns>
         private static string GetDefaultDataDirectory()
         {
-            var parent = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            if (string.IsNullOrWhiteSpace(parent))
-            {
-                parent = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            }
-
-            return Path.Combine(parent, "MajMusic");
+            return DesktopDataDirectory.PrepareDefaultDirectory();
         }
     }
 }

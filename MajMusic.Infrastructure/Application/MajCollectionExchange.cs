@@ -65,6 +65,12 @@ namespace MajMusic.Infrastructure.Application
 
             foreach (var playlist in result.Playlists)
             {
+                if (preserveExisting && _workspace is IPlaylistManagementWorkspace management
+                    && await management.IsPlaylistDeletedAsync(playlist.Id, cancellationToken).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
                 var retain = preserveExisting && existing.TryGetValue(playlist.Id, out var previous)
                     && !(previous.IsFavorite && previous.TrackIds.Count == 0 && previous.MajCollection is null);
                 if (!retain)

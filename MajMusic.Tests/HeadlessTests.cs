@@ -32,7 +32,7 @@ namespace MajMusic.Tests
         {
             await using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApplication));
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            await session.Dispatch(async () =>
+            await session.Dispatch<bool>(async () =>
             {
                 var root = Path.Combine(Path.GetTempPath(), "MajMusic-headless-" + Guid.NewGuid().ToString("N"));
                 var output = Path.Combine(Environment.CurrentDirectory, ".work");
@@ -78,6 +78,7 @@ namespace MajMusic.Tests
                     TestAssert.True(!Directory.Exists(Path.Combine(workspace.DataDirectory, "Library")),
                         "The shared folder workflow must not create audio copies.");
                     SaveFrame(window, Path.Combine(output, "ui-local-library.png"));
+                    await ValidatePlaylistEditingAsync(window, view, viewModel, workspace, timeout.Token);
 
                     var repository = new SqliteLibraryRepository(Path.Combine(workspace.DataDirectory, "library.db"));
                     var titles = new[] { "Bio-Engineering", "new world", "Walk Away (Disphing Remix)", "星の旅", "After the rain" };
@@ -145,7 +146,7 @@ namespace MajMusic.Tests
                     SaveFrame(window, Path.Combine(output, "ui-settings.png"));
                     tabs.SelectedItem = view.FindControl<TabItem>("AccountsTab");
                     Dispatcher.UIThread.RunJobs();
-                    var permission = view.FindControl<CheckBox>("OnlineModeToggle")!;
+                    var permission = view.FindControl<ToggleSwitch>("OnlineModeToggle")!;
                     TestAssert.True(permission.IsChecked != true, "Online permission must default to disabled.");
                     var preferences = await workspace.LoadSettingsAsync(timeout.Token);
                     await workspace.SaveSettingsAsync(preferences with
@@ -164,12 +165,15 @@ namespace MajMusic.Tests
                     Dispatcher.UIThread.RunJobs();
                     TestAssert.Equal(2, viewModel.EndpointProfiles.Count, "The source editor must show multiple independent configurations at the same address.");
                     TestAssert.True(!viewModel.LoginCommand.CanExecute(null), "Source rendering cannot enable a login without online permission or credentials.");
-                    var accountPicker = view.FindControl<ComboBox>("SavedAccountPicker")!;
-                    TestAssert.Equal("Render B", viewModel.SelectedSavedAccount?.DisplayName,
+                    var primaryCard = view.GetVisualDescendants().OfType<EndpointCardView>()
+                        .Single(card => ((EndpointCardViewModel)card.DataContext!).Id == "guest-a");
+                    var accountCard = (EndpointCardViewModel)primaryCard.DataContext!;
+                    var accountPicker = primaryCard.FindControl<ComboBox>("SavedAccountPicker")!;
+                    TestAssert.Equal("Render B", accountCard.SelectedAccount?.DisplayName,
                         "The actual selector must restore the configured account without logging in.");
                     accountPicker.SelectedIndex = 0;
                     Dispatcher.UIThread.RunJobs();
-                    while (viewModel.IsBusy)
+                    while (!accountCard.IsIdle)
                     {
                         await Task.Delay(10, timeout.Token);
                     }
@@ -178,21 +182,21 @@ namespace MajMusic.Tests
                         "Selecting Guest through the actual control must persist that choice.");
                     accountPicker.SelectedIndex = 1;
                     Dispatcher.UIThread.RunJobs();
-                    while (viewModel.IsBusy)
+                    while (!accountCard.IsIdle)
                     {
                         await Task.Delay(10, timeout.Token);
                     }
 
-                    TestAssert.Equal("Render A", viewModel.SelectedSavedAccount?.DisplayName,
+                    TestAssert.Equal("Render A", accountCard.SelectedAccount?.DisplayName,
                         "Selecting a saved account through the actual control must update the editor.");
-                    view.FindControl<CheckBox>("AutoLoginToggle")!.IsChecked = true;
+                    primaryCard.FindControl<CheckBox>("AutoLoginToggle")!.IsChecked = true;
                     Dispatcher.UIThread.RunJobs();
-                    TestAssert.True(viewModel.AutoLogin && viewModel.RememberPassword
-                        && view.FindControl<CheckBox>("RememberPasswordToggle")!.IsChecked == true,
+                    TestAssert.True(accountCard.AutoLogin && accountCard.RememberPassword
+                        && primaryCard.FindControl<CheckBox>("RememberPasswordToggle")!.IsChecked == true,
                         "Checking automatic login through the actual control must enable protected password retention.");
-                    view.FindControl<CheckBox>("AutoLoginToggle")!.IsChecked = false;
-                    view.FindControl<CheckBox>("RememberPasswordToggle")!.IsChecked = false;
-                    TestAssert.Equal(string.Empty, viewModel.LoginPassword, "A saved-account selector must never fill the password input from storage.");
+                    primaryCard.FindControl<CheckBox>("AutoLoginToggle")!.IsChecked = false;
+                    primaryCard.FindControl<CheckBox>("RememberPasswordToggle")!.IsChecked = false;
+                    TestAssert.Equal(string.Empty, accountCard.Password, "A saved-account selector must never fill the password input from storage.");
                     TestAssert.Equal(0, visualSource.RequestCount, "Local layout and account editing cannot contact a source while offline.");
                     SaveFrame(window, Path.Combine(output, "ui-sources.png"));
                     window.Width = 720;
@@ -225,6 +229,68 @@ namespace MajMusic.Tests
                     }
                 }
             }, timeout.Token);
+        }
+
+        /// <summary>Exercises visible playlist removal controls while retaining original local music files.</summary>
+        /// <param name="window">The rendered test window.</param>
+        /// <param name="view">The actual shared view.</param>
+        /// <param name="model">The bound local workspace presentation.</param>
+        /// <param name="workspace">The isolated persistent workspace.</param>
+        /// <param name="cancellationToken">Cancels an incomplete command.</param>
+        /// <returns>A task representing the pointer-driven playlist operations.</returns>
+        private static async Task ValidatePlaylistEditingAsync(Window window, MainView view, MainViewModel model,
+            MusicWorkspace workspace, CancellationToken cancellationToken)
+        {
+            var original = model.SelectedTrack!;
+            model.NewPlaylistName = "Render playlist";
+            model.CreatePlaylistCommand.Execute(null);
+            while (model.IsBusy)
+            {
+                await Task.Delay(10, cancellationToken);
+            }
+
+            model.SelectedPlaylist = model.Playlists.Single(item => item.Name == "Render playlist");
+            var playlistId = model.SelectedPlaylist.Id;
+            model.AddToPlaylistCommand.Execute(null);
+            while (model.IsBusy)
+            {
+                await Task.Delay(10, cancellationToken);
+            }
+
+            model.ShowPlaylistsModeCommand.Execute(null);
+            await model.HomeUpdate;
+            Dispatcher.UIThread.RunJobs();
+            var remove = view.GetVisualDescendants().OfType<Button>().Single(button => ReferenceEquals(button.Command, model.RemoveFromPlaylistCommand));
+            TestAssert.True(remove.IsEffectivelyVisible && remove.IsEnabled, "An inspected local playlist song must offer its visible removal button.");
+            var point = remove.TranslatePoint(new Point(remove.Bounds.Width / 2, remove.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            while (model.IsBusy)
+            {
+                await Task.Delay(10, cancellationToken);
+            }
+
+            TestAssert.Equal(0, (await workspace.GetPlaylistsAsync(cancellationToken)).Single(item => item.Id == playlistId).TrackIds.Count,
+                "The visible removal action must persist the membership change.");
+            var tabs = view.FindControl<TabControl>("MainTabs")!;
+            tabs.SelectedItem = tabs.Items.OfType<TabItem>().Single(tab => Equals(tab.Header, "歌单管理"));
+            Dispatcher.UIThread.RunJobs();
+            model.SelectedPlaylist = model.Playlists.Single(item => item.Id == playlistId);
+            var delete = view.GetVisualDescendants().OfType<Button>().Single(button => ReferenceEquals(button.Command, model.DeletePlaylistCommand));
+            TestAssert.True(delete.IsEffectivelyVisible && delete.IsEnabled, "The management page must offer deletion of an ordinary local playlist.");
+            point = delete.TranslatePoint(new Point(delete.Bounds.Width / 2, delete.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            while (model.IsBusy)
+            {
+                await Task.Delay(10, cancellationToken);
+            }
+
+            TestAssert.True((await workspace.GetPlaylistsAsync(cancellationToken)).All(item => item.Id != playlistId)
+                && File.Exists(original.Audio.LocalPath), "Deleting the list must keep its source music file intact.");
+            tabs.SelectedItem = view.FindControl<TabItem>("LibraryTab");
+            model.ShowLibraryModeCommand.Execute(null);
+            await model.HomeUpdate;
         }
 
         /// <summary>Exercises actual pointer and keyboard slider gestures against an authoritative fake audio clock.</summary>
@@ -373,6 +439,17 @@ namespace MajMusic.Tests
             viewModel.OnlineEnabled = false;
             viewModel.ShowLibraryModeCommand.Execute(null);
             await viewModel.HomeUpdate;
+            Dispatcher.UIThread.RunJobs();
+            var volume = view.FindControl<Grid>("PlaybackVolume")!.GetVisualDescendants().OfType<Slider>().Single();
+            var volumeThumb = volume.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Thumb>().Single();
+            var volumeStart = volumeThumb.TranslatePoint(new Point(volumeThumb.Bounds.Width / 2, volumeThumb.Bounds.Height / 2), window)!.Value;
+            var volumeEnd = volume.TranslatePoint(new Point(volume.Bounds.Width * 0.4, volume.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(volumeStart, MouseButton.Left);
+            window.MouseMove(volumeEnd, RawInputModifiers.LeftMouseButton);
+            window.MouseUp(volumeEnd, MouseButton.Left);
+            await viewModel.AudioSettingsUpdate;
+            TestAssert.True(viewModel.Volume is > 0 and < 100 && backend.Preferences.Volume == (int)viewModel.Volume,
+                "Dragging the aligned volume thumb must still update the actual output-control preference.");
             viewModel.SelectedTrack = viewModel.Tracks[0];
             await viewModel.PlaySelectedAsync();
             Dispatcher.UIThread.RunJobs();
@@ -486,7 +563,7 @@ namespace MajMusic.Tests
             var contentBottom = player.TranslatePoint(default, view)!.Value.Y;
             foreach (var control in view.GetVisualDescendants().OfType<Control>()
                 .Where(item => item.IsEffectivelyVisible && item is Button or ComboBox or CheckBox or TextBox)
-                .Where(item => !item.GetVisualAncestors().OfType<SongCard>().Any()))
+                .Where(item => !item.GetVisualAncestors().Any(ancestor => ancestor is SongCard or EndpointCardView)))
             {
                 var position = control.TranslatePoint(default, view)!.Value;
                 var maximum = control.GetVisualAncestors().Contains(player) ? view.Bounds.Height : contentBottom;
