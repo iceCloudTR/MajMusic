@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -13,6 +14,7 @@ using MajMusic.Core.Playback;
 using MajMusic.Infrastructure.Application;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
+using SkiaSharp;
 
 namespace MajMusic.Tests
 {
@@ -77,12 +79,29 @@ namespace MajMusic.Tests
 
                     window.Width = 1100;
                     window.Height = 760;
-                    Dispatcher.UIThread.RunJobs();
-                    using var scaled = new RenderTargetBitmap(new PixelSize(1375, 950), new Vector(120, 120));
-                    scaled.Render(window);
-                    scaled.Save(Path.Combine(output, "ui-alignment-125.png"), PngBitmapEncoderOptions.Default);
-                    AssertSegments(view);
-                    AssertTransport(view);
+                    foreach (var scale in new[] { 1d, 1.25, 1.5, 1.75, 2 })
+                    {
+                        window.SetRenderScaling(scale);
+                        window.UpdateLayout();
+                        Dispatcher.UIThread.RunJobs();
+                        TestAssert.Equal(scale, window.RenderScaling, "The window must use actual platform layout scaling.");
+                        await playback.PauseAsync(timeout.Token);
+                        await WaitForPlaybackAsync(viewModel, false, timeout.Token);
+                        window.UpdateLayout();
+                        AssertSegments(view);
+                        AssertTransport(view);
+                        if (scale == 1.25)
+                        {
+                            using var scaled = new RenderTargetBitmap(new PixelSize(1375, 950), new Vector(120, 120));
+                            scaled.Render(window);
+                            scaled.Save(Path.Combine(output, "ui-alignment-125.png"), PngBitmapEncoderOptions.Default);
+                        }
+
+                        await playback.ResumeAsync(timeout.Token);
+                        await WaitForPlaybackAsync(viewModel, true, timeout.Token);
+                        window.UpdateLayout();
+                        AssertTransport(view);
+                    }
                 }
                 finally
                 {
@@ -152,6 +171,75 @@ namespace MajMusic.Tests
             var iconCenter = icon.TranslatePoint(new Point(icon.Bounds.Width / 2, icon.Bounds.Height / 2), main)!.Value;
             Close(main.Bounds.Width / 2, iconCenter.X, "The primary playback icon must be horizontally centered.");
             Close(main.Bounds.Height / 2, iconCenter.Y, "The primary playback icon must be vertically centered.");
+            AssertGlyphInk(view);
+        }
+
+        /// <summary>Checks painted geometry and rasterized ink rather than the surrounding Path layout boxes.</summary>
+        /// <param name="view">The rendered shared view.</param>
+        private static void AssertGlyphInk(MainView view)
+        {
+            var scale = TopLevel.GetTopLevel(view)!.RenderScaling;
+            var group = view.FindControl<Grid>("TransportGroup")!;
+            var geometryBaselines = new List<double>();
+            var pixelBaselines = new List<double>();
+            foreach (var name in new[] { "ShuffleButton", "PreviousTrackButton", "TransportButton", "NextTrackButton", "RepeatButton" })
+            {
+                var button = view.FindControl<Button>(name)!;
+                var path = button.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().Single(item => item.IsVisible);
+                var geometry = path.RenderedGeometry!;
+                var pen = path.Stroke is null ? null
+                    : new Pen(Brushes.White, path.StrokeThickness, null, path.StrokeLineCap, path.StrokeJoin);
+                var localInk = pen is null ? geometry.Bounds : geometry.GetRenderBounds(pen);
+                var transform = path.TransformToVisual(button)!.Value;
+                var ink = localInk.TransformToAABB(transform);
+                var opticalCorrection = path.Name == "TransportPlayIcon" ? 1d : 0d;
+                var tolerance = 0.51 / scale;
+                TestAssert.True(Math.Abs(ink.Center.X - button.Bounds.Width / 2 - opticalCorrection) <= tolerance,
+                    $"The painted {path.Name} must retain its intended horizontal center at {scale * 100:0}%.");
+                TestAssert.True(Math.Abs(ink.Center.Y - button.Bounds.Height / 2) <= tolerance,
+                    $"The painted {path.Name} must retain its vertical center at {scale * 100:0}%.");
+                geometryBaselines.Add(button.TranslatePoint(ink.Center, group)!.Value.Y);
+
+                using var mask = new RenderTargetBitmap(
+                    new PixelSize((int)Math.Round(button.Bounds.Width * scale), (int)Math.Round(button.Bounds.Height * scale)),
+                    new Vector(96 * scale, 96 * scale));
+                using (var context = mask.CreateDrawingContext())
+                using (context.PushTransform(transform))
+                {
+                    context.DrawGeometry(path.Fill is null ? null : Brushes.White, pen, geometry);
+                }
+
+                using var encoded = new MemoryStream();
+                mask.Save(encoded, PngBitmapEncoderOptions.Default);
+                encoded.Position = 0;
+                using var pixels = SKBitmap.Decode(encoded);
+                double weight = 0;
+                double horizontal = 0;
+                double vertical = 0;
+                for (var y = 0; y < pixels.Height; y++)
+                {
+                    for (var x = 0; x < pixels.Width; x++)
+                    {
+                        var alpha = pixels.GetPixel(x, y).Alpha;
+                        weight += alpha;
+                        horizontal += alpha * (x + 0.5);
+                        vertical += alpha * (y + 0.5);
+                    }
+                }
+
+                TestAssert.True(weight > 0, "A visible transport glyph must paint nonempty pixels.");
+                pixelBaselines.Add(vertical / weight - pixels.Height / 2d);
+                if (path.Fill is not null)
+                {
+                    TestAssert.True(Math.Abs(horizontal / weight - pixels.Width / 2d) <= 1.25,
+                        $"The filled {path.Name} must be optically centered within its button.");
+                }
+            }
+
+            TestAssert.True(geometryBaselines.Max() - geometryBaselines.Min() <= 0.05,
+                "All five painted glyphs must share one geometric baseline.");
+            TestAssert.True(pixelBaselines.Max() - pixelBaselines.Min() <= 0.15,
+                "All five rasterized glyphs must share one visual baseline, including fractional display scales.");
         }
 
         /// <summary>Compares logical coordinates while allowing normal subpixel layout rounding.</summary>

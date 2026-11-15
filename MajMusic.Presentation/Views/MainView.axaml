@@ -13,8 +13,8 @@
     </UserControl.Styles>
     <UserControl.Resources>
         <converters:MusicDisplayConverter x:Key="MusicDisplay" />
-        <StreamGeometry x:Key="ShuffleGlyph">M 2,4 L 5,4 C 8,4 8,12 11,12 L 15,12 M 12,9 L 15,12 L 12,15 M 2,12 L 5,12 C 8,12 8,4 11,4 L 15,4 M 12,1 L 15,4 L 12,7</StreamGeometry>
-        <StreamGeometry x:Key="RepeatGlyph">M 4,3 L 13,3 C 17,3 17,13 13,13 L 3,13 M 6,10 L 3,13 L 6,16 M 12,0 L 15,3 L 12,6 M 3,13 C -1,13 -1,3 3,3</StreamGeometry>
+        <StreamGeometry x:Key="ShuffleGlyph">M 2,5 L 5,5 C 7,5 9,11 11,11 L 14,11 M 11,8 L 14,11 L 11,14 M 2,11 L 5,11 C 7,11 9,5 11,5 L 14,5 M 11,2 L 14,5 L 11,8</StreamGeometry>
+        <StreamGeometry x:Key="RepeatGlyph">M 2,7 C 2,5.895 2.895,5 4,5 L 14,5 M 11,2 L 14,5 L 11,8 M 14,9 C 14,10.105 13.105,11 12,11 L 2,11 M 5,8 L 2,11 L 5,14</StreamGeometry>
     </UserControl.Resources>
     <UserControl.DataTemplates>
         <DataTemplate DataType="models:MusicPlaylist" x:DataType="models:MusicPlaylist">
@@ -259,23 +259,31 @@
                     </Grid>
                     <Grid x:Name="TransportGroup" Width="200" Height="40" ColumnDefinitions="40,40,40,40,40" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Button x:Name="ShuffleButton" Classes="transport modeTransport" Command="{Binding ToggleShuffleCommand}" ToolTip.Tip="{Binding ShuffleModeText}" AutomationProperties.Name="{Binding ShuffleModeText}">
-                            <Path Classes="modeGlyph" Classes.active="{Binding IsShuffle}" Data="{StaticResource ShuffleGlyph}" />
+                            <Canvas Width="16" Height="16">
+                                <Path x:Name="TransportShuffleIcon" Classes="modeGlyph" Classes.active="{Binding IsShuffle}" Data="{StaticResource ShuffleGlyph}" />
+                            </Canvas>
                         </Button>
                         <Button x:Name="PreviousTrackButton" Grid.Column="1" Classes="transport" Command="{Binding PreviousCommand}" ToolTip.Tip="上一首" AutomationProperties.Name="上一首">
-                            <Path Data="M 3,3 L 5,3 L 5,17 L 3,17 Z M 16,3 L 6,10 L 16,17 Z" Fill="{DynamicResource MusicTextBrush}" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Canvas Width="16" Height="16">
+                                <Path x:Name="TransportPreviousIcon" Data="M 3,2 L 5,2 L 5,14 L 3,14 Z M 13,2 L 5,8 L 13,14 Z" Fill="{DynamicResource MusicTextBrush}" Width="16" Height="16" Stretch="None" />
+                            </Canvas>
                         </Button>
                         <Button x:Name="TransportButton" Grid.Column="2" Classes="primary transportPrimary" Command="{Binding TogglePlayPauseCommand}" Width="36" Height="36" MinHeight="0" Padding="0" CornerRadius="18" ToolTip.Tip="{Binding TransportButtonText}" AutomationProperties.Name="{Binding TransportButtonText}">
-                            <Grid Width="16" Height="16">
-                                <Path x:Name="TransportPlayIcon" Data="M 3,1 L 13,7 L 3,13 Z" Fill="{DynamicResource MusicAccentTextBrush}" Stretch="Uniform" IsVisible="{Binding !IsPlaying}" />
-                                <Path x:Name="TransportPauseIcon" Data="M 2,1 L 6,1 L 6,13 L 2,13 Z M 9,1 L 13,1 L 13,13 L 9,13 Z" Fill="{DynamicResource MusicAccentTextBrush}" Stretch="Uniform" IsVisible="{Binding IsPlaying}" />
-                            </Grid>
+                            <Canvas Width="16" Height="16">
+                                <Path x:Name="TransportPlayIcon" Data="M 5,2 L 13,8 L 5,14 Z" Fill="{DynamicResource MusicAccentTextBrush}" Width="16" Height="16" Stretch="None" IsVisible="{Binding !IsPlaying}" />
+                                <Path x:Name="TransportPauseIcon" Data="M 4,2 L 7,2 L 7,14 L 4,14 Z M 9,2 L 12,2 L 12,14 L 9,14 Z" Fill="{DynamicResource MusicAccentTextBrush}" Width="16" Height="16" Stretch="None" IsVisible="{Binding IsPlaying}" />
+                            </Canvas>
                         </Button>
                         <Button x:Name="NextTrackButton" Grid.Column="3" Classes="transport" Command="{Binding NextCommand}" ToolTip.Tip="下一首" AutomationProperties.Name="下一首">
-                            <Path Data="M 15,3 L 17,3 L 17,17 L 15,17 Z M 4,3 L 14,10 L 4,17 Z" Fill="{DynamicResource MusicTextBrush}" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Canvas Width="16" Height="16">
+                                <Path x:Name="TransportNextIcon" Data="M 11,2 L 13,2 L 13,14 L 11,14 Z M 3,2 L 11,8 L 3,14 Z" Fill="{DynamicResource MusicTextBrush}" Width="16" Height="16" Stretch="None" />
+                            </Canvas>
                         </Button>
                         <Button x:Name="RepeatButton" Grid.Column="4" Classes="transport modeTransport" Command="{Binding CycleRepeatModeCommand}" ToolTip.Tip="{Binding RepeatModeText}" AutomationProperties.Name="{Binding RepeatModeText}">
                             <Grid Width="16" Height="16">
-                                <Path Classes="modeGlyph" Classes.active="{Binding IsRepeating}" Data="{StaticResource RepeatGlyph}" />
+                                <Canvas Width="16" Height="16">
+                                    <Path x:Name="TransportRepeatIcon" Classes="modeGlyph" Classes.active="{Binding IsRepeating}" Data="{StaticResource RepeatGlyph}" />
+                                </Canvas>
                                 <TextBlock Text="1" IsVisible="{Binding IsRepeatOne}" FontSize="8" FontWeight="SemiBold" Foreground="{DynamicResource MusicAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
                         </Button>
