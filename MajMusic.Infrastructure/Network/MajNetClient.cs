@@ -10,7 +10,7 @@ using System.Text.Json;
 namespace MajMusic.Infrastructure.Network
 {
     /// <summary>Adapts explicitly configured MajNet music endpoints without starting network activity implicitly.</summary>
-    public sealed class MajNetClient : IDisposable
+    public sealed partial class MajNetClient : IDisposable
     {
         /// <summary>Describes this configured source without containing credentials.</summary>
         private readonly EndpointConfiguration _endpoint;

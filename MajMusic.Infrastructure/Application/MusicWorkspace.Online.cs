@@ -473,8 +473,8 @@ namespace MajMusic.Infrastructure.Application
             {
                 var current = _settings.Endpoints.FirstOrDefault(endpoint => endpoint.Id == pair.Key && endpoint.BaseUri == pair.Value.Endpoint.BaseUri);
                 if (current is not null && current.SelectedAccountId == pair.Value.Endpoint.SelectedAccountId
-                    && current.Accounts.FirstOrDefault(account => account.Id == current.SelectedAccountId)
-                        == pair.Value.Endpoint.Accounts.FirstOrDefault(account => account.Id == pair.Value.Endpoint.SelectedAccountId))
+                    && SameLoginPreferences(current.Accounts.FirstOrDefault(account => account.Id == current.SelectedAccountId),
+                        pair.Value.Endpoint.Accounts.FirstOrDefault(account => account.Id == pair.Value.Endpoint.SelectedAccountId)))
                 {
                     continue;
                 }
@@ -509,6 +509,21 @@ namespace MajMusic.Infrastructure.Application
                     _accountChoices[endpointId]++;
                 }
             }
+        }
+
+        /// <summary>Compares authentication preferences independently of collection-upload authorization.</summary>
+        /// <param name="current">The currently saved account, or null for Guest.</param>
+        /// <param name="pending">The account captured by the pending login, or null for Guest.</param>
+        /// <returns>Whether the pending login still uses the same account and credential choices.</returns>
+        private static bool SameLoginPreferences(SavedEndpointAccount? current, SavedEndpointAccount? pending)
+        {
+            if (current is null || pending is null)
+            {
+                return ReferenceEquals(current, pending);
+            }
+
+            return current.Id == pending.Id && current.Username == pending.Username
+                && current.RememberPassword == pending.RememberPassword && current.AutoLogin == pending.AutoLogin;
         }
 
         /// <summary>Releases isolated session transports after the host has drained workspace operations.</summary>

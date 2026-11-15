@@ -125,6 +125,11 @@ namespace MajMusic.Tests
             var sourceBounds = BoundsIn(source, panel);
             var accountBounds = BoundsIn(account, panel);
             TestAssert.True(sourceBounds.Right + 20 <= accountBounds.Left, "Source and account fields must have a visible separating gap.");
+            var cloudToggle = card.FindControl<CheckBox>("UseCloudCollectionsToggle")!;
+            var cloudBounds = BoundsIn(cloudToggle, panel);
+            var rememberBounds = BoundsIn(card.FindControl<CheckBox>("RememberPasswordToggle")!, panel);
+            TestAssert.True(sourceBounds.Contains(cloudBounds) && Math.Abs(cloudBounds.Center.Y - rememberBounds.Center.Y) <= 0.51,
+                "The collection option must fit the source column and align with the account options without increasing the card height.");
             var inputBounds = card.GetVisualDescendants().OfType<TextBox>().Select(input => BoundsIn(input, panel)).ToArray();
             for (var index = 0; index < inputBounds.Length; index++)
             {

@@ -365,6 +365,7 @@ namespace MajMusic.Infrastructure.Application
                 _networkPolicy.Dispose();
             }
 
+            DisposeCloudCollectionSync();
             DisposeOnlineSessions();
             _cache.Dispose();
             if (_ownsResourceClient)

@@ -259,6 +259,7 @@ namespace MajMusic.Presentation.ViewModels
                 ReloadEndpointProfiles(draft.EndpointId);
                 RestoreAccountDraft(draft);
                 await EnsureHomeRecommendationsAsync();
+                RequestCloudCollectionSync();
                 var failures = results.Count(item => !item.Succeeded && _settings.Endpoints.Any(endpoint => endpoint.Id == item.EndpointId
                     && endpoint.SelectedAccountId == item.AccountId && endpoint.Accounts.Any(account => account.Id == item.AccountId && account.AutoLogin)));
                 if (failures > 0)

@@ -15,6 +15,10 @@
                 </Grid>
                 <TextBox x:Name="EndpointNameEditor" Grid.Row="1" Text="{Binding EndpointName, Mode=TwoWay}" PlaceholderText="名称" Height="34" IsEnabled="{Binding IsIdle}" />
                 <TextBox x:Name="EndpointUrlEditor" Grid.Row="2" Text="{Binding EndpointUrl, Mode=TwoWay}" PlaceholderText="API 地址" Height="34" IsEnabled="{Binding IsIdle}" />
+                <CheckBox x:Name="UseCloudCollectionsToggle" Grid.Row="3" IsChecked="{Binding UseCloudCollections, Mode=TwoWay}"
+                          IsEnabled="{Binding CanUseCloudCollections}" MinHeight="32" HorizontalContentAlignment="Stretch">
+                    <TextBlock Text="使用此接入点的收藏夹" FontSize="12" TextTrimming="CharacterEllipsis" />
+                </CheckBox>
                 <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="6">
                     <Button Content="保存" Height="32" Command="{Binding SaveEndpointCommand}" />
                     <Button Content="同步" Height="32" Command="{Binding SynchronizeCommand}" />

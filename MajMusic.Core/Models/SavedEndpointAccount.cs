@@ -16,5 +16,8 @@ namespace MajMusic.Core.Models
 
         /// <summary>Gets whether this account may log in after online mode is explicitly enabled.</summary>
         public bool AutoLogin { get; init; }
+
+        /// <summary>Gets whether this saved account may synchronize MajMusic collections with its endpoint.</summary>
+        public bool UseCloudCollections { get; init; }
     }
 }

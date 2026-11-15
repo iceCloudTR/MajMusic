@@ -9,6 +9,12 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj
 
 默认回归覆盖数据存储、目录类型、收藏夹格式、账号选择与自动登录、网络与缓存、播放队列、音频设置，以及界面交互。
 
+云端收藏夹的接口与同步检查使用隔离的模拟服务，覆盖私有歌单创建、账号收藏订阅、增删曲目、离线补传和账号隔离。
+
+```sh
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- collection-network cloud-collection-preferences cloud-collection-sync
+```
+
 可在命令末尾指定测试组：
 
 ```sh

@@ -935,12 +935,31 @@ namespace MajMusic.Presentation.ViewModels
         }
 
         /// <summary>Refreshes local playlists while preserving the selected identity.</summary>
+        /// <param name="synchronizeCloud">Whether this local refresh schedules enabled account uploads.</param>
         /// <returns>A task representing the read.</returns>
-        private async Task ReloadPlaylistsAsync()
+        private async Task ReloadPlaylistsAsync(bool synchronizeCloud = true)
         {
-            var selectedId = SelectedPlaylist?.Id;
+            await _playlistReloadGate.WaitAsync(_lifetime.Token);
+            try
+            {
+                await ReloadPlaylistsCoreAsync();
+            }
+            finally
+            {
+                _playlistReloadGate.Release();
+            }
+
+            if (synchronizeCloud)
+            {
+                RequestCloudCollectionSync();
+            }
+        }
+
+        /// <summary>Reads local playlists and merges the currently authorized cloud snapshots immediately before publication.</summary>
+        /// <returns>A task representing the serialized local read and current snapshot publication.</returns>
+        private async Task ReloadPlaylistsCoreAsync()
+        {
             var playlists = (await _workspace.GetPlaylistsAsync(_lifetime.Token)).ToList();
-            playlists.AddRange(_cloudPlaylists.Values.SelectMany(items => items));
             _favorites = playlists.FirstOrDefault(item => item.IsFavorite || item.Id == FavoritesId);
             if (_favorites is null)
             {
@@ -973,6 +992,9 @@ namespace MajMusic.Presentation.ViewModels
 
             _lifetime.Token.ThrowIfCancellationRequested();
             var library = (await _workspace.SearchAsync(null, _lifetime.Token)).ToDictionary(item => item.Id, StringComparer.Ordinal);
+            _lifetime.Token.ThrowIfCancellationRequested();
+            playlists.AddRange(_cloudPlaylists.Values.SelectMany(items => items));
+            var selectedId = SelectedPlaylist?.Id;
             Playlists.Clear();
             foreach (var playlist in playlists.OrderByDescending(item => item.IsFavorite))
             {

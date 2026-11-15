@@ -8,7 +8,7 @@ using MajMusic.Presentation.Commands;
 namespace MajMusic.Presentation.ViewModels
 {
     /// <summary>Retains one source's editable address and account draft independently of other source cards.</summary>
-    public sealed class EndpointCardViewModel : INotifyPropertyChanged, IDisposable
+    public sealed partial class EndpointCardViewModel : INotifyPropertyChanged, IDisposable
     {
         /// <summary>Coordinates tracked source operations and persistent preferences.</summary>
         private readonly MainViewModel _owner;
@@ -249,6 +249,8 @@ namespace MajMusic.Presentation.ViewModels
                         LoadAccountFields(SelectedAccount);
                     }
                 }
+
+                RestoreCloudCollectionUsage(SelectedAccount);
             }
             finally
             {
@@ -281,6 +283,7 @@ namespace MajMusic.Presentation.ViewModels
             OnPropertyChanged(nameof(IsIdle));
             OnPropertyChanged(nameof(IsGuest));
             OnPropertyChanged(nameof(CanEditAccount));
+            OnPropertyChanged(nameof(CanUseCloudCollections));
             foreach (var command in new[] { SaveEndpointCommand, SynchronizeCommand, RemoveEndpointCommand, NewAccountCommand,
                 RemoveAccountCommand, SaveAccountCommand, LoginCommand, SelectAccountCommand })
             {
@@ -292,6 +295,7 @@ namespace MajMusic.Presentation.ViewModels
         public void Dispose()
         {
             _disposed = true;
+            _cloudCollectionEdits.Clear();
             ClearPassword();
         }
 
@@ -318,7 +322,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 Status = "操作未完成";
                 _owner.ReportError(exception);
-            }, () => IsIdle && (canExecute?.Invoke() ?? true));
+            }, () => IsIdle && !_loading && (canExecute?.Invoke() ?? true));
         }
 
         /// <summary>Loads non-secret remembered account fields without retrieving a password.</summary>
@@ -331,6 +335,7 @@ namespace MajMusic.Presentation.ViewModels
             Password = string.Empty;
             RememberPassword = option?.Account?.RememberPassword == true;
             AutoLogin = option?.Account?.AutoLogin == true;
+            RestoreCloudCollectionUsage(option);
             _loading = wasLoading;
             _accountDraft = false;
             RefreshAvailability();

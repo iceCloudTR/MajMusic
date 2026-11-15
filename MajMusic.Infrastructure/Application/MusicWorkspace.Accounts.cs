@@ -57,7 +57,8 @@ namespace MajMusic.Infrastructure.Application
                     Id = accountId,
                     Username = username,
                     RememberPassword = rememberPassword,
-                    AutoLogin = autoLogin
+                    AutoLogin = autoLogin,
+                    UseCloudCollections = previous?.UseCloudCollections == true
                 };
                 var accounts = current.Accounts.Where(account => account.Id != accountId)
                     .Select(account => autoLogin ? account with { AutoLogin = false } : account).Append(saved).ToArray();
@@ -314,9 +315,9 @@ namespace MajMusic.Infrastructure.Application
             return "MajMusic/account/" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(scope)));
         }
 
-        /// <summary>Retains account names but disables remembered credentials when an API root changes.</summary>
+        /// <summary>Retains account names and clears saved authentication and upload choices when an API root changes.</summary>
         /// <param name="settings">The proposed non-secret preferences.</param>
-        /// <returns>The preferences with changed-address automatic authentication disabled.</returns>
+        /// <returns>The preferences requiring new authentication and collection authorization for changed addresses.</returns>
         private AppSettings NormalizeAccountAddressChanges(AppSettings settings)
         {
             lock (_stateGate)
@@ -326,10 +327,20 @@ namespace MajMusic.Infrastructure.Application
                     Endpoints = settings.Endpoints.Select(endpoint =>
                     {
                         var previous = _settings.Endpoints.FirstOrDefault(item => item.Id == endpoint.Id);
-                        return previous is not null && previous.BaseUri != endpoint.BaseUri ? endpoint with
+                        if (previous is null || previous.BaseUri == endpoint.BaseUri)
                         {
-                            Accounts = endpoint.Accounts.Select(account => account with { RememberPassword = false, AutoLogin = false }).ToArray()
-                        } : endpoint;
+                            return endpoint;
+                        }
+
+                        return endpoint with
+                        {
+                            Accounts = endpoint.Accounts.Select(account => account with
+                            {
+                                RememberPassword = false,
+                                AutoLogin = false,
+                                UseCloudCollections = false
+                            }).ToArray()
+                        };
                     }).ToArray()
                 };
             }

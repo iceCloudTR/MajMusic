@@ -16,6 +16,30 @@ namespace MajMusic.Presentation.ViewModels
         public ObservableCollection<EndpointCardViewModel> EndpointCards { get; } = new();
         /// <summary>Gets the action adding a visible source draft.</summary>
         public AsyncCommand AddEndpointCardCommand { get; private set; } = null!;
+        /// <summary>Gets whether the workspace supports account-specific cloud-collection preferences.</summary>
+        internal bool CanConfigureCloudCollections => _workspace is ICloudCollectionWorkspace;
+
+        /// <summary>Saves one captured account's cloud-collection permission without changing other editor or session state.</summary>
+        /// <param name="endpoint">The source identity captured when the checkbox changed.</param>
+        /// <param name="accountId">The saved account explicitly authorized by that edit.</param>
+        /// <param name="enabled">The latest requested cloud-collection preference.</param>
+        /// <returns>The endpoint snapshot after the narrow local update.</returns>
+        internal async Task<EndpointConfiguration> SetCardCloudCollectionUsageAsync(EndpointConfiguration endpoint, string accountId, bool enabled)
+        {
+            var cloud = _workspace as ICloudCollectionWorkspace
+                ?? throw new NotSupportedException("当前宿主不支持云端收藏夹。");
+            var updated = await cloud.SetCloudCollectionUsageAsync(endpoint, accountId, enabled, CancellationToken.None);
+            _settings = _settings with
+            {
+                Endpoints = _settings.Endpoints.Select(current => current.Id == endpoint.Id && current.BaseUri == endpoint.BaseUri
+                    ? current with
+                    {
+                        Accounts = current.Accounts.Select(account => account.Id == accountId
+                            ? account with { UseCloudCollections = enabled } : account).ToArray()
+                    } : current).ToArray()
+            };
+            return updated;
+        }
 
         /// <summary>Creates the source-card action without changing the selected browsing endpoint.</summary>
         private void InitializeEndpointCardCommands()
