@@ -17,6 +17,11 @@ namespace MajMusic.Presentation.Views
         public static readonly StyledProperty<bool> IsCompactProperty = AvaloniaProperty.Register<SongCard, bool>(nameof(IsCompact));
         /// <summary>Identifies whether the owning browse mode currently displays this presentation.</summary>
         public static readonly StyledProperty<bool> IsBrowsingActiveProperty = AvaloniaProperty.Register<SongCard, bool>(nameof(IsBrowsingActive), true);
+        /// <summary>Constrains Arc's animated label slot to the actual card content width.</summary>
+        public static readonly DirectProperty<SongCard, double> CardContentWidthProperty = AvaloniaProperty.RegisterDirect<SongCard, double>(
+            nameof(CardContentWidth), card => card.CardContentWidth);
+        /// <summary>Stores the finite width shared by the card's cover and information columns.</summary>
+        private double _cardContentWidth;
         /// <summary>Cancels optional metadata when the item leaves the viewport.</summary>
         private CancellationTokenSource? _activationCancellation;
         /// <summary>Retains the exact presentation whose artwork lease is active.</summary>
@@ -53,6 +58,9 @@ namespace MajMusic.Presentation.Views
             set => SetValue(IsBrowsingActiveProperty, value);
         }
 
+        /// <summary>Gets the finite content width after the card's one-pixel border.</summary>
+        public double CardContentWidth => _cardContentWidth;
+
         /// <inheritdoc />
         protected override async void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
@@ -68,6 +76,7 @@ namespace MajMusic.Presentation.Views
         {
             var width = double.IsFinite(availableSize.Width) ? availableSize.Width : 320;
             var height = IsCompact ? 60 : width / 2;
+            SetAndRaise(CardContentWidthProperty, ref _cardContentWidth, Math.Max(0, width - 2));
             base.MeasureOverride(new Size(width, height));
             return new Size(width, height);
         }
@@ -167,9 +176,11 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The click notification.</param>
         private async void OnSelectClicked(object? sender, RoutedEventArgs e)
         {
-            if (DataContext is SongCardViewModel card && this.FindAncestorOfType<MainView>()?.DataContext is MainViewModel owner)
+            var host = this.FindAncestorOfType<MainView>();
+            if (DataContext is SongCardViewModel card && host?.DataContext is MainViewModel owner)
             {
                 owner.SelectedTrack = card.Track;
+                host.OpenTrackDetails();
                 await owner.LoadCoverAsync();
             }
         }

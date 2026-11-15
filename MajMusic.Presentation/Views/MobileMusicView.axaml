@@ -1,0 +1,331 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arcm="https://github.com/AIDotNet/TKCode.Arc.Mobile"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:vm="using:MajMusic.Presentation.ViewModels"
+             xmlns:models="using:MajMusic.Core.Models"
+             xmlns:views="using:MajMusic.Presentation.Views"
+             xmlns:converters="using:MajMusic.Presentation.Converters"
+             x:Class="MajMusic.Presentation.Views.MobileMusicView"
+             x:Name="MobileRoot"
+             x:DataType="vm:MainViewModel"
+             Background="{DynamicResource MusicCanvasBrush}">
+    <UserControl.Styles>
+        <Style Selector="arc|Select">
+            <Setter Property="MinHeight" Value="44" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="arcm|Button">
+            <Setter Property="MinHeight" Value="44" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="arcm|IconButton">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="44" />
+        </Style>
+        <Style Selector="arcm|SegmentedItem">
+            <Setter Property="MinHeight" Value="44" />
+        </Style>
+        <Style Selector="arcm|IconButton.playbackMode">
+            <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
+        </Style>
+        <Style Selector="arcm|IconButton.playbackMode.active">
+            <Setter Property="Foreground" Value="{DynamicResource MusicAccentBrush}" />
+        </Style>
+        <Style Selector="ListBox.mobileList ListBoxItem">
+            <Setter Property="MinHeight" Value="56" />
+            <Setter Property="Height" Value="NaN" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="12,8" />
+        </Style>
+        <Style Selector="Border.mobilePanel">
+            <Setter Property="Background" Value="{DynamicResource MusicPanelBrush}" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="14" />
+        </Style>
+        <Style Selector="TextBlock.mobileLabel">
+            <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+    </UserControl.Styles>
+    <UserControl.Resources>
+        <converters:MusicDisplayConverter x:Key="MobileDisplay" />
+        <StreamGeometry x:Key="MobileHomeIcon">M 3,10 L 12,3 L 21,10 L 21,21 L 15,21 L 15,14 L 9,14 L 9,21 L 3,21 Z</StreamGeometry>
+        <StreamGeometry x:Key="MobilePlaylistIcon">M 4,5 L 16,5 M 4,10 L 16,10 M 4,15 L 11,15 M 17,13 L 17,21 M 13,17 L 21,17</StreamGeometry>
+        <StreamGeometry x:Key="MobileFolderIcon">M 3,7 L 9,7 L 11,5 L 21,5 L 21,20 L 3,20 Z</StreamGeometry>
+        <StreamGeometry x:Key="MobileAccountIcon">M 16,7 A 4,4 0 1 1 8,7 A 4,4 0 1 1 16,7 M 4,21 C 4,13 20,13 20,21</StreamGeometry>
+        <StreamGeometry x:Key="MobileSettingsIcon">M 4,6 L 20,6 M 4,12 L 20,12 M 4,18 L 20,18 M 8,3 L 8,9 M 16,9 L 16,15 M 10,15 L 10,21</StreamGeometry>
+        <StreamGeometry x:Key="MobileSearchIcon">M 10,3 A 7,7 0 1 0 10,17 A 7,7 0 1 0 10,3 M 15,15 L 21,21</StreamGeometry>
+        <StreamGeometry x:Key="MobileCloseIcon">M 5,5 L 19,19 M 19,5 L 5,19</StreamGeometry>
+        <StreamGeometry x:Key="MobilePreviousIcon">M 6,5 L 6,19 M 18,5 L 8,12 L 18,19 Z</StreamGeometry>
+        <StreamGeometry x:Key="MobileNextIcon">M 18,5 L 18,19 M 6,5 L 16,12 L 6,19 Z</StreamGeometry>
+        <StreamGeometry x:Key="MobileShuffleIcon">M 3,6 L 6,6 C 10,6 14,18 18,18 L 21,18 M 17,14 L 21,18 L 17,22 M 3,18 L 6,18 C 10,18 14,6 18,6 L 21,6 M 17,2 L 21,6 L 17,10</StreamGeometry>
+        <StreamGeometry x:Key="MobileRepeatIcon">M 3,10 C 3,6 5,5 8,5 L 21,5 M 17,1 L 21,5 L 17,9 M 21,14 C 21,18 19,19 16,19 L 3,19 M 7,15 L 3,19 L 7,23</StreamGeometry>
+        <DataTemplate x:Key="MobileHomeTemplate" x:DataType="vm:MainViewModel">
+            <Grid RowDefinitions="44,Auto,*,Auto" RowSpacing="8">
+                <arcm:Segmented x:Name="MobileHomeModes" SelectionChanged="OnHomeModeChanged">
+                    <arcm:SegmentedItem Content="推荐" />
+                    <arcm:SegmentedItem Content="歌单" />
+                    <arcm:SegmentedItem Content="曲库" />
+                </arcm:Segmented>
+                <Grid Grid.Row="1">
+                    <Grid IsVisible="{Binding !IsSearchExpanded}">
+                        <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.Endpoint}" ItemsSource="{Binding EndpointProfiles}" SelectedItem="{Binding SelectedEndpointProfile}" Placeholder="接入点" IsVisible="{Binding IsRecommendationsMode}" />
+                        <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.Playlist}" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedHomePlaylist}" Placeholder="选择歌单" IsVisible="{Binding IsPlaylistsMode}" />
+                    </Grid>
+                    <arcm:Searchbar x:Name="MobileSearchBox" Text="{Binding SearchText, Mode=TwoWay}" PlaceholderText="搜索音乐" IsVisible="{Binding IsSearchExpanded}" Submitted="OnSearchSubmitted" />
+                </Grid>
+                <views:BrowseTracksView x:Name="MobileSongBrowser" Grid.Row="2" ForceSingleColumn="True" />
+                <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBlock Text="{Binding BrowseSummary}" Classes="mobileLabel" VerticalAlignment="Center" />
+                    <arcm:Button Grid.Column="1" Content="更多推荐" Variant="Plain" Command="{Binding MoreRecommendationsCommand}" IsVisible="{Binding HasMoreRecommendations}" />
+                </Grid>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="MobilePlaylistsTemplate" x:DataType="vm:MainViewModel">
+            <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
+                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="6">
+                    <arcm:Button Content="打开" Command="{Binding OpenPlaylistCommand}" Click="OnOpenPlaylistClicked" />
+                    <arcm:Button Grid.Column="1" Content="删除" Variant="Tinted" Command="{Binding DeletePlaylistCommand}" />
+                    <arcm:Button Grid.Column="2" Content="导入" Variant="Plain" Click="OnCollectionImportClicked" IsVisible="{Binding CanExchangeCollections}" />
+                    <arcm:Button Grid.Column="3" Content="导出" Variant="Plain" Click="OnCollectionExportClicked" IsVisible="{Binding CanExchangeCollections}" />
+                </Grid>
+                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.Endpoint}" ItemsSource="{Binding EndpointProfiles}" SelectedItem="{Binding SelectedEndpointProfile}" Placeholder="接入点" />
+                    <arcm:Button Grid.Column="1" Content="刷新" Variant="Tinted" Command="{Binding RefreshCloudPlaylistsCommand}" />
+                </Grid>
+                <ListBox x:Name="MobilePlaylistsList" Grid.Row="2" Classes="mobileList" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                </ListBox>
+                <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <arcm:TextField Text="{Binding NewPlaylistName, Mode=TwoWay}" PlaceholderText="新歌单名称" />
+                    <arcm:Button Grid.Column="1" Content="创建" Command="{Binding CreatePlaylistCommand}" />
+                </Grid>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="MobileDirectoriesTemplate" x:DataType="vm:MainViewModel">
+            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                    <arcm:Button Content="新增目录" Command="{Binding NewDirectoryCommand}" />
+                    <arcm:Button Grid.Column="1" Content="读取全部" Variant="Tinted" Command="{Binding RescanCommand}" />
+                </Grid>
+                <ListBox x:Name="MobileDirectoriesList" Grid.Row="1" Classes="mobileList" ItemsSource="{Binding DirectorySources}" SelectedItem="{Binding SelectedDirectory}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                </ListBox>
+                <Border Grid.Row="2" Classes="mobilePanel" Padding="10">
+                    <StackPanel Spacing="8">
+                        <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.DirectoryKind}" ItemsSource="{Binding DirectoryKinds}" SelectedItem="{Binding SelectedDirectoryKind}" />
+                        <Grid ColumnDefinitions="*,44" ColumnSpacing="8">
+                            <arcm:TextField Text="{Binding DirectoryPath, Mode=TwoWay}" PlaceholderText="目录路径" />
+                            <arcm:Button Grid.Column="1" Content="…" Variant="Tinted" Click="OnDirectoryBrowseClicked" AutomationProperties.Name="选择目录" />
+                        </Grid>
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
+                            <arcm:Button Content="保存读取" Command="{Binding SaveDirectoryCommand}" />
+                            <arcm:Button Grid.Column="1" Content="重读" Variant="Tinted" Command="{Binding ScanDirectoryCommand}" />
+                            <arcm:Button Grid.Column="2" Content="移除" Variant="Plain" Command="{Binding RemoveDirectoryCommand}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="MobileAccountsTemplate" x:DataType="vm:MainViewModel">
+            <Grid RowDefinitions="Auto,*" RowSpacing="12">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <arcm:Button Content="添加接入点" Command="{Binding AddEndpointCardCommand}" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Text="在线" VerticalAlignment="Center" />
+                        <arcm:Switch x:Name="MobileOnlineModeToggle" IsChecked="{Binding OnlineEnabled, Mode=TwoWay}" AutomationProperties.Name="在线模式" />
+                    </StackPanel>
+                </Grid>
+                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="12">
+                        <arcm:Button Content="同步全部接入点" Variant="Tinted" Command="{Binding SynchronizeAllCommand}" />
+                        <ItemsControl ItemsSource="{Binding EndpointCards}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Spacing="12" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:EndpointCardViewModel">
+                                    <Border Classes="mobilePanel">
+                                        <StackPanel Spacing="10">
+                                            <Grid ColumnDefinitions="*,44" ColumnSpacing="8">
+                                                <TextBlock Text="接入点" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <arcm:Button Grid.Column="1" Content="×" Variant="Plain" Command="{Binding RemoveEndpointCommand}" AutomationProperties.Name="移除接入点" />
+                                            </Grid>
+                                            <arcm:TextField Text="{Binding EndpointName, Mode=TwoWay}" PlaceholderText="名称" IsEnabled="{Binding IsIdle}" />
+                                            <arcm:TextField Text="{Binding EndpointUrl, Mode=TwoWay}" PlaceholderText="API 地址" IsEnabled="{Binding IsIdle}" />
+                                            <arcm:Checkbox Content="使用此接入点的收藏夹" IsChecked="{Binding UseCloudCollections, Mode=TwoWay}" IsEnabled="{Binding CanUseCloudCollections}" />
+                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                <arcm:Button Content="保存接入点" Command="{Binding SaveEndpointCommand}" />
+                                                <arcm:Button Grid.Column="1" Content="同步" Variant="Tinted" Command="{Binding SynchronizeCommand}" />
+                                            </Grid>
+                                            <TextBlock Text="账号" FontSize="16" FontWeight="SemiBold" Margin="0,8,0,0" />
+                                            <Grid ColumnDefinitions="*,44,44" ColumnSpacing="6">
+                                                <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.Account}" x:Name="MobileSavedAccountPicker" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount, Mode=TwoWay}" SelectionChanged="OnSavedAccountSelectionChanged" IsEnabled="{Binding IsIdle}" Placeholder="选择账号" />
+                                                <arcm:Button Grid.Column="1" Content="+" Variant="Tinted" Command="{Binding NewAccountCommand}" AutomationProperties.Name="新增账号" />
+                                                <arcm:Button Grid.Column="2" Content="−" Variant="Plain" Command="{Binding RemoveAccountCommand}" AutomationProperties.Name="移除账号" />
+                                            </Grid>
+                                            <arcm:TextField Text="{Binding Username, Mode=TwoWay}" PlaceholderText="账号" IsEnabled="{Binding CanEditAccount}" />
+                                            <arcm:TextField Text="{Binding Password, Mode=TwoWay}" PlaceholderText="密码" PasswordChar="●" IsEnabled="{Binding CanEditAccount}" />
+                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                <arcm:Checkbox Content="记住密码" IsChecked="{Binding RememberPassword, Mode=TwoWay}" IsEnabled="{Binding CanEditAccount}" />
+                                                <arcm:Checkbox Grid.Column="1" Content="自动登录" IsChecked="{Binding AutoLogin, Mode=TwoWay}" IsEnabled="{Binding CanEditAccount}" />
+                                            </Grid>
+                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                <arcm:Button Content="登录" Command="{Binding LoginCommand}" />
+                                                <arcm:Button Grid.Column="1" Content="保存账号" Variant="Tinted" Command="{Binding SaveAccountCommand}" />
+                                            </Grid>
+                                            <TextBlock Text="{Binding Status}" Classes="mobileLabel" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="MobileSettingsTemplate" x:DataType="vm:MainViewModel">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="14">
+                    <Border Classes="mobilePanel">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="声音" FontSize="17" FontWeight="SemiBold" />
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.OutputDevice}" ItemsSource="{Binding OutputDevices}" SelectedItem="{Binding SelectedOutputDevice}" Placeholder="输出设备" IsEnabled="{Binding CanConfigureAudio}" />
+                                <arcm:Button Grid.Column="1" Content="刷新" Variant="Tinted" Command="{Binding RefreshOutputDevicesCommand}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="音量" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding VolumeText}" Classes="mobileLabel" VerticalAlignment="Center" />
+                            </Grid>
+                            <arc:Slider x:Name="MobileSettingsVolume" Value="{Binding Volume, Mode=TwoWay}" Minimum="0" Maximum="100" Height="44" IsValueVisible="False" ThumbDiameter="14" TrackThickness="3" SmallChange="1" IsEnabled="{Binding CanConfigureAudio}" />
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="静音" VerticalAlignment="Center" />
+                                <arcm:Switch Grid.Column="1" IsChecked="{Binding IsMuted, Mode=TwoWay}" IsEnabled="{Binding CanConfigureAudio}" />
+                            </Grid>
+                            <TextBlock Text="{Binding AudioOutputNotice}" IsVisible="{Binding HasAudioOutputNotice}" Classes="mobileLabel" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="mobilePanel">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="缓存" FontSize="17" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding DataDirectory}" Classes="mobileLabel" TextWrapping="Wrap" />
+                            <arcm:Button Content="清理缓存" Variant="Tinted" Command="{Binding ClearCacheCommand}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </DataTemplate>
+    </UserControl.Resources>
+    <UserControl.DataTemplates>
+        <DataTemplate DataType="models:MusicPlaylist" x:DataType="models:MusicPlaylist">
+            <StackPanel Spacing="3">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding ., Converter={StaticResource MobileDisplay}}" Classes="mobileLabel" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate DataType="vm:EndpointProfile" x:DataType="vm:EndpointProfile"><TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" /></DataTemplate>
+        <DataTemplate DataType="vm:SavedAccountOption" x:DataType="vm:SavedAccountOption"><TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" /></DataTemplate>
+        <DataTemplate DataType="vm:DirectoryKindOption" x:DataType="vm:DirectoryKindOption"><TextBlock Text="{Binding Name}" /></DataTemplate>
+        <DataTemplate DataType="models:AudioOutputDevice" x:DataType="models:AudioOutputDevice"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" /></DataTemplate>
+        <DataTemplate DataType="models:LocalDirectorySource" x:DataType="models:LocalDirectorySource">
+            <StackPanel Spacing="3">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1" Text="{Binding ., Converter={StaticResource MobileDisplay}}" Classes="mobileLabel" />
+                </Grid>
+                <TextBlock Text="{Binding Path}" Classes="mobileLabel" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.DataTemplates>
+    <arcm:Page x:Name="MobilePage" IsScrollable="False" AvoidKeyboard="True">
+        <arcm:Page.Header>
+            <arcm:Navbar x:Name="MobileNavbar" Title="MajMusic">
+                <arcm:Navbar.Trailing>
+                    <arcm:IconButton x:Name="MobileSearchButton" Icon="{StaticResource MobileSearchIcon}" Variant="Plain" Click="OnSearchClicked" AutomationProperties.Name="搜索音乐" />
+                </arcm:Navbar.Trailing>
+            </arcm:Navbar>
+        </arcm:Page.Header>
+        <arcm:Page.Footer>
+            <Grid RowDefinitions="Auto,Auto">
+                <Border x:Name="MobileMiniPlayer" Background="{DynamicResource MusicPanelBrush}" CornerRadius="12" Margin="12,6" Padding="12,6">
+                    <Grid RowDefinitions="44,44,Auto">
+                        <Grid ColumnDefinitions="*,44,44,44" ColumnSpacing="2">
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="{Binding PlaybackTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" FontSize="13" />
+                                <TextBlock Text="{Binding PlaybackArtist}" Classes="mobileLabel" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <arcm:IconButton x:Name="MobilePreviousButton" Grid.Column="1" Icon="{StaticResource MobilePreviousIcon}" Variant="Plain" Command="{Binding PreviousCommand}" AutomationProperties.Name="上一首" />
+                            <arcm:Button x:Name="MobilePlayPauseButton" Grid.Column="2" Variant="Tinted" Command="{Binding TogglePlayPauseCommand}" Padding="0" AutomationProperties.Name="{Binding TransportButtonText}">
+                                <Canvas Width="20" Height="20">
+                                    <Path Data="M 6,3 L 16,10 L 6,17 Z" Fill="{DynamicResource MusicTextBrush}" IsVisible="{Binding !IsPlaying}" />
+                                    <Path Data="M 5,3 L 8,3 L 8,17 L 5,17 Z M 12,3 L 15,3 L 15,17 L 12,17 Z" Fill="{DynamicResource MusicTextBrush}" IsVisible="{Binding IsPlaying}" />
+                                </Canvas>
+                            </arcm:Button>
+                            <arcm:IconButton x:Name="MobileNextButton" Grid.Column="3" Icon="{StaticResource MobileNextIcon}" Variant="Plain" Command="{Binding NextCommand}" AutomationProperties.Name="下一首" />
+                        </Grid>
+                        <Grid Grid.Row="1" ColumnDefinitions="36,*,36" ColumnSpacing="6">
+                            <TextBlock Text="{Binding PositionText}" Classes="mobileLabel" FontSize="10" VerticalAlignment="Center" />
+                            <arc:Slider x:Name="MobilePlaybackTimeline" Grid.Column="1" Minimum="0" Maximum="{Binding DurationSeconds}" Value="{Binding PositionSeconds, Mode=TwoWay}" IsEnabled="{Binding CanSeek}" Height="44" IsValueVisible="False" ThumbDiameter="14" TrackThickness="3" SmallChange="0.01" LargeChange="15" />
+                            <TextBlock Grid.Column="2" Text="{Binding DurationText}" Classes="mobileLabel" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                        </Grid>
+                        <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="8">
+                            <TextBlock Text="{Binding Status}" IsVisible="{Binding HasStatus}" Classes="mobileLabel" FontSize="10" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1" Text="{Binding PlaybackHint}" IsVisible="{Binding HasPlaybackHint}" Classes="mobileLabel" FontSize="10" TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                    </Grid>
+                </Border>
+                <arcm:Tabbar x:Name="MobileNavigationBar" Grid.Row="1" Height="60" SelectedIndex="{Binding #MobileRoot.SelectedSectionIndex, Mode=TwoWay}">
+                    <arcm:TabbarItem x:Name="MobileHomeNav" Content="主页" Icon="{StaticResource MobileHomeIcon}" />
+                    <arcm:TabbarItem x:Name="MobilePlaylistsNav" Content="歌单" Icon="{StaticResource MobilePlaylistIcon}" />
+                    <arcm:TabbarItem x:Name="MobileDirectoriesNav" Content="目录" Icon="{StaticResource MobileFolderIcon}" />
+                    <arcm:TabbarItem x:Name="MobileAccountsNav" Content="账号" Icon="{StaticResource MobileAccountIcon}" />
+                    <arcm:TabbarItem x:Name="MobileSettingsNav" Content="设置" Icon="{StaticResource MobileSettingsIcon}" />
+                </arcm:Tabbar>
+            </Grid>
+        </arcm:Page.Footer>
+        <arcm:Page.Overlay>
+            <arcm:Sheet x:Name="MobileTrackSheet" Title="{Binding SelectedTitle}" MaxHeightFraction="0.94">
+                <StackPanel Spacing="12" Margin="4,0,4,8">
+                    <Border Width="144" Height="144" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}" HorizontalAlignment="Center" ClipToBounds="True">
+                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                    </Border>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding SelectedArtist}" TextWrapping="Wrap" HorizontalAlignment="Center" FontSize="14" />
+                        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                            <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource MobileDisplay}, ConverterParameter=duration}" Classes="mobileLabel" />
+                            <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource MobileDisplay}, ConverterParameter=audio}" Classes="mobileLabel" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource MobileDisplay}, ConverterParameter=source}" Classes="mobileLabel" HorizontalAlignment="Center" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <arcm:Button x:Name="MobileDetailLikeButton" Content="{Binding FavoriteButtonText}" Variant="Tinted" Command="{Binding ToggleFavoriteCommand}" />
+                        <arcm:Button x:Name="MobileDetailDownloadButton" Grid.Column="1" Content="下载" Variant="Tinted" Command="{Binding DownloadCommand}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,44" ColumnSpacing="8">
+                        <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.Playlist}" x:Name="MobileDetailPlaylistPicker" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}" Placeholder="加入歌单" />
+                        <arcm:Button x:Name="MobileDetailAddButton" Grid.Column="1" Content="+" Command="{Binding AddToPlaylistCommand}" AutomationProperties.Name="加入歌单" />
+                    </Grid>
+                    <Grid ColumnDefinitions="44,*,44" ColumnSpacing="8">
+                        <arcm:IconButton x:Name="MobileShuffleButton" Classes="playbackMode" Classes.active="{Binding IsShuffle}" Icon="{StaticResource MobileShuffleIcon}" Variant="Plain" Command="{Binding ToggleShuffleCommand}" AutomationProperties.Name="{Binding ShuffleModeText}" />
+                        <arcm:Button x:Name="MobileDetailPlayButton" Grid.Column="1" Content="播放这首" Click="OnPlaySelectedClicked" IsEnabled="{Binding CanPlay}" />
+                        <Grid Grid.Column="2">
+                            <arcm:IconButton x:Name="MobileRepeatButton" Classes="playbackMode" Classes.active="{Binding IsRepeating}" Icon="{StaticResource MobileRepeatIcon}" Variant="Plain" Command="{Binding CycleRepeatModeCommand}" AutomationProperties.Name="{Binding RepeatModeText}" />
+                            <TextBlock Text="1" IsVisible="{Binding IsRepeatOne}" FontSize="9" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="{DynamicResource MusicAccentBrush}" />
+                        </Grid>
+                    </Grid>
+                    <arcm:Button Content="从歌单移除" Variant="Plain" Command="{Binding RemoveFromPlaylistCommand}" IsVisible="{Binding IsLocalPlaylistView}" />
+                </StackPanel>
+            </arcm:Sheet>
+        </arcm:Page.Overlay>
+        <ContentControl x:Name="MobileSectionHost" Margin="12,8,12,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+    </arcm:Page>
+</UserControl>

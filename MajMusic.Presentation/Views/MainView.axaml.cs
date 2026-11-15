@@ -2,6 +2,7 @@
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -17,13 +18,15 @@ namespace MajMusic.Presentation.Views
         public MainView()
         {
             InitializeComponent();
-            var timeline = this.FindControl<Slider>("PlaybackTimeline")!;
+            var timeline = this.FindControl<TKCode.Arc.Slider>("PlaybackTimeline")!;
             timeline.AddHandler(PointerPressedEvent, OnTimelinePointerPressed, RoutingStrategies.Tunnel, true);
             timeline.AddHandler(PointerReleasedEvent, OnTimelinePointerReleased, RoutingStrategies.Bubble, true);
             timeline.AddHandler(KeyDownEvent, OnTimelineKeyPressed, RoutingStrategies.Tunnel, true);
             timeline.AddHandler(KeyUpEvent, OnTimelineKeyReleased, RoutingStrategies.Bubble, true);
             timeline.LostFocus += OnTimelineLostFocus;
+            this.FindControl<TextBox>("LibrarySearch")!.AddHandler(KeyDownEvent, OnSearchKeyDown, RoutingStrategies.Tunnel, true);
             DataContextChanged += OnViewDataContextChanged;
+            InitializeResponsiveShell();
         }
 
         /// <summary>Returns to the library after explicitly opening the selected playlist.</summary>
@@ -31,7 +34,7 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The routed click event.</param>
         private void OnOpenPlaylistClicked(object? sender, RoutedEventArgs e)
         {
-            this.FindControl<TabControl>("MainTabs")!.SelectedIndex = 0;
+            NavigateToSection(0);
         }
 
         /// <summary>Synchronizes page capacities when an existing view receives its view model.</summary>
@@ -45,7 +48,7 @@ namespace MajMusic.Presentation.Views
         /// <summary>Reports available page space without moving or hiding any layout region.</summary>
         private void NotifyPageViewports()
         {
-            if (DataContext is not MainViewModel viewModel)
+            if (IsMobileLayout || DataContext is not MainViewModel viewModel)
             {
                 return;
             }
@@ -251,7 +254,25 @@ namespace MajMusic.Presentation.Views
             }
             else if (IsSeekKey(e.Key) && e.KeyModifiers == KeyModifiers.None)
             {
-                viewModel.BeginSeek();
+                if (viewModel.BeginSeek())
+                {
+                    var target = e.Key switch
+                    {
+                        Key.Home => 0,
+                        Key.End => viewModel.DurationSeconds,
+                        Key.Left or Key.Down => viewModel.PositionSeconds - 5,
+                        Key.Right or Key.Up => viewModel.PositionSeconds + 5,
+                        Key.PageDown => viewModel.PositionSeconds - 15,
+                        _ => viewModel.PositionSeconds + 15
+                    };
+                    viewModel.PositionSeconds = Math.Clamp(target, 0, viewModel.DurationSeconds);
+                    if (sender is RangeBase slider)
+                    {
+                        slider.SetCurrentValue(RangeBase.ValueProperty, viewModel.PositionSeconds);
+                    }
+                }
+
+                e.Handled = true;
             }
         }
 

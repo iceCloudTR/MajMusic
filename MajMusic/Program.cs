@@ -1,5 +1,6 @@
 using Avalonia;
 using System;
+using MajMusic.Presentation.Theme;
 
 #nullable enable
 
@@ -26,6 +27,7 @@ namespace MajMusic
                 .WithDeveloperTools()
 #endif
                 .WithInterFont()
+                .UseMajMusicArc()
                 .LogToTrace();
         }
     }

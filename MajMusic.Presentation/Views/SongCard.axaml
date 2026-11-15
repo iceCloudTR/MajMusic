@@ -3,6 +3,7 @@
              xmlns:vm="using:MajMusic.Presentation.ViewModels"
              xmlns:converters="using:MajMusic.Presentation.Converters"
              xmlns:ac="using:Avalonia.Data.Converters"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              x:Class="MajMusic.Presentation.Views.SongCard"
              x:Name="CardRoot"
              x:DataType="vm:SongCardViewModel">
@@ -10,7 +11,7 @@
         <converters:MusicDisplayConverter x:Key="CardDisplay" />
     </UserControl.Resources>
     <UserControl.Styles>
-        <Style Selector="Button.songTile">
+        <Style Selector="arc|Button.songTile">
             <Setter Property="Padding" Value="0" />
             <Setter Property="CornerRadius" Value="12" />
             <Setter Property="BorderThickness" Value="1" />
@@ -18,30 +19,31 @@
             <Setter Property="VerticalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="VerticalContentAlignment" Value="Stretch" />
-        </Style>
-        <Style Selector="Button.songTile /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="MinHeight" Value="0" />
             <Setter Property="Background" Value="{DynamicResource MusicPanelBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource MusicLineBrush}" />
+        </Style>
+        <Style Selector="arc|Button.songTile /template/ Border#PART_Frame">
             <Setter Property="CornerRadius" Value="12" />
             <Setter Property="ClipToBounds" Value="True" />
         </Style>
-        <Style Selector="Button.songTile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource MusicRaisedBrush}" />
+        <Style Selector="arc|Button.songTile:pointerover">
+            <Setter Property="BorderBrush" Value="{DynamicResource MusicMutedBrush}" />
         </Style>
-        <Style Selector="Button.songTile.selected /template/ ContentPresenter#PART_ContentPresenter">
+        <Style Selector="arc|Button.songTile.selected">
             <Setter Property="Background" Value="{DynamicResource MusicPanelBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource MusicAccentBrush}" />
         </Style>
-        <Style Selector="Button.songTile TextBlock">
+        <Style Selector="arc|Button.songTile TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
         </Style>
-        <Style Selector="Button.songTile TextBlock.secondary">
+        <Style Selector="arc|Button.songTile TextBlock.secondary">
             <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
         </Style>
     </UserControl.Styles>
-    <Button Classes="songTile" Classes.selected="{Binding IsSelected}" Click="OnSelectClicked"
+    <arc:Button Variant="Ghost" IsPressScaleEnabled="False" Classes="songTile" Classes.selected="{Binding IsSelected}" Click="OnSelectClicked"
             DoubleTapped="OnPlayDoubleTapped" ToolTip.Tip="{Binding Track.Title}" AutomationProperties.Name="{Binding Track.Title}">
-        <Border CornerRadius="11" ClipToBounds="True">
+        <Border Width="{Binding CardContentWidth, ElementName=CardRoot}" CornerRadius="11" ClipToBounds="True">
             <Grid ClipToBounds="True">
                 <Grid ColumnDefinitions="*,*" IsVisible="{Binding !IsCompact, ElementName=CardRoot}">
                     <Border Background="{DynamicResource MusicRaisedBrush}" ClipToBounds="True">
@@ -90,5 +92,5 @@
                 </Grid>
             </Grid>
         </Border>
-    </Button>
+    </arc:Button>
 </UserControl>

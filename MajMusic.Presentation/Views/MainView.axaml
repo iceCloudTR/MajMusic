@@ -5,7 +5,9 @@
              xmlns:converters="using:MajMusic.Presentation.Converters"
              xmlns:ac="using:Avalonia.Data.Converters"
              xmlns:views="using:MajMusic.Presentation.Views"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              x:Class="MajMusic.Presentation.Views.MainView"
+             x:Name="ViewRoot"
              x:DataType="vm:MainViewModel"
              Background="{DynamicResource MusicCanvasBrush}">
     <UserControl.Styles>
@@ -43,40 +45,52 @@
             </Grid>
         </DataTemplate>
     </UserControl.DataTemplates>
-    <Grid RowDefinitions="Auto,*,16,113" Margin="22,18" RowSpacing="8">
-        <Grid Height="30" ColumnDefinitions="Auto,*" ColumnSpacing="9">
-            <Border Width="25" Height="25" CornerRadius="8" Background="{DynamicResource MusicAccentBrush}" VerticalAlignment="Center">
-                <Path Data="M 7,6 L 7,17 C 7,21 2,21 2,18 C 2,16 4,15 6,16 L 6,7 L 15,5 L 15,14 C 15,18 10,18 10,15 C 10,13 12,12 14,13 L 14,8 Z" Fill="{DynamicResource MusicAccentTextBrush}" Stretch="Uniform" Width="15" Height="16" />
-            </Border>
-            <TextBlock Grid.Column="1" Text="MajMusic" FontSize="21" FontWeight="SemiBold" VerticalAlignment="Center" />
+    <Grid x:Name="DesktopLayout" RowDefinitions="44,*,16,113" Margin="22,18" RowSpacing="10">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="20">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Border Width="30" Height="30" CornerRadius="12" Background="{DynamicResource MusicAccentBrush}">
+                    <Path Data="M 7,6 L 7,17 C 7,21 2,21 2,18 C 2,16 4,15 6,16 L 6,7 L 15,5 L 15,14 C 15,18 10,18 10,15 C 10,13 12,12 14,13 L 14,8 Z" Fill="{DynamicResource MusicAccentTextBrush}" Stretch="Uniform" Width="16" Height="17" />
+                </Border>
+                <TextBlock Text="MajMusic" FontSize="21" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel x:Name="DesktopTopNavigation" Grid.Column="2" Orientation="Horizontal" Spacing="3" VerticalAlignment="Center" Loaded="OnDesktopNavigationLoaded">
+                <arc:Button x:Name="NavigateHome" Classes="navigation current" Variant="Ghost" Content="主页" Tag="0" Click="OnNavigateSectionClicked" />
+                <arc:Button x:Name="NavigatePlaylists" Classes="navigation" Variant="Ghost" Content="歌单管理" Tag="1" Click="OnNavigateSectionClicked" />
+                <arc:Button x:Name="NavigateDirectories" Classes="navigation" Variant="Ghost" Content="目录" Tag="2" Click="OnNavigateSectionClicked" />
+                <arc:Button x:Name="NavigateAccounts" Classes="navigation" Variant="Ghost" Content="账号" Tag="3" Click="OnNavigateSectionClicked" />
+                <arc:Button x:Name="NavigateSettings" Classes="navigation" Variant="Ghost" Content="设置" Tag="4" Click="OnNavigateSectionClicked" />
+            </StackPanel>
         </Grid>
-        <TabControl x:Name="MainTabs" Grid.Row="1" Padding="0">
+        <TabControl x:Name="MainTabs" Classes="desktopPages" Grid.Row="1" Padding="0" SelectionChanged="OnDesktopSectionChanged">
             <TabItem x:Name="LibraryTab" Header="主页">
-                <Grid x:Name="LibraryLayout" RowDefinitions="34,*,28" RowSpacing="8" ColumnSpacing="12" Margin="0,8,0,0">
+                <Grid x:Name="LibraryLayout" RowDefinitions="44,*,28" RowSpacing="10" ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="0.24*" MinWidth="180" MaxWidth="220" />
                     </Grid.ColumnDefinitions>
-                    <Grid Grid.ColumnSpan="2" ColumnDefinitions="196,*,34" ColumnSpacing="8">
-                        <Border CornerRadius="8" Background="{DynamicResource MusicRaisedBrush}" Padding="2">
-                            <Grid x:Name="HomeModeSegments" ColumnDefinitions="*,*,*">
-                                <ToggleButton x:Name="RecommendationsModeButton" Classes="mode" Content="推荐" IsChecked="{Binding IsRecommendationsMode, Mode=OneWay}" Command="{Binding ShowRecommendationsModeCommand}" />
-                                <ToggleButton x:Name="PlaylistsModeButton" Grid.Column="1" Classes="mode" Content="歌单" IsChecked="{Binding IsPlaylistsMode, Mode=OneWay}" Command="{Binding ShowPlaylistsModeCommand}" />
-                                <ToggleButton x:Name="LibraryModeButton" Grid.Column="2" Classes="mode" Content="曲库" IsChecked="{Binding IsLibraryMode, Mode=OneWay}" Command="{Binding ShowLibraryModeCommand}" />
-                            </Grid>
-                        </Border>
+                    <Grid Grid.ColumnSpan="2" ColumnDefinitions="210,*,38" ColumnSpacing="10">
+                        <arc:SegmentedControl x:Name="HomeModeSegments" SelectedValue="{Binding HomeMode, Mode=OneWay}" SelectionChanged="OnHomeModeSelectionChanged" PointerReleased="OnHomeModePointerReleased" KeyDown="OnHomeModeKeyDown" HorizontalAlignment="Stretch">
+                            <arc:SegmentedControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="3" />
+                                </ItemsPanelTemplate>
+                            </arc:SegmentedControl.ItemsPanel>
+                            <arc:SegmentedOption Value="{x:Static vm:HomeBrowseMode.Recommendations}" Label="推荐" />
+                            <arc:SegmentedOption Value="{x:Static vm:HomeBrowseMode.Playlists}" Label="歌单" />
+                            <arc:SegmentedOption Value="{x:Static vm:HomeBrowseMode.Library}" Label="曲库" />
+                        </arc:SegmentedControl>
                         <Grid Grid.Column="1">
                             <Grid IsVisible="{Binding !IsSearchExpanded}">
-                                <ComboBox x:Name="HomeEndpointPicker" ItemsSource="{Binding EndpointProfiles}" SelectedItem="{Binding SelectedEndpointProfile}" PlaceholderText="接入点" HorizontalAlignment="Stretch" IsVisible="{Binding IsRecommendationsMode}" IsEnabled="{Binding IsIdle}" />
-                                <ComboBox x:Name="HomePlaylistPicker" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedHomePlaylist}" PlaceholderText="选择歌单" HorizontalAlignment="Stretch" IsVisible="{Binding IsPlaylistsMode}" />
+                                <arc:Select x:Name="HomeEndpointPicker" ItemsSource="{Binding EndpointProfiles}" TextSelector="{x:Static converters:MusicSelectLabels.Endpoint}" SelectedItem="{Binding SelectedEndpointProfile}" Placeholder="接入点" HorizontalAlignment="Stretch" IsVisible="{Binding IsRecommendationsMode}" IsEnabled="{Binding IsIdle}" />
+                                <arc:Select x:Name="HomePlaylistPicker" ItemsSource="{Binding Playlists}" TextSelector="{x:Static converters:MusicSelectLabels.Playlist}" SelectedItem="{Binding SelectedHomePlaylist}" Placeholder="选择歌单" HorizontalAlignment="Stretch" IsVisible="{Binding IsPlaylistsMode}" />
                             </Grid>
-                            <TextBox x:Name="LibrarySearch" Text="{Binding SearchText}" PlaceholderText="搜索音乐" KeyDown="OnSearchKeyDown" IsVisible="{Binding IsSearchExpanded}" />
+                            <arc:SearchField x:Name="LibrarySearch" Text="{Binding SearchText}" Placeholder="搜索音乐" IsVisible="{Binding IsSearchExpanded}" />
                         </Grid>
                         <Grid Grid.Column="2">
-                            <Button x:Name="BeginSearchButton" Classes="icon" Command="{Binding BeginSearchCommand}" Click="OnBeginSearchClicked" IsVisible="{Binding !IsSearchExpanded}" ToolTip.Tip="搜索音乐" AutomationProperties.Name="搜索音乐">
+                            <arc:Button x:Name="BeginSearchButton" Classes="icon" Command="{Binding BeginSearchCommand}" Click="OnBeginSearchClicked" IsVisible="{Binding !IsSearchExpanded}" ToolTip.Tip="搜索音乐" AutomationProperties.Name="搜索音乐">
                                 <Path Data="M 8,2 A 6,6 0 1 0 8,14 A 6,6 0 1 0 8,2 M 12.5,12.5 L 18,18" Stroke="{DynamicResource MusicTextBrush}" StrokeThickness="1.8" Width="17" Height="17" Stretch="Uniform" />
-                            </Button>
-                            <Button x:Name="CancelSearchButton" Classes="icon" Content="×" FontSize="21" Command="{Binding CancelSearchCommand}" IsVisible="{Binding IsSearchExpanded}" ToolTip.Tip="返回推荐" AutomationProperties.Name="返回推荐" />
+                            </arc:Button>
+                            <arc:Button x:Name="CancelSearchButton" Classes="icon" Content="×" FontSize="21" Command="{Binding CancelSearchCommand}" IsVisible="{Binding IsSearchExpanded}" ToolTip.Tip="返回推荐" AutomationProperties.Name="返回推荐" />
                         </Grid>
                     </Grid>
                     <Border x:Name="LibraryListPanel" Grid.Row="1" Classes="card" Padding="6">
@@ -100,53 +114,53 @@
                                 <TextBlock Text="{Binding SelectedTrack.Artist}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                             <Grid Grid.Row="2" ColumnDefinitions="*,*,Auto" ColumnSpacing="6">
-                                <Button Content="{Binding FavoriteButtonText}" Command="{Binding ToggleFavoriteCommand}" FontSize="12" Padding="5,4" HorizontalAlignment="Stretch" />
-                                <Button Grid.Column="1" Content="下载" Command="{Binding DownloadCommand}" FontSize="12" Padding="5,4" HorizontalAlignment="Stretch" />
-                                <Button Grid.Column="2" Classes="icon" Content="−" FontSize="18" Command="{Binding RemoveFromPlaylistCommand}" IsVisible="{Binding IsLocalPlaylistView}" ToolTip.Tip="从歌单移除" AutomationProperties.Name="从歌单移除" />
+                                <arc:Button Content="{Binding FavoriteButtonText}" Command="{Binding ToggleFavoriteCommand}" FontSize="12" Padding="5,4" HorizontalAlignment="Stretch" />
+                                <arc:Button Grid.Column="1" Content="下载" Command="{Binding DownloadCommand}" FontSize="12" Padding="5,4" HorizontalAlignment="Stretch" />
+                                <arc:Button Grid.Column="2" Classes="icon" Content="−" FontSize="18" Command="{Binding RemoveFromPlaylistCommand}" IsVisible="{Binding IsLocalPlaylistView}" ToolTip.Tip="从歌单移除" AutomationProperties.Name="从歌单移除" />
                             </Grid>
                             <Grid Grid.Row="3" ColumnDefinitions="*,32" ColumnSpacing="6">
-                                <ComboBox ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}" PlaceholderText="歌单" HorizontalAlignment="Stretch" MinHeight="32" FontSize="12" Padding="6,4" />
-                                <Button Grid.Column="1" Classes="icon" Content="+" FontSize="19" Command="{Binding AddToPlaylistCommand}" ToolTip.Tip="加入歌单" />
+                                <arc:Select ItemsSource="{Binding Playlists}" TextSelector="{x:Static converters:MusicSelectLabels.Playlist}" SelectedItem="{Binding SelectedPlaylist}" Placeholder="歌单" HorizontalAlignment="Stretch" MinHeight="32" FontSize="12" Padding="6,4" />
+                                <arc:Button Grid.Column="1" Classes="icon" Content="+" FontSize="19" Command="{Binding AddToPlaylistCommand}" ToolTip.Tip="加入歌单" />
                             </Grid>
                         </Grid>
                     </Border>
                     <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="6">
                         <TextBlock Text="{Binding BrowseSummary}" Classes="muted" FontSize="11" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="更多推荐" Command="{Binding MoreRecommendationsCommand}" IsVisible="{Binding HasMoreRecommendations}" Padding="10,2" MinHeight="28" />
+                        <arc:Button Grid.Column="1" Content="更多推荐" Command="{Binding MoreRecommendationsCommand}" IsVisible="{Binding HasMoreRecommendations}" Padding="10,2" MinHeight="28" />
                     </Grid>
                 </Grid>
             </TabItem>
             <TabItem Header="歌单管理">
-                <Grid Margin="0,8,0,0" RowDefinitions="34,*,48" RowSpacing="8">
+                <Grid Margin="0" RowDefinitions="38,*,42" RowSpacing="8">
                     <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,32" ColumnSpacing="6">
-                        <Button Content="打开" Classes="primary" Command="{Binding OpenPlaylistCommand}" Click="OnOpenPlaylistClicked" />
-                        <Button Grid.Column="1" Content="删除" Command="{Binding DeletePlaylistCommand}" />
-                        <Button Grid.Column="2" Content="导入" Click="OnCollectionImportClicked" IsEnabled="{Binding IsIdle}" IsVisible="{Binding CanExchangeCollections}" />
-                        <Button Grid.Column="3" Content="导出" Click="OnCollectionExportClicked" IsEnabled="{Binding IsIdle}" IsVisible="{Binding CanExchangeCollections}" />
-                        <ComboBox Grid.Column="4" ItemsSource="{Binding EndpointProfiles}" SelectedItem="{Binding SelectedEndpointProfile}" PlaceholderText="接入点" HorizontalAlignment="Stretch" IsEnabled="{Binding IsIdle}" />
-                        <Button Grid.Column="5" Classes="icon" Content="↻" FontSize="18" Command="{Binding RefreshCloudPlaylistsCommand}" ToolTip.Tip="刷新云端歌单" />
+                        <arc:Button Content="打开" Classes="primary" Command="{Binding OpenPlaylistCommand}" Click="OnOpenPlaylistClicked" />
+                        <arc:Button Grid.Column="1" Content="删除" Command="{Binding DeletePlaylistCommand}" />
+                        <arc:Button Grid.Column="2" Content="导入" Click="OnCollectionImportClicked" IsEnabled="{Binding IsIdle}" IsVisible="{Binding CanExchangeCollections}" />
+                        <arc:Button Grid.Column="3" Content="导出" Click="OnCollectionExportClicked" IsEnabled="{Binding IsIdle}" IsVisible="{Binding CanExchangeCollections}" />
+                        <arc:Select Grid.Column="4" ItemsSource="{Binding EndpointProfiles}" TextSelector="{x:Static converters:MusicSelectLabels.Endpoint}" SelectedItem="{Binding SelectedEndpointProfile}" Placeholder="接入点" HorizontalAlignment="Stretch" IsEnabled="{Binding IsIdle}" />
+                        <arc:Button Grid.Column="5" Classes="icon" Content="↻" FontSize="18" Command="{Binding RefreshCloudPlaylistsCommand}" ToolTip.Tip="刷新云端歌单" />
                     </Grid>
                     <Border Grid.Row="1" Classes="card" Padding="6">
                         <ListBox x:Name="PlaylistList" ItemsSource="{Binding VisiblePlaylists}" SelectedItem="{Binding SelectedPlaylist}" SizeChanged="OnPlaylistViewportSizeChanged" ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
                     </Border>
                     <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,32,32" ColumnSpacing="6" VerticalAlignment="Center">
-                        <TextBox Text="{Binding NewPlaylistName}" PlaceholderText="新歌单名称" />
-                        <Button Grid.Column="1" Content="创建" Command="{Binding CreatePlaylistCommand}" />
+                        <arc:Input Text="{Binding NewPlaylistName}" Placeholder="新歌单名称" />
+                        <arc:Button Grid.Column="1" Content="创建" Command="{Binding CreatePlaylistCommand}" />
                         <TextBlock Grid.Column="2" Text="{Binding PlaylistPageText}" Classes="muted" FontSize="11" VerticalAlignment="Center" Margin="8,0" />
-                        <Button Grid.Column="3" Classes="icon" Content="‹" FontSize="20" Command="{Binding PreviousPlaylistPageCommand}" ToolTip.Tip="上一页" />
-                        <Button Grid.Column="4" Classes="icon" Content="›" FontSize="20" Command="{Binding NextPlaylistPageCommand}" ToolTip.Tip="下一页" />
+                        <arc:Button Grid.Column="3" Classes="icon" Content="‹" FontSize="20" Command="{Binding PreviousPlaylistPageCommand}" ToolTip.Tip="上一页" />
+                        <arc:Button Grid.Column="4" Classes="icon" Content="›" FontSize="20" Command="{Binding NextPlaylistPageCommand}" ToolTip.Tip="下一页" />
                     </Grid>
                 </Grid>
             </TabItem>
             <TabItem x:Name="DirectoriesTab" Header="目录">
-                <Grid Margin="0,8,0,0" RowDefinitions="32,*,Auto" RowSpacing="8">
+                <Grid Margin="0" RowDefinitions="38,*,Auto" RowSpacing="8">
                     <Grid ColumnDefinitions="*,Auto,Auto,Auto,32,32" ColumnSpacing="6">
                         <TextBlock Text="本地目录" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="新增" Command="{Binding NewDirectoryCommand}" />
-                        <Button Grid.Column="2" Content="读取全部" Command="{Binding RescanCommand}" />
+                        <arc:Button Grid.Column="1" Content="新增" Command="{Binding NewDirectoryCommand}" />
+                        <arc:Button Grid.Column="2" Content="读取全部" Command="{Binding RescanCommand}" />
                         <TextBlock Grid.Column="3" Text="{Binding DirectoryPageText}" Classes="muted" FontSize="11" VerticalAlignment="Center" Margin="8,0" />
-                        <Button Grid.Column="4" Classes="icon" Content="‹" FontSize="20" Command="{Binding PreviousDirectoryPageCommand}" ToolTip.Tip="上一页" />
-                        <Button Grid.Column="5" Classes="icon" Content="›" FontSize="20" Command="{Binding NextDirectoryPageCommand}" ToolTip.Tip="下一页" />
+                        <arc:Button Grid.Column="4" Classes="icon" Content="‹" FontSize="20" Command="{Binding PreviousDirectoryPageCommand}" ToolTip.Tip="上一页" />
+                        <arc:Button Grid.Column="5" Classes="icon" Content="›" FontSize="20" Command="{Binding NextDirectoryPageCommand}" ToolTip.Tip="下一页" />
                     </Grid>
                     <Border Grid.Row="1" Classes="card" Padding="6">
                         <ListBox x:Name="DirectoryList" ItemsSource="{Binding VisibleDirectorySources}" SelectedItem="{Binding SelectedDirectory}" IsEnabled="{Binding IsIdle}" SizeChanged="OnDirectoryViewportSizeChanged" ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
@@ -154,27 +168,27 @@
                     <Border Grid.Row="2" Classes="card" Padding="10">
                         <StackPanel Spacing="6">
                             <Grid ColumnDefinitions="130,*,32" ColumnSpacing="6">
-                                <ComboBox x:Name="DirectoryKindPicker" ItemsSource="{Binding DirectoryKinds}" SelectedItem="{Binding SelectedDirectoryKind}" HorizontalAlignment="Stretch" IsEnabled="{Binding IsIdle}" />
-                                <TextBox Grid.Column="1" Text="{Binding DirectoryPath}" PlaceholderText="目录路径" IsEnabled="{Binding IsIdle}" />
-                                <Button Grid.Column="2" Classes="icon" Content="…" Click="OnDirectoryBrowseClicked" IsEnabled="{Binding IsIdle}" ToolTip.Tip="选择目录" />
+                                <arc:Select x:Name="DirectoryKindPicker" ItemsSource="{Binding DirectoryKinds}" TextSelector="{x:Static converters:MusicSelectLabels.DirectoryKind}" SelectedItem="{Binding SelectedDirectoryKind}" HorizontalAlignment="Stretch" IsEnabled="{Binding IsIdle}" />
+                                <arc:Input Grid.Column="1" Text="{Binding DirectoryPath}" Placeholder="目录路径" IsEnabled="{Binding IsIdle}" />
+                                <arc:Button Grid.Column="2" Classes="icon" Content="…" Click="OnDirectoryBrowseClicked" IsEnabled="{Binding IsIdle}" ToolTip.Tip="选择目录" />
                             </Grid>
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Button Content="保存并读取" Classes="primary" Command="{Binding SaveDirectoryCommand}" />
-                                <Button Content="重新读取" Command="{Binding ScanDirectoryCommand}" />
-                                <Button Content="移除" Classes="quiet" Command="{Binding RemoveDirectoryCommand}" />
+                                <arc:Button Content="保存并读取" Classes="primary" Command="{Binding SaveDirectoryCommand}" />
+                                <arc:Button Content="重新读取" Command="{Binding ScanDirectoryCommand}" />
+                                <arc:Button Content="移除" Classes="quiet" Command="{Binding RemoveDirectoryCommand}" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
                 </Grid>
             </TabItem>
             <TabItem x:Name="AccountsTab" Header="账号">
-                <Grid Margin="0,8,0,0" RowDefinitions="40,*" RowSpacing="8">
+                <Grid Margin="0" RowDefinitions="40,*" RowSpacing="8">
                     <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6">
-                        <Button x:Name="AddEndpointButton" Content="添加接入点" Command="{Binding AddEndpointCardCommand}" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="同步全部" Classes="quiet" Command="{Binding SynchronizeAllCommand}" VerticalAlignment="Center" />
+                        <arc:Button x:Name="AddEndpointButton" Content="添加接入点" Command="{Binding AddEndpointCardCommand}" VerticalAlignment="Center" />
+                        <arc:Button Grid.Column="1" Content="同步全部" Classes="quiet" Command="{Binding SynchronizeAllCommand}" VerticalAlignment="Center" />
                         <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                             <TextBlock Text="在线模式" VerticalAlignment="Center" />
-                            <ToggleSwitch x:Name="OnlineModeToggle" OnContent="在线" OffContent="离线" IsChecked="{Binding OnlineEnabled, Mode=TwoWay}" VerticalAlignment="Center" AutomationProperties.Name="在线模式" />
+                            <arc:Switch x:Name="OnlineModeToggle" IsChecked="{Binding OnlineEnabled, Mode=TwoWay}" VerticalAlignment="Center" AutomationProperties.Name="在线模式" />
                         </StackPanel>
                     </Grid>
                     <ScrollViewer x:Name="EndpointCardsScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -194,23 +208,19 @@
                 </Grid>
             </TabItem>
             <TabItem x:Name="SettingsTab" Header="设置">
-                <StackPanel Margin="0,8,0,0" Spacing="10">
+                <StackPanel Margin="0" Spacing="10">
                     <Border x:Name="AudioSettingsPanel" Classes="card" Padding="10">
-                        <Grid RowDefinitions="34,34,16" RowSpacing="8" ColumnDefinitions="80,*,38,Auto" ColumnSpacing="10">
+                        <Grid RowDefinitions="38,38,16" RowSpacing="8" ColumnDefinitions="80,*,38,Auto" ColumnSpacing="10">
                             <TextBlock Text="输出设备" FontWeight="SemiBold" VerticalAlignment="Center" />
                             <Grid Grid.Column="1" Grid.ColumnSpan="3" ColumnDefinitions="*,32" ColumnSpacing="6">
-                                <ComboBox x:Name="OutputDevicePicker" ItemsSource="{Binding OutputDevices}" SelectedItem="{Binding SelectedOutputDevice}" HorizontalAlignment="Stretch" IsEnabled="{Binding CanConfigureAudio}" />
-                                <Button Grid.Column="1" Classes="icon" Content="↻" FontSize="18" Command="{Binding RefreshOutputDevicesCommand}" ToolTip.Tip="刷新设备" />
+                                <arc:Select x:Name="OutputDevicePicker" ItemsSource="{Binding OutputDevices}" TextSelector="{x:Static converters:MusicSelectLabels.OutputDevice}" SelectedItem="{Binding SelectedOutputDevice}" HorizontalAlignment="Stretch" IsEnabled="{Binding CanConfigureAudio}" />
+                                <arc:Button Grid.Column="1" Classes="icon" Content="↻" FontSize="18" Command="{Binding RefreshOutputDevicesCommand}" ToolTip.Tip="刷新设备" />
                             </Grid>
                             <TextBlock Grid.Row="1" Text="音量" Classes="fieldLabel" VerticalAlignment="Center" />
-                            <Slider Grid.Row="1" Grid.Column="1" Value="{Binding Volume}" Minimum="0" Maximum="100" Height="32" VerticalAlignment="Center" UseLayoutRounding="False" IsEnabled="{Binding CanConfigureAudio}">
-                                <Slider.Resources>
-                                    <GridLength x:Key="SliderPreContentMargin">6</GridLength>
-                                    <GridLength x:Key="SliderPostContentMargin">6</GridLength>
-                                </Slider.Resources>
-                            </Slider>
+                            <arc:Slider IsValueVisible="False" Grid.Row="1" Grid.Column="1" Value="{Binding Volume}" Minimum="0" Maximum="100" Height="32" VerticalAlignment="Center" UseLayoutRounding="False" IsEnabled="{Binding CanConfigureAudio}">
+                            </arc:Slider>
                             <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding VolumeText}" VerticalAlignment="Center" HorizontalAlignment="Right" />
-                            <CheckBox Grid.Row="1" Grid.Column="3" Content="静音" IsChecked="{Binding IsMuted}" IsEnabled="{Binding CanConfigureAudio}" />
+                            <arc:Checkbox Grid.Row="1" Grid.Column="3" Content="静音" VerticalAlignment="Center" UseLayoutRounding="False" IsChecked="{Binding IsMuted}" IsEnabled="{Binding CanConfigureAudio}" />
                             <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding AudioOutputNotice}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AudioOutputNotice}" />
                         </Grid>
                     </Border>
@@ -218,7 +228,7 @@
                         <Grid RowDefinitions="Auto,32" RowSpacing="8" ColumnDefinitions="*,Auto" ColumnSpacing="12">
                             <TextBlock Text="缓存" FontWeight="SemiBold" />
                             <TextBlock Grid.Row="1" Text="{Binding DataDirectory}" Classes="muted" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DataDirectory}" />
-                            <Button Grid.Row="1" Grid.Column="1" Content="清理缓存" Command="{Binding ClearCacheCommand}" />
+                            <arc:Button Grid.Row="1" Grid.Column="1" Content="清理缓存" Command="{Binding ClearCacheCommand}" />
                         </Grid>
                     </Border>
                 </StackPanel>
@@ -237,50 +247,46 @@
                             <TextBlock Text="{Binding PlaybackArtist}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                         <Grid x:Name="PlaybackVolume" Grid.Column="2" ColumnDefinitions="*,Auto,100" ColumnSpacing="8" Height="40" VerticalAlignment="Center">
-                            <CheckBox Grid.Column="1" Content="静音" IsChecked="{Binding IsMuted}" IsEnabled="{Binding CanConfigureAudio}" FontSize="11" />
-                            <Slider Grid.Column="2" Value="{Binding Volume}" Minimum="0" Maximum="100" Height="32" VerticalAlignment="Center" UseLayoutRounding="False" IsEnabled="{Binding CanConfigureAudio}" ToolTip.Tip="{Binding VolumeText}">
-                                <Slider.Resources>
-                                    <GridLength x:Key="SliderPreContentMargin">6</GridLength>
-                                    <GridLength x:Key="SliderPostContentMargin">6</GridLength>
-                                </Slider.Resources>
-                            </Slider>
+                            <arc:Checkbox Grid.Column="1" Content="静音" VerticalAlignment="Center" UseLayoutRounding="False" IsChecked="{Binding IsMuted}" IsEnabled="{Binding CanConfigureAudio}" FontSize="11" />
+                            <arc:Slider IsValueVisible="False" Grid.Column="2" Value="{Binding Volume}" Minimum="0" Maximum="100" Height="32" VerticalAlignment="Center" UseLayoutRounding="False" IsEnabled="{Binding CanConfigureAudio}" ToolTip.Tip="{Binding VolumeText}">
+                            </arc:Slider>
                         </Grid>
                     </Grid>
                     <Grid x:Name="TransportGroup" Width="200" Height="40" ColumnDefinitions="40,40,40,40,40" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <Button x:Name="ShuffleButton" Classes="transport modeTransport" Command="{Binding ToggleShuffleCommand}" ToolTip.Tip="{Binding ShuffleModeText}" AutomationProperties.Name="{Binding ShuffleModeText}">
+                        <arc:Button x:Name="ShuffleButton" Classes="transport modeTransport" Command="{Binding ToggleShuffleCommand}" ToolTip.Tip="{Binding ShuffleModeText}" AutomationProperties.Name="{Binding ShuffleModeText}">
                             <Canvas Width="16" Height="16">
                                 <Path x:Name="TransportShuffleIcon" Classes="modeGlyph" Classes.active="{Binding IsShuffle}" Data="{StaticResource ShuffleGlyph}" />
                             </Canvas>
-                        </Button>
-                        <Button x:Name="PreviousTrackButton" Grid.Column="1" Classes="transport" Command="{Binding PreviousCommand}" ToolTip.Tip="上一首" AutomationProperties.Name="上一首">
+                        </arc:Button>
+                        <arc:Button x:Name="PreviousTrackButton" Grid.Column="1" Classes="transport" Command="{Binding PreviousCommand}" ToolTip.Tip="上一首" AutomationProperties.Name="上一首">
                             <Canvas Width="16" Height="16">
                                 <Path x:Name="TransportPreviousIcon" Data="M 3,2 L 5,2 L 5,14 L 3,14 Z M 13,2 L 5,8 L 13,14 Z" Fill="{DynamicResource MusicTextBrush}" Width="16" Height="16" Stretch="None" />
                             </Canvas>
-                        </Button>
-                        <Button x:Name="TransportButton" Grid.Column="2" Classes="primary transportPrimary" Command="{Binding TogglePlayPauseCommand}" Width="36" Height="36" MinHeight="0" Padding="0" CornerRadius="18" ToolTip.Tip="{Binding TransportButtonText}" AutomationProperties.Name="{Binding TransportButtonText}">
+                        </arc:Button>
+                        <arc:Button x:Name="TransportButton" Grid.Column="2" Classes="primary transportPrimary" Command="{Binding TogglePlayPauseCommand}" Width="36" Height="36" MinHeight="0" Padding="0" CornerRadius="18" ToolTip.Tip="{Binding TransportButtonText}" AutomationProperties.Name="{Binding TransportButtonText}">
                             <Canvas Width="16" Height="16">
                                 <Path x:Name="TransportPlayIcon" Data="M 5,2 L 13,8 L 5,14 Z" Fill="{DynamicResource MusicAccentTextBrush}" Width="16" Height="16" Stretch="None" IsVisible="{Binding !IsPlaying}" />
                                 <Path x:Name="TransportPauseIcon" Data="M 4,2 L 7,2 L 7,14 L 4,14 Z M 9,2 L 12,2 L 12,14 L 9,14 Z" Fill="{DynamicResource MusicAccentTextBrush}" Width="16" Height="16" Stretch="None" IsVisible="{Binding IsPlaying}" />
                             </Canvas>
-                        </Button>
-                        <Button x:Name="NextTrackButton" Grid.Column="3" Classes="transport" Command="{Binding NextCommand}" ToolTip.Tip="下一首" AutomationProperties.Name="下一首">
+                        </arc:Button>
+                        <arc:Button x:Name="NextTrackButton" Grid.Column="3" Classes="transport" Command="{Binding NextCommand}" ToolTip.Tip="下一首" AutomationProperties.Name="下一首">
                             <Canvas Width="16" Height="16">
                                 <Path x:Name="TransportNextIcon" Data="M 11,2 L 13,2 L 13,14 L 11,14 Z M 3,2 L 11,8 L 3,14 Z" Fill="{DynamicResource MusicTextBrush}" Width="16" Height="16" Stretch="None" />
                             </Canvas>
-                        </Button>
-                        <Button x:Name="RepeatButton" Grid.Column="4" Classes="transport modeTransport" Command="{Binding CycleRepeatModeCommand}" ToolTip.Tip="{Binding RepeatModeText}" AutomationProperties.Name="{Binding RepeatModeText}">
+                        </arc:Button>
+                        <arc:Button x:Name="RepeatButton" Grid.Column="4" Classes="transport modeTransport" Command="{Binding CycleRepeatModeCommand}" ToolTip.Tip="{Binding RepeatModeText}" AutomationProperties.Name="{Binding RepeatModeText}">
                             <Grid Width="16" Height="16">
                                 <Canvas Width="16" Height="16">
                                     <Path x:Name="TransportRepeatIcon" Classes="modeGlyph" Classes.active="{Binding IsRepeating}" Data="{StaticResource RepeatGlyph}" />
                                 </Canvas>
                                 <TextBlock Text="1" IsVisible="{Binding IsRepeatOne}" FontSize="8" FontWeight="SemiBold" Foreground="{DynamicResource MusicAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
-                        </Button>
+                        </arc:Button>
                     </Grid>
                 </Grid>
                 <Grid Grid.Row="1" ColumnDefinitions="42,*,42" ColumnSpacing="10">
                     <TextBlock Text="{Binding PositionText}" VerticalAlignment="Center" Classes="muted" FontSize="11" />
-                    <Slider x:Name="PlaybackTimeline" Grid.Column="1" Height="48" VerticalAlignment="Center" Minimum="0" Maximum="{Binding DurationSeconds}" Value="{Binding PositionSeconds, Mode=TwoWay}" IsEnabled="{Binding CanSeek}" SmallChange="5" LargeChange="15" />
+                    <arc:Slider IsValueVisible="False" x:Name="PlaybackTimeline" Grid.Column="1" Height="48" VerticalAlignment="Center" Minimum="0" Maximum="{Binding DurationSeconds}" Value="{Binding PositionSeconds, Mode=TwoWay}" IsEnabled="{Binding CanSeek}" SmallChange="0.01" LargeChange="15" AutomationProperties.Name="播放进度" />
                     <TextBlock Grid.Column="2" Text="{Binding DurationText}" VerticalAlignment="Center" HorizontalAlignment="Right" Classes="muted" FontSize="11" />
                 </Grid>
             </Grid>

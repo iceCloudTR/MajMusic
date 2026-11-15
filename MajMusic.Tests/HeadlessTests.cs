@@ -15,6 +15,11 @@ using MajMusic.Infrastructure.Application;
 using MajMusic.Infrastructure.Storage;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
+using MajMusic.Presentation.Theme;
+using TKCode.Arc.Motion;
+using ArcSlider = TKCode.Arc.Slider;
+using ArcSelect = TKCode.Arc.Select;
+using ArcSwitch = TKCode.Arc.Switch;
 using SkiaSharp;
 using System.Collections.Concurrent;
 using System.Net;
@@ -51,7 +56,7 @@ namespace MajMusic.Tests
                     Dispatcher.UIThread.RunJobs();
                     TestAssert.True(!workspace.IsOnline, "Rendering startup must leave the application offline.");
                     TestAssert.True(!viewModel.PlayCommand.CanExecute(null), "An unavailable backend must not offer playback.");
-                    TestAssert.True(!view.FindControl<Slider>("PlaybackTimeline")!.IsEnabled,
+                    TestAssert.True(!view.FindControl<ArcSlider>("PlaybackTimeline")!.IsEnabled,
                         "An unavailable backend must keep the real timeline disabled.");
                     SaveFrame(window, Path.Combine(output, "ui-empty.png"));
 
@@ -113,8 +118,8 @@ namespace MajMusic.Tests
                         "The complete library must retain row virtualization rather than realizing every song.");
                     TestAssert.True(view.FindControl<Border>("PlaybackBar")!.Bounds.Height <= 115,
                         "The shared playback bar must leave room for the library.");
-                    var timeline = view.FindControl<Slider>("PlaybackTimeline")!;
-                    var thumb = timeline.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Thumb>().Single();
+                    var timeline = view.FindControl<ArcSlider>("PlaybackTimeline")!;
+                    var thumb = ArcTestVisuals.SliderThumb(timeline);
                     var thumbPosition = thumb.TranslatePoint(default, timeline);
                     TestAssert.True(thumbPosition is { Y: >= 0 } position && position.Y + thumb.Bounds.Height <= timeline.Bounds.Height,
                         $"The timeline thumb must fit its allocated height: {thumbPosition?.Y} + {thumb.Bounds.Height} within {timeline.Bounds.Height}.");
@@ -148,7 +153,7 @@ namespace MajMusic.Tests
                     SaveFrame(window, Path.Combine(output, "ui-settings.png"));
                     tabs.SelectedItem = view.FindControl<TabItem>("AccountsTab");
                     Dispatcher.UIThread.RunJobs();
-                    var permission = view.FindControl<ToggleSwitch>("OnlineModeToggle")!;
+                    var permission = view.FindControl<ArcSwitch>("OnlineModeToggle")!;
                     TestAssert.True(permission.IsChecked != true, "Online permission must default to disabled.");
                     var preferences = await workspace.LoadSettingsAsync(timeout.Token);
                     await workspace.SaveSettingsAsync(preferences with
@@ -170,7 +175,7 @@ namespace MajMusic.Tests
                     var primaryCard = view.GetVisualDescendants().OfType<EndpointCardView>()
                         .Single(card => ((EndpointCardViewModel)card.DataContext!).Id == "guest-a");
                     var accountCard = (EndpointCardViewModel)primaryCard.DataContext!;
-                    var accountPicker = primaryCard.FindControl<ComboBox>("SavedAccountPicker")!;
+                    var accountPicker = primaryCard.FindControl<ArcSelect>("SavedAccountPicker")!;
                     TestAssert.Equal("Render B", accountCard.SelectedAccount?.DisplayName,
                         "The actual selector must restore the configured account without logging in.");
                     accountPicker.SelectedIndex = 0;
@@ -377,6 +382,22 @@ namespace MajMusic.Tests
             await viewModel.HomeUpdate;
             TestAssert.True(viewModel.IsSearching && viewModel.Tracks.All(track => track.Title.Contains("Bio", StringComparison.OrdinalIgnoreCase)),
                 "Entering a search must display matching indexed music rather than the feed.");
+            var searchInput = view.FindControl<TextBox>("LibrarySearch")!;
+            searchInput.Focus();
+            window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+            window.KeyReleaseQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+            await viewModel.HomeUpdate;
+            TestAssert.True(viewModel.IsSearchExpanded && viewModel.IsSearching, "Enter in the real Arc search input must retain the matching search results.");
+            window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+            window.KeyReleaseQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+            await viewModel.HomeUpdate;
+            TestAssert.True(!viewModel.IsSearchExpanded && viewModel.IsRecommendationsMode, "Escape in the real Arc search input must return to recommendations.");
+            window.MouseDown(searchPoint, MouseButton.Left);
+            window.MouseUp(searchPoint, MouseButton.Left);
+            await viewModel.HomeUpdate;
+            searchInput.Text = "Bio";
+            await viewModel.HomeUpdate;
+            Dispatcher.UIThread.RunJobs();
             SaveFrame(window, Path.Combine(output, "ui-search.png"));
             AssertChromeGeometry(view);
             TestAssert.True(cardsList.IsVisible && !cardsList.GetVisualDescendants().OfType<SongCard>().Any(card => card.IsCompact),
@@ -472,7 +493,7 @@ namespace MajMusic.Tests
             AssertChromeGeometry(view);
             var inspector = view.FindControl<Border>("LibraryDetails")!;
             foreach (var control in inspector.GetVisualDescendants().OfType<Control>()
-                .Where(item => item.IsEffectivelyVisible && item is Button or ComboBox))
+                .Where(item => item.IsEffectivelyVisible && item is Button or ArcSelect))
             {
                 var position = control.TranslatePoint(default, inspector)!.Value;
                 TestAssert.True(position.X >= 0 && position.Y >= 0
@@ -481,10 +502,17 @@ namespace MajMusic.Tests
                     "Selected-song actions must fit the permanent inspector at the minimum window size.");
             }
 
-            foreach (var page in new[] { "AccountsTab", "SettingsTab", "DirectoriesTab" })
+            foreach (var page in new[] { (Tab: "AccountsTab", Button: "NavigateAccounts", Index: 3), (Tab: "SettingsTab", Button: "NavigateSettings", Index: 4), (Tab: "DirectoriesTab", Button: "NavigateDirectories", Index: 2) })
             {
-                view.FindControl<TabControl>("MainTabs")!.SelectedItem = view.FindControl<TabItem>(page);
-                SaveFrame(window, Path.Combine(output, "ui-small-" + page + ".png"));
+                var navigation = view.FindControl<Button>(page.Button)!;
+                var navigationPoint = navigation.TranslatePoint(new Point(navigation.Bounds.Width / 2, navigation.Bounds.Height / 2), window)!.Value;
+                window.MouseDown(navigationPoint, MouseButton.Left);
+                window.MouseUp(navigationPoint, MouseButton.Left);
+                Dispatcher.UIThread.RunJobs();
+                TestAssert.Equal(page.Index, view.SelectedSectionIndex, "The actual Arc navigation action must open its original page.");
+                TestAssert.True(ReferenceEquals(view.FindControl<TabControl>("MainTabs")!.SelectedItem, view.FindControl<TabItem>(page.Tab)),
+                    "Desktop navigation must preserve the original selected page host.");
+                SaveFrame(window, Path.Combine(output, "ui-small-" + page.Tab + ".png"));
                 AssertVisibleActions(view);
             }
 
@@ -495,8 +523,8 @@ namespace MajMusic.Tests
             viewModel.ShowLibraryModeCommand.Execute(null);
             await viewModel.HomeUpdate;
             Dispatcher.UIThread.RunJobs();
-            var volume = view.FindControl<Grid>("PlaybackVolume")!.GetVisualDescendants().OfType<Slider>().Single();
-            var volumeThumb = volume.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Thumb>().Single();
+            var volume = view.FindControl<Grid>("PlaybackVolume")!.GetVisualDescendants().OfType<ArcSlider>().Single();
+            var volumeThumb = ArcTestVisuals.SliderThumb(volume);
             var volumeStart = volumeThumb.TranslatePoint(new Point(volumeThumb.Bounds.Width / 2, volumeThumb.Bounds.Height / 2), window)!.Value;
             var volumeEnd = volume.TranslatePoint(new Point(volume.Bounds.Width * 0.4, volume.Bounds.Height / 2), window)!.Value;
             window.MouseDown(volumeStart, MouseButton.Left);
@@ -508,7 +536,7 @@ namespace MajMusic.Tests
             viewModel.SelectedTrack = viewModel.Tracks[0];
             await viewModel.PlaySelectedAsync();
             Dispatcher.UIThread.RunJobs();
-            var slider = view.FindControl<Slider>("PlaybackTimeline")!;
+            var slider = view.FindControl<ArcSlider>("PlaybackTimeline")!;
             TestAssert.True(slider.IsEnabled, "A prepared seekable backend must enable the actual slider.");
             TestAssert.Equal(120d, slider.Maximum, "The real slider must bind the audio duration.");
             var progress = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -525,7 +553,7 @@ namespace MajMusic.Tests
             TestAssert.Equal(20d, slider.Value, "The real slider must display backend progress.");
             TestAssert.Equal(0, backend.SeekCount, "A bound clock update cannot feed back as a seek.");
 
-            slider.Focus();
+            ArcTestVisuals.SliderThumb(slider).Focus();
             window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
             TestAssert.True(viewModel.IsSeeking, "Keyboard navigation must begin a user preview.");
             TestAssert.Equal(0, backend.SeekCount, "A held navigation key cannot seek before its release.");
@@ -549,7 +577,7 @@ namespace MajMusic.Tests
             TestAssert.Equal(2, backend.SeekCount, "Pointer release must commit exactly once.");
             TestAssert.Equal(TimeSpan.FromSeconds(proposed), backend.Snapshot.Position, "The pointer preview must reach the backend clock.");
 
-            slider.Focus();
+            ArcTestVisuals.SliderThumb(slider).Focus();
             window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
             window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
             window.KeyReleaseQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
@@ -619,7 +647,7 @@ namespace MajMusic.Tests
             var player = view.FindControl<Border>("PlaybackBar")!;
             var contentBottom = player.TranslatePoint(default, view)!.Value.Y;
             foreach (var control in view.GetVisualDescendants().OfType<Control>()
-                .Where(item => item.IsEffectivelyVisible && item is Button or ComboBox or CheckBox or TextBox)
+                .Where(item => item.IsEffectivelyVisible && item is Button or ArcSelect or ArcSwitch or CheckBox or TextBox)
                 .Where(item => !item.GetVisualAncestors().Any(ancestor => ancestor is SongCard or EndpointCardView)))
             {
                 var position = control.TranslatePoint(default, view)!.Value;
@@ -716,7 +744,7 @@ namespace MajMusic.Tests
         }
 
         /// <summary>Provides an explicit test-only native clock substitute for actual input and binding checks.</summary>
-        private sealed class TimelineBackend : IPlaybackBackend, IAudioOutputControl
+        internal sealed class TimelineBackend : IPlaybackBackend, IAudioOutputControl
         {
             /// <inheritdoc />
             public AudioOutputPreferences Preferences { get; private set; } = new();
@@ -819,7 +847,7 @@ namespace MajMusic.Tests
     /// <summary>Provides real Skia rendering with an in-memory windowing platform.</summary>
     public sealed class HeadlessTestApplication : Application
     {
-        /// <summary>Loads the same Fluent theme used by the desktop host.</summary>
+        /// <summary>Loads the same legacy virtualization base used by the Arc desktop host.</summary>
         public override void Initialize()
         {
             RequestedThemeVariant = ThemeVariant.Dark;
@@ -832,7 +860,20 @@ namespace MajMusic.Tests
         {
             return AppBuilder.Configure<HeadlessTestApplication>()
                 .UseSkia()
-                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .UseMajMusicArc(ArcMotionLevel.Off);
+        }
+    }
+
+    /// <summary>Locates the interactive Arc visual elements used by real input regressions.</summary>
+    internal static class ArcTestVisuals
+    {
+        /// <summary>Finds the slider's actual focusable thumb instead of focusing its noninteractive group.</summary>
+        /// <param name="slider">The realized single-value Arc slider.</param>
+        /// <returns>The real pointer and keyboard target.</returns>
+        public static Control SliderThumb(ArcSlider slider)
+        {
+            return slider.GetVisualDescendants().OfType<Control>().Single(control => control.IsVisible && control.GetType().Name == "SliderThumb");
         }
     }
 }

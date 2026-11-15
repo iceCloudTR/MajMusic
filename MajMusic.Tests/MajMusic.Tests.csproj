@@ -8,8 +8,8 @@
         <ProjectReference Include="../MajMusic.Presentation/MajMusic.Presentation.csproj" />
         <ProjectReference Include="../MajMusic.Audio.Desktop/MajMusic.Audio.Desktop.csproj" />
         <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
-        <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
-        <PackageReference Include="Avalonia.Skia" Version="12.1.0" />
-        <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
+        <PackageReference Include="Avalonia.Headless" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="Avalonia.Skia" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
     </ItemGroup>
 </Project>

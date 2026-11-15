@@ -155,8 +155,8 @@ namespace MajMusic.Tests
             TestAssert.True(Math.Abs(origin.Y + fill.Bounds.Height - pane.Bounds.Height) <= tolerance,
                 "Download fill must remain anchored to the bottom of the information half.");
             var button = card.GetVisualDescendants().OfType<Button>().Single();
-            var presenter = button.GetVisualDescendants().OfType<ContentPresenter>()
-                .Single(control => control.Name == "PART_ContentPresenter");
+            var presenter = button.GetVisualDescendants().OfType<Border>()
+                .Single(control => control.Name == "PART_Frame");
             TestAssert.Equal(selected ? Color.Parse("#7AD8C1") : Color.Parse("#2B3743"),
                 ((ISolidColorBrush)presenter.BorderBrush!).Color,
                 "Selection must use its own border color independently of download fill.");

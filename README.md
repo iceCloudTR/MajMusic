@@ -1,5 +1,5 @@
 # MajMusic
-基于 Avalonia 和 .NET 10 的桌面音乐播放器，支持本地曲库与兼容 MajNet 的音乐来源。
+基于 Avalonia、TKCode.Arc 和 .NET 10 的音乐播放器，支持本地曲库与兼容 MajNet 的音乐来源。
 
 # 还在头痛不能随时随地听MajNet上的音乐吗？！
 # 立刻启动 MajMusic！！！
@@ -15,6 +15,7 @@
 - 多接入点、独立账号与 Guest，支持记住密码和自动登录。
 - 应用音量、静音、输出设备选择与离线下载。
 - 歌曲卡片右半区显示下载进度，从下向上填充，完成后保留颜色并显示“下载完成”。
+- Arc 控件与统一主题，桌面保留常驻详情栏，手机窄屏使用底部导航、迷你播放器与歌曲详情抽屉。
 
 ## 开发运行
 
@@ -26,6 +27,10 @@ dotnet run --project MajMusic/MajMusic.csproj
 ```
 
 Windows 构建自带 LibVLC；Linux 和 macOS 需要安装对应的 LibVLC 运行库。当前桌面开发验证环境为 Windows，移动端宿主仍在开发计划中。
+
+界面采用 TKCode.Arc 1.1.0 和 Avalonia 12.1.5，共享现有 ViewModel、命令与服务。窄屏界面已使用 Arc.Mobile 组件适配安全区、软键盘和触摸区域；Android/iOS 应用宿主、后台音频服务和系统媒体控制仍需接入。[上游移动支持状态](https://github.com/AIDotNet/TKCode.Arc#status-and-compatibility)目前也区分了桌面手机框预览与实机验证。
+
+Arc 的 MIT 许可证和随包第三方声明保留在 [ThirdPartyNotices](ThirdPartyNotices/)，构建和发布时会一同复制。
 
 ## 使用
 

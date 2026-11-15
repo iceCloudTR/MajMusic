@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:arc="https://github.com/AIDotNet/TKCode.Arc">
     <Styles.Resources>
         <ResourceDictionary>
             <ResourceDictionary.ThemeDictionaries>
@@ -32,10 +33,10 @@
     </Styles.Resources>
     <Style Selector="UserControl">
         <Setter Property="FontSize" Value="13" />
-        <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
+        <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}" />
     </Style>
     <Style Selector="TextBlock.muted">
-        <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
+        <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
     </Style>
     <Style Selector="TextBlock.sectionTitle">
         <Setter Property="FontSize" Value="16" />
@@ -43,82 +44,58 @@
     </Style>
     <Style Selector="TextBlock.fieldLabel">
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
+        <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
     </Style>
-    <Style Selector="Button">
+    <Style Selector="arc|Button">
+        <Setter Property="Variant" Value="Secondary" />
+        <Setter Property="Size" Value="Small" />
         <Setter Property="MinHeight" Value="32" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Padding" Value="12,5" />
+        <Setter Property="CornerRadius" Value="12" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Background" Value="{DynamicResource MusicRaisedBrush}" />
+        <Setter Property="IsPressScaleEnabled" Value="False" />
+        <Setter Property="LabelSwapMode" Value="None" />
     </Style>
-    <Style Selector="Button.primary">
+    <Style Selector="arc|Button.primary">
+        <Setter Property="Variant" Value="Primary" />
         <Setter Property="Background" Value="{DynamicResource MusicAccentBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource MusicAccentTextBrush}" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
-    <Style Selector="Button.quiet">
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
+    <Style Selector="arc|Button.quiet">
+        <Setter Property="Variant" Value="Ghost" />
+        <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
     </Style>
-    <Style Selector="Button.icon">
-        <Setter Property="Width" Value="32" />
-        <Setter Property="Height" Value="32" />
-        <Setter Property="MinHeight" Value="0" />
-        <Setter Property="Padding" Value="5" />
+    <Style Selector="arc|Button.navigation">
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Padding" Value="12,5" />
+        <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
     </Style>
-    <Style Selector="Button.iconSmall">
-        <Setter Property="Width" Value="28" />
-        <Setter Property="Height" Value="28" />
-        <Setter Property="MinHeight" Value="0" />
-        <Setter Property="Padding" Value="3" />
-    </Style>
-    <Style Selector="Button.page">
-        <Setter Property="Width" Value="32" />
-        <Setter Property="Height" Value="28" />
-        <Setter Property="MinHeight" Value="0" />
-        <Setter Property="Padding" Value="3" />
-    </Style>
-    <Style Selector="ToggleButton.mode">
-        <Setter Property="FontSize" Value="13" />
-        <Setter Property="MinHeight" Value="0" />
-        <Setter Property="MinWidth" Value="0" />
-        <Setter Property="HorizontalAlignment" Value="Stretch" />
-        <Setter Property="VerticalAlignment" Value="Stretch" />
-        <Setter Property="Padding" Value="8,3" />
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
-        <Setter Property="HorizontalContentAlignment" Value="Center" />
-        <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="ToggleButton.mode /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="HorizontalAlignment" Value="Stretch" />
-        <Setter Property="VerticalAlignment" Value="Stretch" />
-        <Setter Property="HorizontalContentAlignment" Value="Center" />
-        <Setter Property="VerticalContentAlignment" Value="Center" />
-        <Setter Property="Margin" Value="0" />
-        <Setter Property="CornerRadius" Value="8" />
-    </Style>
-    <Style Selector="ToggleButton.mode:checked">
-        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
+    <Style Selector="arc|Button.navigation.current">
         <Setter Property="Foreground" Value="{DynamicResource MusicAccentBrush}" />
+        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
-    <Style Selector="ToggleButton.mode:checked /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource MusicAccentBrush}" />
-        <Setter Property="CornerRadius" Value="8" />
+    <Style Selector="arc|Button.icon">
+        <Setter Property="Variant" Value="Ghost" />
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Padding" Value="0" />
     </Style>
-    <Style Selector="ToggleButton.mode:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource MusicAccentBrush}" />
+    <Style Selector="arc|Button.iconSmall, arc|Button.page">
+        <Setter Property="Variant" Value="Ghost" />
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Padding" Value="0" />
     </Style>
-    <Style Selector="Button.transport">
+    <Style Selector="arc|Button.transport">
+        <Setter Property="Variant" Value="Ghost" />
         <Setter Property="Width" Value="36" />
         <Setter Property="Height" Value="36" />
         <Setter Property="MinHeight" Value="0" />
@@ -127,30 +104,11 @@
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="CornerRadius" Value="18" />
-        <Setter Property="Background" Value="Transparent" />
     </Style>
-    <Style Selector="Button.transport /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="HorizontalAlignment" Value="Stretch" />
-        <Setter Property="VerticalAlignment" Value="Stretch" />
-        <Setter Property="HorizontalContentAlignment" Value="Center" />
-        <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.transportPrimary">
+    <Style Selector="arc|Button.transportPrimary">
         <Setter Property="MinWidth" Value="0" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.transportPrimary /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="HorizontalAlignment" Value="Stretch" />
-        <Setter Property="VerticalAlignment" Value="Stretch" />
-        <Setter Property="HorizontalContentAlignment" Value="Center" />
-        <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.modeTransport">
-        <Setter Property="Width" Value="36" />
-        <Setter Property="Height" Value="36" />
-        <Setter Property="Padding" Value="0" />
-        <Setter Property="CornerRadius" Value="18" />
     </Style>
     <Style Selector="Path.modeGlyph">
         <Setter Property="Width" Value="16" />
@@ -166,38 +124,45 @@
     <Style Selector="Path.modeGlyph.active">
         <Setter Property="Stroke" Value="{DynamicResource MusicAccentBrush}" />
     </Style>
-    <Style Selector="TextBox">
+    <Style Selector="arc|Input, arc|SearchField">
         <Setter Property="FontSize" Value="13" />
-        <Setter Property="MinHeight" Value="34" />
-        <Setter Property="Padding" Value="10,6" />
-        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Size" Value="Small" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="38" />
+        <Setter Property="CornerRadius" Value="12" />
     </Style>
-    <Style Selector="ComboBox">
+    <Style Selector="arc|Select">
         <Setter Property="FontSize" Value="13" />
-        <Setter Property="MinHeight" Value="34" />
-        <Setter Property="Padding" Value="9,5" />
-        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Size" Value="Small" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="38" />
+        <Setter Property="CornerRadius" Value="12" />
     </Style>
-    <Style Selector="TabControl">
+    <Style Selector="arc|Slider">
+        <Setter Property="ThumbDiameter" Value="16" />
+        <Setter Property="TrackThickness" Value="4" />
+    </Style>
+    <Style Selector="TabControl.desktopPages">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Padding" Value="0" />
-    </Style>
-    <Style Selector="TabControl /template/ ContentPresenter#PART_SelectedContentHost">
-        <Setter Property="Margin" Value="0" />
-    </Style>
-    <Style Selector="TabItem">
-        <Setter Property="FontSize" Value="14" />
-        <Setter Property="MinHeight" Value="36" />
-        <Setter Property="Padding" Value="12,6" />
-        <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
-    </Style>
-    <Style Selector="TabItem:selected">
-        <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Grid RowDefinitions="0,*">
+                    <ItemsPresenter Name="PART_ItemsPresenter" Height="0" Opacity="0" ClipToBounds="True"
+                                    IsHitTestVisible="False" ItemsPanel="{TemplateBinding ItemsPanel}"
+                                    KeyboardNavigation.TabNavigation="None" />
+                    <ContentPresenter Name="PART_SelectedContentHost" Grid.Row="1"
+                                      Content="{TemplateBinding SelectedContent}"
+                                      ContentTemplate="{TemplateBinding SelectedContentTemplate}"
+                                      HorizontalContentAlignment="Stretch"
+                                      VerticalContentAlignment="Stretch" />
+                </Grid>
+            </ControlTemplate>
+        </Setter>
     </Style>
     <Style Selector="Border.card">
-        <Setter Property="Background" Value="{DynamicResource MusicPanelBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource MusicLineBrush}" />
+        <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
+        <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Border}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="12" />
         <Setter Property="Padding" Value="16" />
@@ -213,15 +178,12 @@
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="MinHeight" Value="0" />
         <Setter Property="Height" Value="52" />
-        <Setter Property="CornerRadius" Value="8" />
-    </Style>
-    <Style Selector="ListBoxItem:selected">
-        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
+        <Setter Property="CornerRadius" Value="12" />
     </Style>
     <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
-        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="CornerRadius" Value="12" />
     </Style>
     <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />

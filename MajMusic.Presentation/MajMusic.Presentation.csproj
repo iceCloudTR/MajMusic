@@ -4,6 +4,8 @@
     </PropertyGroup>
     <ItemGroup>
         <ProjectReference Include="../MajMusic.Core/MajMusic.Core.csproj" />
-        <PackageReference Include="Avalonia" Version="12.1.0" />
+        <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="TKCode.Arc" Version="$(ArcVersion)" />
+        <PackageReference Include="TKCode.Arc.Mobile" Version="$(ArcVersion)" />
     </ItemGroup>
 </Project>

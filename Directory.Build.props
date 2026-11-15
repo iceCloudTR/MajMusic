@@ -6,5 +6,7 @@
     <LangVersion>14.0</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <AnalysisLevel>latest</AnalysisLevel>
+    <AvaloniaVersion>12.1.5</AvaloniaVersion>
+    <ArcVersion>1.1.0</ArcVersion>
   </PropertyGroup>
 </Project>

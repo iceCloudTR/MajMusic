@@ -1,5 +1,6 @@
 #nullable enable
 
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -13,6 +14,26 @@ namespace MajMusic.Presentation.Views
     /// <summary>Hosts virtualized artwork cards consistently across recommendations, playlists and searches.</summary>
     public partial class BrowseTracksView : UserControl
     {
+        /// <summary>Identifies a touch viewport that keeps complete cover cards in one column.</summary>
+        public static readonly StyledProperty<bool> ForceSingleColumnProperty = AvaloniaProperty.Register<BrowseTracksView, bool>(nameof(ForceSingleColumn));
+
+        /// <summary>Gets or sets whether this browser reserves one complete card per row.</summary>
+        public bool ForceSingleColumn
+        {
+            get => GetValue(ForceSingleColumnProperty);
+            set => SetValue(ForceSingleColumnProperty, value);
+        }
+
+        /// <inheritdoc />
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+            if (change.Property == ForceSingleColumnProperty && Bounds.Width > 0 && DataContext is MainViewModel owner)
+            {
+                owner.SetBrowseViewportWidth(CardViewportWidth(Bounds.Width));
+            }
+        }
+
         /// <summary>Observes the current workspace's committed browsing generation.</summary>
         private MainViewModel? _browseOwner;
         /// <summary>Retains the generation whose scroll position is currently displayed.</summary>
@@ -43,7 +64,7 @@ namespace MajMusic.Presentation.Views
                 owner.PropertyChanged += OnBrowseOwnerChanged;
                 if (Bounds.Width > 0)
                 {
-                    owner.SetBrowseViewportWidth(Bounds.Width - 12);
+                    owner.SetBrowseViewportWidth(CardViewportWidth(Bounds.Width));
                 }
 
                 ResetNavigationOffset();
@@ -94,8 +115,16 @@ namespace MajMusic.Presentation.Views
         {
             if (DataContext is MainViewModel owner)
             {
-                owner.SetBrowseViewportWidth(e.NewSize.Width - 12);
+                owner.SetBrowseViewportWidth(CardViewportWidth(e.NewSize.Width));
             }
+        }
+
+        /// <summary>Maps a touch viewport to one column while retaining desktop row virtualization.</summary>
+        /// <param name="width">The actual content width.</param>
+        /// <returns>The logical width used only to choose the card column count.</returns>
+        private double CardViewportWidth(double width)
+        {
+            return ForceSingleColumn ? Math.Min(400, width - 12) : width - 12;
         }
 
         /// <summary>Moves between individual artwork cards while keeping the selected row and inspector visible.</summary>

@@ -11,6 +11,7 @@ using MajMusic.Core.Playback;
 using MajMusic.Infrastructure.Application;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
+using ArcSwitch = TKCode.Arc.Switch;
 
 namespace MajMusic.Tests
 {
@@ -151,13 +152,13 @@ namespace MajMusic.Tests
         /// <param name="scale">The actual platform display scale.</param>
         private static void AssertToolbar(MainView view, double scale)
         {
-            var toggle = view.FindControl<ToggleSwitch>("OnlineModeToggle")!;
+            var toggle = view.FindControl<ArcSwitch>("OnlineModeToggle")!;
             var inline = (StackPanel)toggle.Parent!;
             var toolbar = (Grid)inline.Parent!;
             var label = inline.Children.OfType<TextBlock>().Single();
             var labelCenter = BoundsIn(label, toolbar).Center.Y;
-            var knob = toggle.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Ellipse>().Single(item => item.Name == "SwitchKnobOff");
-            var outer = toggle.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "OuterBorder");
+            var knob = toggle.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "PART_Thumb");
+            var outer = toggle.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "PART_Track");
             foreach (var paint in new Control[] { knob, outer })
             {
                 var bounds = BoundsIn(paint, toolbar);

@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -15,6 +16,8 @@ using MajMusic.Infrastructure.Application;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
 using SkiaSharp;
+using ArcSlider = TKCode.Arc.Slider;
+using ArcSegments = TKCode.Arc.SegmentedControl;
 
 namespace MajMusic.Tests
 {
@@ -55,16 +58,16 @@ namespace MajMusic.Tests
                         window.Width = size.Width;
                         window.Height = size.Height;
                         RenderFrame(window, output, $"ui-alignment-{size.Width:0}.png");
-                        foreach (var mode in new[]
+                        foreach (var mode in new[] { HomeBrowseMode.Recommendations, HomeBrowseMode.Playlists, HomeBrowseMode.Library })
                         {
-                            viewModel.ShowRecommendationsModeCommand,
-                            viewModel.ShowPlaylistsModeCommand,
-                            viewModel.ShowLibraryModeCommand
-                        })
-                        {
-                            mode.Execute(null);
+                            var segment = view.FindControl<ArcSegments>("HomeModeSegments")!;
+                            var item = segment.ContainerFromIndex((int)mode)!;
+                            var target = item.TranslatePoint(new Point(item.Bounds.Width / 2, item.Bounds.Height / 2), window)!.Value;
+                            window.MouseDown(target, MouseButton.Left);
+                            window.MouseUp(target, MouseButton.Left);
                             await viewModel.HomeUpdate;
                             Dispatcher.UIThread.RunJobs();
+                            TestAssert.Equal(mode, viewModel.HomeMode, "Touching an actual Arc mode segment must run its original browse command.");
                             AssertSegments(view);
                             AssertTransport(view);
                         }
@@ -128,28 +131,29 @@ namespace MajMusic.Tests
             }, timeout.Token);
         }
 
-        /// <summary>Checks that each segment and its painted presenter fill one equal grid column.</summary>
+        /// <summary>Checks the Arc mode choices remain complete, separated and consistent with the current browse mode.</summary>
         /// <param name="view">The rendered shared view.</param>
         private static void AssertSegments(MainView view)
         {
-            var group = view.FindControl<Grid>("HomeModeSegments")!;
-            var buttons = new[] { "RecommendationsModeButton", "PlaylistsModeButton", "LibraryModeButton" }
-                .Select(name => view.FindControl<ToggleButton>(name)!).ToArray();
-            var width = group.Bounds.Width / 3;
+            var group = view.FindControl<ArcSegments>("HomeModeSegments")!;
+            var buttons = Enumerable.Range(0, 3).Select(index => group.ContainerFromIndex(index)!).ToArray();
+            TestAssert.Equal(((MainViewModel)view.DataContext!).HomeMode, group.SelectedValue, "The Arc segment selection must follow the active browse mode.");
+            var precedingRight = 0d;
             for (var index = 0; index < buttons.Length; index++)
             {
                 var button = buttons[index];
                 var origin = button.TranslatePoint(default, group)!.Value;
-                Close(width, button.Bounds.Width, "Every mode must fill one equal column.");
-                Close(group.Bounds.Height, button.Bounds.Height, "Every mode must fill the segment height.");
-                Close(width * index, origin.X, "Mode segments must meet without uneven gaps.");
-                var presenter = button.GetVisualDescendants().OfType<ContentPresenter>()
-                    .Single(item => item.Name == "PART_ContentPresenter");
-                var presenterOrigin = presenter.TranslatePoint(default, button)!.Value;
-                Close(0, presenterOrigin.X, "Mode backgrounds must begin at their column edge.");
-                Close(button.Bounds.Width, presenter.Bounds.Width, "Mode backgrounds must fill the entire column.");
-                Close(button.Bounds.Height, presenter.Bounds.Height, "Mode backgrounds must fill the entire height.");
+                TestAssert.True(button.Bounds.Width > 30 && button.Bounds.Height >= 24 && origin.X >= precedingRight - 1
+                    && origin.X + button.Bounds.Width <= group.Bounds.Width + 1 && origin.Y >= 0
+                    && origin.Y + button.Bounds.Height <= group.Bounds.Height + 1, "Each Arc mode choice must be complete and must not overlap its neighbor.");
+                precedingRight = origin.X + button.Bounds.Width;
+                var painted = button.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "PART_Segment");
+                Close(button.Bounds.Width, painted.Bounds.Width, "The segment's painted background must fill its hit area.");
+                Close(button.Bounds.Height, painted.Bounds.Height, "The segment's painted background must fill its height.");
             }
+
+            var scroll = group.GetVisualDescendants().OfType<ScrollViewer>().Single(item => item.Name == "PART_ScrollViewer");
+            TestAssert.True(scroll.Extent.Width <= scroll.Viewport.Width + 1, "The three common home modes must fit without horizontal scrolling.");
         }
 
         /// <summary>Checks equal buttons and spacing, global centering and the visible primary icon center.</summary>
@@ -275,7 +279,7 @@ namespace MajMusic.Tests
                 Dispatcher.UIThread.RunJobs();
                 var audio = view.FindControl<Border>("AudioSettingsPanel")!;
                 var checkbox = audio.GetVisualDescendants().OfType<CheckBox>().Single();
-                var indicator = checkbox.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "NormalRectangle");
+                var indicator = checkbox.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "PART_Square");
                 var settingCenter = indicator.TranslatePoint(new Point(0, indicator.Bounds.Height / 2), view)!.Value.Y;
                 AssertVolumeBaseline(audio, view, settingCenter, window.RenderScaling, "Settings");
 
@@ -284,7 +288,7 @@ namespace MajMusic.Tests
                 Dispatcher.UIThread.RunJobs();
                 var input = view.GetVisualDescendants().OfType<TextBox>().Single(item => item.PlaceholderText == "新歌单名称");
                 var row = (Grid)input.Parent!;
-                var border = input.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "PART_BorderElement");
+                var border = input.GetVisualDescendants().OfType<Control>().Single(item => item.Name == "PART_Frame");
                 var paintedTop = border.TranslatePoint(default, row)!.Value.Y;
                 var paintedBottom = paintedTop + border.Bounds.Height;
                 TestAssert.True(paintedTop >= -0.01 && paintedBottom <= row.Bounds.Height + 0.01,
@@ -315,12 +319,12 @@ namespace MajMusic.Tests
         /// <param name="section">The section identified in assertion failures.</param>
         private static void AssertVolumeBaseline(Control container, MainView view, double center, double scale, string section)
         {
-            var slider = container.GetVisualDescendants().OfType<Slider>().Single();
-            var thumb = slider.GetVisualDescendants().OfType<Thumb>().Single();
+            var slider = container.GetVisualDescendants().OfType<ArcSlider>().Single();
+            var thumb = ArcTestVisuals.SliderThumb(slider);
             var checkbox = container.GetVisualDescendants().OfType<CheckBox>().Single();
-            var indicator = checkbox.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "NormalRectangle");
-            var tracks = slider.GetVisualDescendants().OfType<Border>().Where(item => item.Name == "TrackBackground");
-            foreach (var paintedControl in tracks.Cast<Control>().Append(thumb).Append(indicator))
+            var indicator = checkbox.GetVisualDescendants().OfType<Border>().Single(item => item.Name == "PART_Square");
+            var rail = slider.GetVisualDescendants().OfType<Control>().Single(item => item.Name == "PART_Rail");
+            foreach (var paintedControl in new[] { rail, thumb, indicator })
             {
                 var paintedCenter = paintedControl.TranslatePoint(new Point(0, paintedControl.Bounds.Height / 2), view)!.Value.Y;
                 TestAssert.True(Math.Abs(paintedCenter - center) * scale <= 0.51,
