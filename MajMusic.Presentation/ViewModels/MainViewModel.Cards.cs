@@ -25,7 +25,8 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Reconciles the browsed entries in one binding update while reusing unchanged card instances.</summary>
         /// <param name="appendRows">Whether a recommendation continuation should preserve existing row containers.</param>
         /// <param name="snapshot">The prepared catalog and its background-built identity index.</param>
-        private void RefreshCardTracks(bool appendRows = false, BrowseSnapshot? snapshot = null)
+        /// <param name="preparedCovers">The first-screen artwork adopted before any row binding becomes visible.</param>
+        private void RefreshCardTracks(bool appendRows = false, BrowseSnapshot? snapshot = null, CoverThumbnailCache.PreloadBatch? preparedCovers = null)
         {
             _retiredCardResources.RemoveAll(task => task.IsCompletedSuccessfully);
             var tracks = snapshot?.Tracks ?? Tracks.ToArray();
@@ -61,6 +62,14 @@ namespace MajMusic.Presentation.ViewModels
                 if (!card.ResourceCompletion.IsCompletedSuccessfully)
                 {
                     _retiredCardResources.Add(card.ResourceCompletion);
+                }
+            }
+
+            if (preparedCovers is not null)
+            {
+                for (var index = 0; index < Math.Min(PreviewTrackLimit, CardTracks.Count); index++)
+                {
+                    CardTracks[index].AdoptPreloadedCover(preparedCovers);
                 }
             }
 
@@ -141,6 +150,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A task representing completed thumbnail cleanup.</returns>
         private async Task DisposeCardsAsync()
         {
+            DisposeBrowsePreviews();
             var resources = new List<Task>(_retiredCardResources);
             foreach (var card in _cards.Values)
             {

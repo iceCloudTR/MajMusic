@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
 using System.ComponentModel;
 
@@ -30,7 +31,7 @@ namespace MajMusic.Presentation.Views
             base.OnPropertyChanged(change);
             if (change.Property == ForceSingleColumnProperty && Bounds.Width > 0 && DataContext is MainViewModel owner)
             {
-                owner.SetBrowseViewportWidth(CardViewportWidth(Bounds.Width));
+                SetBrowseViewport(owner, Bounds.Width, _browseViewport.Height);
             }
         }
 
@@ -40,6 +41,12 @@ namespace MajMusic.Presentation.Views
         private long _navigationVersion = -1;
         /// <summary>Retains the actual viewport used by both real card rows and bounded loading placeholders.</summary>
         private Size _browseViewport;
+        /// <summary>Completes the view handshake when the registered surface is finished or detached.</summary>
+        private TaskCompletionSource? _transitionCompletion;
+        /// <summary>Invalidates callbacks queued for another owner, navigation generation or attached tree.</summary>
+        private long _transitionRegistration;
+        /// <summary>Retains observation of the current surface's finite Arc animation.</summary>
+        private Task _transitionObservation = Task.CompletedTask;
 
         /// <summary>Initializes the shared card presentation and its keyboard navigation.</summary>
         public BrowseTracksView()
@@ -59,20 +66,23 @@ namespace MajMusic.Presentation.Views
                 owner.PropertyChanged += OnBrowseOwnerChanged;
                 if (Bounds.Width > 0)
                 {
-                    owner.SetBrowseViewportWidth(CardViewportWidth(Bounds.Width));
+                    SetBrowseViewport(owner, Bounds.Width, _browseViewport.Height);
                 }
 
                 UpdateSkeletonViewport();
                 ResetNavigationOffset();
+                RegisterBrowseTransition(owner);
             }
         }
 
         /// <inheritdoc />
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
+            ReleaseBrowseTransition();
             if (_browseOwner is { } owner)
             {
                 owner.PropertyChanged -= OnBrowseOwnerChanged;
+                owner.SetBrowseViewportSize(0, 0);
             }
 
             this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.ClearPlaceholders();
@@ -84,9 +94,14 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The new data-context notification.</param>
         private void OnBrowseContextChanged(object? sender, EventArgs e)
         {
+            ReleaseBrowseTransition();
             if (_browseOwner is not null)
             {
                 _browseOwner.PropertyChanged -= OnBrowseOwnerChanged;
+                if (TopLevel.GetTopLevel(this) is not null)
+                {
+                    _browseOwner.SetBrowseViewportSize(0, 0);
+                }
             }
 
             _browseOwner = DataContext as MainViewModel;
@@ -98,12 +113,16 @@ namespace MajMusic.Presentation.Views
                     owner.PropertyChanged += OnBrowseOwnerChanged;
                     if (Bounds.Width > 0)
                     {
-                        owner.SetBrowseViewportWidth(CardViewportWidth(Bounds.Width));
+                        SetBrowseViewport(owner, Bounds.Width, _browseViewport.Height);
                     }
                 }
 
                 ResetNavigationOffset();
                 UpdateSkeletonViewport();
+                if (TopLevel.GetTopLevel(this) is not null)
+                {
+                    RegisterBrowseTransition(owner);
+                }
             }
         }
 
@@ -112,7 +131,11 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The changed property notification.</param>
         private void OnBrowseOwnerChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(MainViewModel.BrowseNavigationVersion))
+            if (e.PropertyName == nameof(MainViewModel.BrowseTransitionVersion) && _browseOwner is { } owner)
+            {
+                RegisterBrowseTransition(owner);
+            }
+            else if (e.PropertyName == nameof(MainViewModel.BrowseNavigationVersion))
             {
                 ResetNavigationOffset();
             }
@@ -120,6 +143,42 @@ namespace MajMusic.Presentation.Views
             {
                 UpdateSkeletonViewport();
             }
+        }
+
+        /// <summary>Registers this generation before querying and observes its Arc task after bindings have applied the new version.</summary>
+        /// <param name="owner">The currently attached browsing presentation.</param>
+        private void RegisterBrowseTransition(MainViewModel owner)
+        {
+            ReleaseBrowseTransition();
+            var registration = _transitionRegistration;
+            var version = owner.BrowseTransitionVersion;
+            var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _transitionCompletion = completed;
+            owner.SetBrowseTransitionCompletion(version, completed.Task);
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_transitionRegistration != registration || !ReferenceEquals(_browseOwner, owner)
+                    || owner.BrowseTransitionVersion != version || TopLevel.GetTopLevel(this) is null)
+                {
+                    completed.TrySetResult();
+                    return;
+                }
+
+                var transition = this.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!.TransitionUpdate;
+                _transitionObservation = transition.ContinueWith(static (task, state) =>
+                {
+                    _ = task.Exception;
+                    ((TaskCompletionSource)state!).TrySetResult();
+                }, completed, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            }, DispatcherPriority.Loaded);
+        }
+
+        /// <summary>Releases a replaced or detached surface's waiter without holding a newer target behind obsolete motion.</summary>
+        private void ReleaseBrowseTransition()
+        {
+            _transitionRegistration++;
+            _transitionCompletion?.TrySetResult();
+            _transitionCompletion = null;
         }
 
         /// <summary>Creates placeholders only for an actively loading viewport.</summary>
@@ -169,9 +228,20 @@ namespace MajMusic.Presentation.Views
             _browseViewport = e.NewSize;
             if (DataContext is MainViewModel owner)
             {
-                owner.SetBrowseViewportWidth(CardViewportWidth(e.NewSize.Width));
+                SetBrowseViewport(owner, e.NewSize.Width, e.NewSize.Height);
                 UpdateSkeletonViewport();
             }
+        }
+
+        /// <summary>Updates responsive rows and bounded cover preparation from the same visible viewport.</summary>
+        /// <param name="owner">The current browsing presentation.</param>
+        /// <param name="width">The actual visible width.</param>
+        /// <param name="height">The actual visible height.</param>
+        private void SetBrowseViewport(MainViewModel owner, double width, double height)
+        {
+            var cardWidth = CardViewportWidth(width);
+            owner.SetBrowseViewportWidth(cardWidth);
+            owner.SetBrowseViewportSize(cardWidth, height);
         }
 
         /// <summary>Maps a touch viewport to one column while retaining desktop row virtualization.</summary>

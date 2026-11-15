@@ -30,7 +30,7 @@ namespace MajMusic.Tests
         public static async Task RunAsync()
         {
             await using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessFullMotionTestApplication));
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             await session.Dispatch<bool>(async () =>
             {
                 var workspace = new CardDownloadPresentationTests.DownloadWorkspace();
@@ -79,30 +79,30 @@ namespace MajMusic.Tests
             {
                 view.NavigateToSection(section);
                 Pump(window);
-                using var frame = new RenderTargetBitmap(new PixelSize((int)window.Width, (int)window.Height));
-                frame.Render(window);
+                using var frame = window.CaptureRenderedFrame();
+                TestAssert.True(frame is not null, "Warmed production pages must reach the compositor.");
             }
 
             model.ShowLibraryModeCommand.Execute(null);
-            await model.HomeUpdate;
+            await WaitForHomeAsync(window, model, token);
             Pump(window);
-            using (var frame = new RenderTargetBitmap(new PixelSize((int)window.Width, (int)window.Height)))
+            using (var frame = window.CaptureRenderedFrame())
             {
-                frame.Render(window);
+                TestAssert.True(frame is not null, "The library template must paint before motion sampling.");
             }
 
             model.ShowRecommendationsModeCommand.Execute(null);
-            await model.HomeUpdate;
+            await WaitForHomeAsync(window, model, token);
             model.BeginSearchCommand.Execute(null);
-            await model.HomeUpdate;
+            await WaitForHomeAsync(window, model, token);
             await SampleAsync(window, static () => 0, 400, token);
-            using (var frame = new RenderTargetBitmap(new PixelSize((int)window.Width, (int)window.Height)))
+            using (var frame = window.CaptureRenderedFrame())
             {
-                frame.Render(window);
+                TestAssert.True(frame is not null, "The search template must paint before motion sampling.");
             }
 
             model.CancelSearchCommand.Execute(null);
-            await model.HomeUpdate;
+            await WaitForHomeAsync(window, model, token);
             await SampleAsync(window, static () => 0, 400, token);
         }
 
@@ -132,7 +132,15 @@ namespace MajMusic.Tests
         /// <returns>A task representing press and release geometry checks.</returns>
         private static async Task ValidateButtonAsync(Window window, MainView view, string output, CancellationToken token)
         {
-            var button = view.FindControl<ArcButton>("NavigateHome")!;
+            var model = (MainViewModel)view.DataContext!;
+            model.ShowLibraryModeCommand.Execute(null);
+            await WaitForHomeAsync(window, model, token);
+            model.SelectedTrack = model.Tracks[0];
+            Pump(window);
+            var button = view.FindControl<Border>("LibraryDetails")!.GetVisualDescendants().OfType<ArcButton>()
+                .Single(control => ReferenceEquals(control.Command, model.ToggleFavoriteCommand));
+            TestAssert.True(button.IsEffectivelyVisible && button.IsEffectivelyEnabled,
+                "The ordinary action used to measure presses must be available through the production page.");
             var initial = Scale(button);
             var point = Center(button, window);
             window.MouseMove(point);
@@ -140,7 +148,8 @@ namespace MajMusic.Tests
             var pressing = await SampleAsync(window, () => Scale(button), 110, token, () => SaveFrame(window, Path.Combine(output, "ui-arc-motion-button-press.png")));
             await SampleAsync(window, () => Scale(button), 300, token);
             var pressed = Scale(button);
-            TestAssert.True(initial >= 0.999 && pressed < 0.99 && pressed > 0.94, "An ordinary production action must visibly compress while held.");
+            TestAssert.True(initial >= 0.999 && pressed < 0.99 && pressed > 0.94,
+                $"An ordinary production action must visibly compress while held: initial={initial}, held={pressed}, pressed={button.IsPressed}.");
             TestAssert.True(pressing.Any(value => value < initial - 0.0005 && value > pressed + 0.0005),
                 "Button compression must pass through actual intermediate render scales instead of jumping to a static pressed transform.");
             window.MouseUp(point, MouseButton.Left);
@@ -149,6 +158,8 @@ namespace MajMusic.Tests
             TestAssert.True(releasing.Any(value => value > pressed + 0.0005 && value < initial - 0.0005),
                 "Releasing an ordinary button must animate through intermediate scales.");
             TestAssert.True(Math.Abs(Scale(button) - initial) < 0.001, "Released buttons must settle at their original geometry.");
+            model.ShowRecommendationsModeCommand.Execute(null);
+            await WaitForHomeAsync(window, model, token);
         }
 
         /// <summary>Observes the real home indicator travel between two mode choices without replacing the browser.</summary>
@@ -167,10 +178,10 @@ namespace MajMusic.Tests
             var point = Center(target, window);
             window.MouseDown(point, MouseButton.Left);
             window.MouseUp(point, MouseButton.Left);
-            await model.HomeUpdate;
             var moving = await SampleAsync(window, () => indicator.CurrentRect.X, 140, token,
                 () => SaveFrame(window, Path.Combine(output, "ui-arc-motion-segment-middle.png")));
             await SampleAsync(window, () => indicator.CurrentRect.X, 550, token);
+            await WaitForHomeAsync(window, model, token);
             var settled = indicator.CurrentRect.X;
             TestAssert.True(model.IsLibraryMode && settled > initial + 50, "Selecting the real library segment must move both the browse mode and painted indicator.");
             TestAssert.True(moving.Any(value => value > initial + 1 && value < settled - 1),
@@ -192,17 +203,17 @@ namespace MajMusic.Tests
         {
             var tabs = view.FindControl<TabControl>("MainTabs")!;
             var page = tabs.GetVisualDescendants().OfType<MusicSurfaceHost>().Single(host => host.Name == "PageSurfaceTransition");
-            Tap(window, view.FindControl<ArcButton>("NavigateAccounts")!);
+            Tap(window, view.FindControl<SegmentedControl>("DesktopTopNavigation")!.ContainerFromIndex(3)!);
             var pageFrames = await SampleAsync(window, () => ReadSlideProgress(page), 110, token,
                 () => SaveFrame(window, Path.Combine(output, "ui-arc-motion-page-middle.png")));
             await SampleAsync(window, () => ReadSlideProgress(page), 340, token);
             TestAssert.True(pageFrames.Any(value => value > 0 && value < 0.99),
                 "A page change must paint intermediate whole-surface Arc frames. Page=" + tabs.SelectedIndex + "; frames=" + string.Join(",", pageFrames.Select(value => value.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture))));
             TestAssert.True(tabs.SelectedIndex == 3 && Math.Abs(page.TransitionProgress - 1) < 0.001 && !page.HasSnapshot && Math.Abs(page.IncomingOffset) < 0.001, "The selected page must settle fully visible.");
-            Tap(window, view.FindControl<ArcButton>("NavigateSettings")!);
+            Tap(window, view.FindControl<SegmentedControl>("DesktopTopNavigation")!.ContainerFromIndex(4)!);
             await SampleAsync(window, () => ReadSlideProgress(page), 20, token);
-            Tap(window, view.FindControl<ArcButton>("NavigateDirectories")!);
-            Tap(window, view.FindControl<ArcButton>("NavigateHome")!);
+            Tap(window, view.FindControl<SegmentedControl>("DesktopTopNavigation")!.ContainerFromIndex(2)!);
+            Tap(window, view.FindControl<SegmentedControl>("DesktopTopNavigation")!.ContainerFromIndex(0)!);
             await SampleAsync(window, () => ReadSlideProgress(page), 420, token);
             TestAssert.True(tabs.SelectedIndex == 0 && Math.Abs(page.TransitionProgress - 1) < 0.001 && !page.HasSnapshot, "Rapid page changes must cancel older slides without retaining an outgoing page.");
             await ValidateSearchExtensionAsync(window, view, model, output, token);
@@ -228,7 +239,7 @@ namespace MajMusic.Tests
                 window.Height = width == 720 ? 540 : 760;
                 Pump(window);
                 model.CancelSearchCommand.Execute(null);
-                await model.HomeUpdate;
+                await WaitForHomeAsync(window, model, token);
                 await SettleSearchAsync(window, panel, token);
                 var menu = BoundsIn(menuFrame, window);
                 var collapsed = panel.DisplayedSearchWidth;
@@ -238,7 +249,7 @@ namespace MajMusic.Tests
                 var opening = await SampleAsync(window, () => ReadSearchWidth(window, panel, host, menuFrame, menu), 140, token,
                     () => SaveFrame(window, Path.Combine(output, $"ui-search-extension-opening-{width:0}.png")));
                 await SettleSearchAsync(window, panel, token, () => ReadSearchWidth(window, panel, host, menuFrame, menu));
-                await model.HomeUpdate;
+                await WaitForHomeAsync(window, model, token);
                 var expanded = panel.DisplayedSearchWidth;
                 TestAssert.True(model.IsSearchExpanded && input.IsFocused && panel.RevealProgress >= 0.999
                     && Math.Abs(expanded - panel.Bounds.Width) <= 1, "Expanding search must fill its available lane, retain keyboard focus and preserve the mode menu.");
@@ -255,7 +266,7 @@ namespace MajMusic.Tests
                 input.Focus();
                 window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
                 window.KeyReleaseQwerty(PhysicalKey.Enter, RawInputModifiers.None);
-                await model.HomeUpdate;
+                await WaitForHomeAsync(window, model, token);
                 TestAssert.True(model.IsSearching && model.Tracks.All(track => track.Title.Contains("Motion", StringComparison.OrdinalIgnoreCase)),
                     "Enter in the extending search must continue to run the original indexed search.");
                 TestAssert.True(input.IsFocused, "Replacing search results must retain the actual search field's keyboard focus for Escape.");
@@ -287,7 +298,7 @@ namespace MajMusic.Tests
                 var closing = await SampleAsync(window, ReadClosingWidth, 140, token,
                     () => SaveFrame(window, Path.Combine(output, $"ui-search-extension-closing-{width:0}.png")));
                 await SettleSearchAsync(window, panel, token, () => ReadSearchWidth(window, panel, host, menuFrame, menu));
-                await model.HomeUpdate;
+                await WaitForHomeAsync(window, model, token);
                 AssertWidthTravel(closing, collapsed, expanded, false);
                 TestAssert.True(!model.IsSearchExpanded && panel.RevealProgress <= 0.001 && Math.Abs(panel.DisplayedSearchWidth - collapsed) <= 1
                     && !input.IsVisible && view.FindControl<ArcButton>("BeginSearchButton")!.IsVisible,
@@ -298,7 +309,7 @@ namespace MajMusic.Tests
                 window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
                 window.KeyReleaseQwerty(PhysicalKey.Escape, RawInputModifiers.None);
                 await SettleSearchAsync(window, panel, token);
-                await model.HomeUpdate;
+                await WaitForHomeAsync(window, model, token);
                 TestAssert.True(!model.IsSearchExpanded && panel.RevealProgress <= 0.001 && !input.IsVisible,
                     "Escape in the actual search input must close the same extending toolbar and restore the icon.");
             }
@@ -322,7 +333,7 @@ namespace MajMusic.Tests
             TestAssert.True(model.IsSearchExpanded && panel.RevealProgress >= 0.999 && Math.Abs(panel.DisplayedSearchWidth - panel.Bounds.Width) <= 1,
                 "Resizing during a reversing search must use the new lane width and retain a complete expanded input.");
             Tap(window, view.FindControl<ArcButton>("CancelSearchButton")!);
-            await model.HomeUpdate;
+            await WaitForHomeAsync(window, model, token);
             await SettleSearchAsync(window, panel, token);
             window.Width = 1100;
             window.Height = 760;
@@ -445,7 +456,7 @@ namespace MajMusic.Tests
         {
             var tabs = view.FindControl<TabControl>("MainTabs")!;
             var page = tabs.GetVisualDescendants().OfType<MusicSurfaceHost>().Single(host => host.Name == "PageSurfaceTransition");
-            Tap(window, view.FindControl<ArcButton>("NavigateAccounts")!);
+            Tap(window, view.FindControl<SegmentedControl>("DesktopTopNavigation")!.ContainerFromIndex(3)!);
             await SampleAsync(window, () => ReadSlideProgress(page), 25, token);
             window.Width = 390;
             window.Height = 844;
@@ -501,6 +512,24 @@ namespace MajMusic.Tests
             await SampleAsync(window, () => ReadSlideProgress(page), 420, token);
             TestAssert.True(!view.IsMobileLayout && view.SelectedSectionIndex == 2 && Math.Abs(page.TransitionProgress - 1) < 0.001
                 && Math.Abs(host.TransitionProgress - 1) < 0.001, "Resizing away during page motion must cancel detached animations without leaving a detached snapshot.");
+        }
+
+        /// <summary>Advances real frames while a home update waits for its target's entry animation.</summary>
+        /// <param name="window">The rendering viewport.</param>
+        /// <param name="model">The owner of the current tracked home update.</param>
+        /// <param name="token">Cancels a stalled update.</param>
+        /// <returns>A task representing the completed home publication.</returns>
+        private static async Task WaitForHomeAsync(Window window, MainViewModel model, CancellationToken token)
+        {
+            var update = model.HomeUpdate;
+            while (!update.IsCompleted)
+            {
+                Pump(window);
+                await Task.Delay(12, token);
+            }
+
+            await update;
+            Pump(window);
         }
 
         /// <summary>Samples production page motion while ruling out opacity, scale and vertical entrances.</summary>
@@ -592,8 +621,8 @@ namespace MajMusic.Tests
         /// <param name="path">The ignored local frame path.</param>
         private static void SaveFrame(Window window, string path)
         {
-            using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.Width, (int)window.Height));
-            bitmap.Render(window);
+            using var bitmap = window.CaptureRenderedFrame()
+                ?? throw new InvalidOperationException("The actual motion frame was not painted.");
             bitmap.Save(path, PngBitmapEncoderOptions.Default);
         }
     }

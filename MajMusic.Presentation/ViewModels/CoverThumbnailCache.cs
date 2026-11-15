@@ -11,6 +11,8 @@ namespace MajMusic.Presentation.ViewModels
     {
         /// <summary>Bounds the retained cache while allowing currently displayed images to remain pinned.</summary>
         private const int Capacity = 96;
+        /// <summary>Limits navigation preparation to a bounded first viewport rather than a complete catalog.</summary>
+        private const int MaximumPreloadedCovers = 12;
         /// <summary>Protects request and lease ownership.</summary>
         private readonly object _gate = new();
         /// <summary>Resolves cover resources without opening audio.</summary>
@@ -90,6 +92,110 @@ namespace MajMusic.Presentation.ViewModels
             {
                 Release(entry);
                 throw;
+            }
+        }
+
+        /// <summary>Prepares only the first bounded set of covers without attaching cards or inspecting audio.</summary>
+        /// <param name="tracks">The next catalog in display order; at most its first twelve entries are prepared.</param>
+        /// <param name="deadline">The finite time allowed for this caller's cover preparation.</param>
+        /// <param name="cancellationToken">Cancels this navigation's interest without canceling another consumer.</param>
+        /// <returns>A disposable snapshot containing ready cover pins and stable unavailable placeholders.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The deadline is not a positive finite cancellation interval.</exception>
+        /// <exception cref="OperationCanceledException">Navigation or the cache lifetime is canceled.</exception>
+        public async Task<PreloadBatch> PreloadAsync(IReadOnlyList<MusicTrack> tracks, TimeSpan deadline,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(tracks);
+            if (deadline <= TimeSpan.Zero || deadline.TotalMilliseconds > uint.MaxValue - 1d)
+            {
+                throw new ArgumentOutOfRangeException(nameof(deadline));
+            }
+
+            CancellationToken lifetime;
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                lifetime = _lifetime.Token;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            using var preparation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime);
+            preparation.CancelAfter(deadline);
+            var descriptors = tracks.Take(MaximumPreloadedCovers).DistinctBy(Identity).ToArray();
+            var prepared = new Lease?[descriptors.Length];
+            try
+            {
+                await Task.WhenAll(descriptors.Select(async (track, index) =>
+                {
+                    try
+                    {
+                        prepared[index] = await AcquireAsync(track, preparation.Token).ConfigureAwait(false);
+                        if (prepared[index] is { Bitmap: null } unavailable)
+                        {
+                            prepared[index] = null;
+                            unavailable.Dispose();
+                        }
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !lifetime.IsCancellationRequested)
+                    {
+                        // A preparation deadline fixes this frame's placeholder without retaining a late request.
+                    }
+                })).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                lifetime.ThrowIfCancellationRequested();
+                var batch = new PreloadBatch(descriptors.Select((track, index) => (Identity(track), prepared[index])));
+                Array.Clear(prepared);
+                return batch;
+            }
+            finally
+            {
+                foreach (var lease in prepared)
+                {
+                    lease?.Dispose();
+                }
+            }
+        }
+
+        /// <summary>Captures only already completed cached artwork without resolving, queuing or waiting for resources.</summary>
+        /// <param name="tracks">The target catalog; at most its first twelve entries contribute distinct identities.</param>
+        /// <returns>An independently pinned ready-image snapshot with explicit placeholders for unavailable images.</returns>
+        /// <exception cref="ObjectDisposedException">The thumbnail cache has already closed.</exception>
+        public PreloadBatch CaptureReady(IReadOnlyList<MusicTrack> tracks)
+        {
+            ArgumentNullException.ThrowIfNull(tracks);
+            var identities = tracks.Take(MaximumPreloadedCovers).Select(Identity).Distinct().ToArray();
+            var prepared = new (CoverIdentity Identity, Lease? Lease)[identities.Length];
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                for (var index = 0; index < identities.Length; index++)
+                {
+                    var key = identities[index];
+                    var ready = _entries.TryGetValue(key, out var entry)
+                        && !entry.Cleaned && !entry.Retired && !entry.Failed
+                        && entry.Loading.IsCompletedSuccessfully && entry.Bitmap is not null;
+                    prepared[index] = (key, ready ? Retain(entry!) : null);
+                }
+            }
+
+            return new PreloadBatch(prepared);
+        }
+
+        /// <summary>Duplicates a still-pinned completed resource for a card receiving a prepared cover.</summary>
+        /// <param name="entry">The entry pinned by the navigation batch.</param>
+        /// <returns>An independent card lease, or null after cache shutdown.</returns>
+        private Lease? Retain(Entry entry)
+        {
+            lock (_gate)
+            {
+                if (_disposed || entry.Cleaned || entry.Retired)
+                {
+                    return null;
+                }
+
+                entry.Users++;
+                entry.Stamp = ++_clock;
+                return new Lease(this, entry, entry.Bitmap);
             }
         }
 
@@ -255,6 +361,64 @@ namespace MajMusic.Presentation.ViewModels
         /// <param name="Revision">The fallback revision for a sparse online descriptor.</param>
         internal sealed record CoverIdentity(string Source, string? Endpoint, MediaResource? Resource, string? Remote, string? Revision);
 
+        /// <summary>Pins a bounded navigation snapshot until cards adopt their own independent cover leases.</summary>
+        internal sealed class PreloadBatch : IDisposable
+        {
+            /// <summary>Serializes lease adoption against cancellation or replacement of this batch.</summary>
+            private readonly object _gate = new();
+            /// <summary>Retains ready images and explicit unavailable placeholders by current routing identity.</summary>
+            private readonly Dictionary<CoverIdentity, Lease?> _covers;
+            /// <summary>Prevents adoption after this navigation's preparation ownership has ended.</summary>
+            private bool _disposed;
+
+            /// <summary>Owns the completed preparation results without acquiring any additional resources.</summary>
+            /// <param name="covers">The unique attempted identities and their ready bitmap pins.</param>
+            internal PreloadBatch(IEnumerable<(CoverIdentity Identity, Lease? Lease)> covers)
+            {
+                _covers = covers.ToDictionary(item => item.Identity, item => item.Lease);
+            }
+
+            /// <summary>Gets the bounded number of distinct attempted cover identities.</summary>
+            public int Count => _covers.Count;
+
+            /// <summary>Copies a prepared pin while preserving an explicit placeholder for unavailable artwork.</summary>
+            /// <param name="track">The current card descriptor, including source and account routing.</param>
+            /// <param name="lease">An independently owned bitmap pin, or null for a prepared placeholder.</param>
+            /// <returns>Whether this active batch prepared the exact requested cover identity.</returns>
+            public bool TryAcquire(MusicTrack track, out Lease? lease)
+            {
+                lock (_gate)
+                {
+                    lease = null;
+                    if (_disposed || !_covers.TryGetValue(Identity(track), out var prepared))
+                    {
+                        return false;
+                    }
+
+                    lease = prepared?.Retain();
+                    return true;
+                }
+            }
+
+            /// <summary>Releases only the batch's pins, leaving adopted cards and other consumers valid.</summary>
+            public void Dispose()
+            {
+                lock (_gate)
+                {
+                    if (_disposed)
+                    {
+                        return;
+                    }
+
+                    _disposed = true;
+                    foreach (var lease in _covers.Values)
+                    {
+                        lease?.Dispose();
+                    }
+                }
+            }
+        }
+
         /// <summary>Retains one pending or completed thumbnail and its reference count.</summary>
         internal sealed class Entry
         {
@@ -305,6 +469,14 @@ namespace MajMusic.Presentation.ViewModels
             }
             /// <summary>Gets the shared thumbnail while this lease remains active.</summary>
             public Bitmap? Bitmap { get; }
+            /// <summary>Gets the exact source-scoped cover descriptor pinned by this lease.</summary>
+            public CoverIdentity Identity => _entry.Key;
+            /// <summary>Creates another reference while this preparation pin remains owned.</summary>
+            /// <returns>An independent bitmap lease, or null after release or cache shutdown.</returns>
+            public Lease? Retain()
+            {
+                return Volatile.Read(ref _owner)?.Retain(_entry);
+            }
             /// <summary>Releases this consumer exactly once.</summary>
             public void Dispose()
             {

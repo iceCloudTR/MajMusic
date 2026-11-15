@@ -13,6 +13,8 @@ namespace MajMusic.Presentation.Views
     {
         /// <summary>Defers name-scope lookups until the populated desktop navigation has loaded.</summary>
         private bool _desktopNavigationLoaded;
+        /// <summary>Prevents a programmatic page synchronization from becoming another navigation request.</summary>
+        private bool _restoringDesktopNavigation;
 
         /// <summary>Highlights the page restored by the native page host.</summary>
         /// <param name="sender">The desktop navigation bar.</param>
@@ -34,20 +36,37 @@ namespace MajMusic.Presentation.Views
             }
         }
 
-        /// <summary>Applies the selected page treatment without replacing any page content.</summary>
+        /// <summary>Synchronizes the Arc navigation pill with native and programmatic page selection.</summary>
         private void UpdateDesktopNavigation()
         {
             var selectedIndex = this.FindControl<TabControl>("MainTabs")?.SelectedIndex ?? 0;
-            var navigationNames = new[]
+            var navigation = this.FindControl<SegmentedControl>("DesktopTopNavigation");
+            if (navigation is null || navigation.SelectedIndex == selectedIndex)
             {
-                "NavigateHome", "NavigatePlaylists", "NavigateDirectories", "NavigateAccounts", "NavigateSettings"
-            };
-            for (var index = 0; index < navigationNames.Length; index++)
+                return;
+            }
+
+            _restoringDesktopNavigation = true;
+            try
             {
-                if (this.FindControl<TKCode.Arc.Button>(navigationNames[index]) is { } button)
-                {
-                    button.Classes.Set("current", index == selectedIndex);
-                }
+                navigation.SelectedIndex = selectedIndex;
+            }
+            finally
+            {
+                _restoringDesktopNavigation = false;
+            }
+        }
+
+        /// <summary>Changes the native page once when the person chooses another Arc navigation segment.</summary>
+        /// <param name="sender">The desktop navigation selector.</param>
+        /// <param name="e">The selected page segment.</param>
+        private void OnDesktopNavigationSelectionChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (_desktopNavigationLoaded && !_restoringDesktopNavigation && ReferenceEquals(sender, e.Source)
+                && sender is SegmentedControl { SelectedIndex: >= 0 and < 5 } navigation
+                && navigation.SelectedIndex != SelectedSectionIndex)
+            {
+                NavigateToSection(navigation.SelectedIndex);
             }
         }
 

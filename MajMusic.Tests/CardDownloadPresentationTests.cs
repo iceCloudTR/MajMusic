@@ -222,6 +222,10 @@ namespace MajMusic.Tests
         {
             /// <summary>Gets the isolated music and playlist data used by this fixture.</summary>
             public LibraryExperienceTests.ExperienceWorkspace Inner { get; } = new();
+            /// <summary>Gets or sets a controlled cover request used by entry-preparation regressions.</summary>
+            public Func<MusicTrack, CancellationToken, Task<string?>>? ResolveCoverOverride { get; set; }
+            /// <summary>Gets the source-resolution count for each independently described song.</summary>
+            public System.Collections.Concurrent.ConcurrentDictionary<string, int> CoverRequests { get; } = new();
             /// <summary>Gets or sets an explicit fixture action removing only its generated evictable audio.</summary>
             public Action? ClearCacheAction { get; init; }
             /// <inheritdoc />
@@ -287,7 +291,8 @@ namespace MajMusic.Tests
             /// <inheritdoc />
             public Task<string?> ResolveCoverAsync(MusicTrack track, CancellationToken cancellationToken = default)
             {
-                return Task.FromResult(track.Cover?.LocalPath);
+                CoverRequests.AddOrUpdate(track.Id, 1, static (_, count) => count + 1);
+                return ResolveCoverOverride?.Invoke(track, cancellationToken) ?? Task.FromResult(track.Cover?.LocalPath);
             }
             /// <inheritdoc />
             public Task<string> ResolveAudioAsync(MusicTrack track, bool keepOffline, CancellationToken cancellationToken = default)

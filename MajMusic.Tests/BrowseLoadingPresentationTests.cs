@@ -51,6 +51,13 @@ namespace MajMusic.Tests
                     workspace.Library.Add(Track(index));
                 }
 
+                workspace.LocalPlaylists["phone-loading"] = new MusicPlaylist
+                {
+                    Id = "phone-loading",
+                    Name = "Phone loading target",
+                    TrackIds = ["loading-track-00000", "loading-track-00001"]
+                };
+
                 await using var model = new MainViewModel(workspace, new PlaybackService(new UnavailablePlaybackBackend()));
                 await model.InitializeAsync();
                 model.ShowLibraryModeCommand.Execute(null);
@@ -104,6 +111,7 @@ namespace MajMusic.Tests
                     TestAssert.Equal(stableBounds, browser.Bounds, "A loading presentation must preserve the browser's reserved rectangle.");
 
                     TapMode(window, view, 2);
+                    await AdvanceAsync(clock, window, 450, timeout.Token);
                     await model.HomeUpdate.WaitAsync(timeout.Token);
                     firstRelease.TrySetResult([Track(24000, first)]);
                     await obsolete.WaitAsync(timeout.Token);
@@ -134,8 +142,8 @@ namespace MajMusic.Tests
                     TestAssert.True(!completed.SequenceEqual(loading), "The loaded card frame must visibly replace its placeholders.");
 
                     TapMode(window, view, 2);
-                    await model.HomeUpdate.WaitAsync(timeout.Token);
                     await AdvanceAsync(clock, window, 450, timeout.Token);
+                    await model.HomeUpdate.WaitAsync(timeout.Token);
                     var materialized = model.MaterializedCardCount;
                     list.Focus();
                     window.KeyPress(Key.End, RawInputModifiers.None, PhysicalKey.End, null);
@@ -157,7 +165,8 @@ namespace MajMusic.Tests
                         phoneStarted.TrySetResult();
                         return phoneRelease.Task;
                     };
-                    model.ShowLibraryModeCommand.Execute(null);
+                    model.SelectedPlaylist = model.Playlists.Single(item => item.Id == "phone-loading");
+                    model.ShowPlaylistsModeCommand.Execute(null);
                     await phoneStarted.Task.WaitAsync(timeout.Token);
                     await AdvanceAsync(clock, window, 400, timeout.Token);
                     var phoneBrowser = view.GetVisualDescendants().OfType<BrowseTracksView>().Single();

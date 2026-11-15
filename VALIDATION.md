@@ -29,6 +29,7 @@ Arc 界面检查：
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- headless alignment endpoint-cards-layout card-download-layout arc-responsive
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- arc-motion
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- surface-motion browse-loading appearance
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- cover-preload browse-entry catalog-read-ordering
 ```
 
 测试使用与桌面入口相同的 Arc 注册和主题。手机界面覆盖 360×640、390×844、430×932，检查安全区、软键盘收缩、底部导航、触摸目标、详情抽屉，以及桌面与窄屏切换时账号和 Guest 选择不变。该检查在 Skia 离屏窗口中运行；Android/iOS 宿主与实机播放另行验证。
@@ -36,6 +37,10 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- surface-motion brow
 布局检查关闭动画以固定截图。`arc-motion` 使用应用默认的完整动效，逐帧检查按钮按压与恢复、模式滑块、页面横向位移，以及搜索框从右侧图标展开、收起时的宽度、锚点与菜单对齐；同时验证快速反转和窗口缩放后的布局。中间帧保存在 `.work/ui-arc-motion-*.png`。
 
 `surface-motion` 用 Arc 可控时钟检查横向推移、缓入缓出速度、像素尺寸、快切、中断与快照释放；`browse-loading` 检查真实点击后立即出现有限骨架、慢请求隔离及首屏卡片懒创建，加载完成直接替换占位；`appearance` 检查三种外观的即时应用、保存、重启恢复及深浅渲染。
+
+`cover-preload` 检查有限封面预热、共享请求、超时、取消和独立图片引用；`browse-entry` 在真实卡片和横移中延迟查询及封面，检查动画中占位保持、首次入场已有封面、返回时复用、过期结果隔离，以及顶部导航的滑块和页面使用缓入缓出节奏。
+
+`catalog-read-ordering` 检查同页移除歌单曲目期间的并发查询与封面准备，旧读取不得覆盖新成员、元数据或已预热的首屏。
 
 `home-ui` 包含两万四千首曲目的整批通知、卡片懒创建、加载状态所有权与模式快切回归；`storage` 使用真实 SQLite 数据库锁验证界面队列可继续运行，以及取消后的结果隔离。
 

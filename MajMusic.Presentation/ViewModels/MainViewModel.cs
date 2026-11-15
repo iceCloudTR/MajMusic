@@ -374,6 +374,7 @@ namespace MajMusic.Presentation.ViewModels
                     OnPropertyChanged();
                     RefreshCommands();
                     OnPropertyChanged(nameof(ExportFileName));
+                    QueueWarmBrowsePreviews();
                 }
             }
         }
@@ -917,7 +918,10 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A task representing publication of the current snapshot.</returns>
         private async Task ReadLibrarySnapshotAsync(CancellationToken cancellationToken, bool preservePage)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            var readVersion = Interlocked.Increment(ref _browseReadVersion);
             var version = _homeVersion;
+            var transitionVersion = _browseTransitionVersion;
             var searching = IsSearching;
             var mode = _homeMode;
             var playlistIds = Playlists.FirstOrDefault(item => item.Id == _activePlaylistId)?.TrackIds.ToArray();
@@ -948,15 +952,58 @@ namespace MajMusic.Presentation.ViewModels
                 return new BrowseSnapshot(prepared, indexes);
             }, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            if (version != _homeVersion)
+            if (version != _homeVersion || readVersion != Volatile.Read(ref _browseReadVersion))
             {
                 return;
             }
 
+            CoverThumbnailCache.PreloadBatch? covers = null;
+            try
+            {
+                if (_hasBrowseViewport && !preservePage)
+                {
+                    _cardCovers ??= new CoverThumbnailCache(_workspace, _lifetime.Token);
+                    covers = await _cardCovers.PreloadAsync(entries.Tracks, CoverPreparationDeadline, cancellationToken);
+                }
+
+                if (_hasBrowseViewport)
+                {
+                    await WaitForBrowseSurfaceAsync(transitionVersion, cancellationToken);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                if (version != _homeVersion || readVersion != Volatile.Read(ref _browseReadVersion))
+                {
+                    return;
+                }
+
+                PublishBrowseSnapshot(entries, preservePage, covers);
+                if (covers is not null && !searching && PreviewFor(mode) is { } target)
+                {
+                    StorePreview(target with { Tracks = entries.Tracks.Take(PreviewTrackLimit).ToArray() }, covers);
+                    covers = null;
+                }
+
+                foreach (var card in _cards.Values.ToArray())
+                {
+                    card.ResumeCoverLoading();
+                }
+            }
+            finally
+            {
+                covers?.Dispose();
+            }
+        }
+
+        /// <summary>Publishes prepared metadata and artwork together before exposing the new row bindings.</summary>
+        /// <param name="entries">The complete catalog or bounded warm prefix.</param>
+        /// <param name="preservePage">Whether a continuation retains the current browsing offset.</param>
+        /// <param name="covers">The ready first-screen artwork, or null when no browsing view is attached.</param>
+        private void PublishBrowseSnapshot(BrowseSnapshot entries, bool preservePage, CoverThumbnailCache.PreloadBatch? covers)
+        {
             var inspected = SelectedTrack;
             _tracks.ReplaceAll(entries.Tracks);
-
-            RefreshCardTracks(preservePage, entries);
+            RefreshCardTracks(preservePage, entries, covers);
             SelectedTrack = Tracks.FirstOrDefault(item => item.Id == inspected?.Id) ?? inspected;
             _libraryPageIndex = preservePage ? Math.Clamp(_libraryPageIndex, 0, Math.Max(0, (Tracks.Count - 1) / LibraryPageSize)) : 0;
             RefreshVisibleTracks();
@@ -1051,6 +1098,7 @@ namespace MajMusic.Presentation.ViewModels
 
             RefreshPlaylistManagementCommands();
             RefreshEndpointCardCommands();
+            UpdatePreviewLibrary(library);
         }
 
         /// <summary>Toggles a favorite by portable identity when available, otherwise by local entry.</summary>

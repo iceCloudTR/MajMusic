@@ -502,9 +502,9 @@ namespace MajMusic.Tests
                     "Selected-song actions must fit the permanent inspector at the minimum window size.");
             }
 
-            foreach (var page in new[] { (Tab: "AccountsTab", Button: "NavigateAccounts", Index: 3), (Tab: "SettingsTab", Button: "NavigateSettings", Index: 4), (Tab: "DirectoriesTab", Button: "NavigateDirectories", Index: 2) })
+            foreach (var page in new[] { (Tab: "AccountsTab", Index: 3), (Tab: "SettingsTab", Index: 4), (Tab: "DirectoriesTab", Index: 2) })
             {
-                var navigation = view.FindControl<Button>(page.Button)!;
+                var navigation = view.FindControl<TKCode.Arc.SegmentedControl>("DesktopTopNavigation")!.ContainerFromIndex(page.Index)!;
                 var navigationPoint = navigation.TranslatePoint(new Point(navigation.Bounds.Width / 2, navigation.Bounds.Height / 2), window)!.Value;
                 window.MouseDown(navigationPoint, MouseButton.Left);
                 window.MouseUp(navigationPoint, MouseButton.Left);

@@ -69,16 +69,6 @@
         <Setter Property="Variant" Value="Ghost" />
         <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
     </Style>
-    <Style Selector="arc|Button.navigation">
-        <Setter Property="Height" Value="36" />
-        <Setter Property="Padding" Value="12,5" />
-        <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}" />
-    </Style>
-    <Style Selector="arc|Button.navigation.current">
-        <Setter Property="Foreground" Value="{DynamicResource MusicAccentBrush}" />
-        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
-        <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
     <Style Selector="arc|Button.icon">
         <Setter Property="Variant" Value="Ghost" />
         <Setter Property="Width" Value="32" />

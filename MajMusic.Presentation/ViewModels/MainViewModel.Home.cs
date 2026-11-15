@@ -29,6 +29,8 @@ namespace MajMusic.Presentation.ViewModels
         private bool _homeInitialized;
         /// <summary>Rejects old local queries after the visible mode or search changes.</summary>
         private long _homeVersion;
+        /// <summary>Orders catalog reads even when a playlist mutation retains the same browsing mode.</summary>
+        private long _browseReadVersion;
         /// <summary>Cancels the preceding merged home update.</summary>
         private CancellationTokenSource? _homeUpdateCancellation;
         /// <summary>Exposes completion of the latest merged home update.</summary>
@@ -149,6 +151,7 @@ namespace MajMusic.Presentation.ViewModels
             _homeInitialized = true;
             AttachRecommendationSnapshot();
             NotifyHomeState();
+            QueueWarmBrowsePreviews();
         }
 
         /// <summary>Commits one stable home mode while retaining the inspected music entry.</summary>
@@ -175,7 +178,8 @@ namespace MajMusic.Presentation.ViewModels
 
             _homeVersion++;
             _homeUpdateCancellation?.Cancel();
-            BeginBrowseLoad(contentChanged, wasSearching ? -1 : Math.Sign((int)mode - (int)previousMode));
+            var loadingOwner = BeginBrowseLoad(contentChanged, wasSearching ? -1 : Math.Sign((int)mode - (int)previousMode));
+            TryPublishPreparedPreview(loadingOwner);
             NotifyHomeState();
         }
 
@@ -249,11 +253,9 @@ namespace MajMusic.Presentation.ViewModels
                         await Task.Delay(180, cancellation.Token);
                     }
 
+                    var recommendations = IsRecommendationsMode ? EnsureHomeRecommendationsAsync() : Task.CompletedTask;
                     await ReloadLibraryCoreAsync(cancellation.Token, manageLoading: false);
-                    if (IsRecommendationsMode)
-                    {
-                        await EnsureHomeRecommendationsAsync();
-                    }
+                    await recommendations;
                 }
                 catch (OperationCanceledException)
                 {
@@ -296,7 +298,7 @@ namespace MajMusic.Presentation.ViewModels
                 OnPropertyChanged(nameof(BrowseTransitionVersion));
             }
 
-            if (!_isBrowseLoading)
+            if (!_isBrowseLoading && _publishedPreviewVersion != _homeVersion)
             {
                 _isBrowseLoading = true;
                 OnPropertyChanged(nameof(IsBrowseLoading));

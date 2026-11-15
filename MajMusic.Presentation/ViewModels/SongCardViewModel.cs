@@ -15,6 +15,8 @@ namespace MajMusic.Presentation.ViewModels
         private MusicTrack _track;
         /// <summary>Retains the decoded bitmap until every attached control releases it.</summary>
         private CoverThumbnailCache.Lease? _lease;
+        /// <summary>Freezes the exact prepared cover or placeholder until this viewport releases it.</summary>
+        private CoverThumbnailCache.CoverIdentity? _preparedCoverIdentity;
         /// <summary>Cancels only this card's interest in a shared request.</summary>
         private CancellationTokenSource? _activation;
         /// <summary>Tracks the currently observed activation.</summary>
@@ -79,6 +81,54 @@ namespace MajMusic.Presentation.ViewModels
             return _activationTask;
         }
 
+        /// <summary>Adopts prepared artwork before the card's first binding without attaching or inspecting audio.</summary>
+        /// <param name="batch">The bounded preparation snapshot owned by the current navigation.</param>
+        /// <returns>Whether this batch prepared the card's current source-scoped cover identity.</returns>
+        internal bool AdoptPreloadedCover(CoverThumbnailCache.PreloadBatch batch)
+        {
+            if (_disposed || !batch.TryAcquire(_track, out var candidate))
+            {
+                return false;
+            }
+
+            _generation++;
+            _activation?.Cancel();
+            _activation = null;
+            _preparedCoverIdentity = CoverThumbnailCache.Identity(_track);
+            var previous = _lease;
+            if (candidate?.Bitmap is null && previous?.Bitmap is not null && previous.Identity == _preparedCoverIdentity)
+            {
+                candidate?.Dispose();
+            }
+            else
+            {
+                _lease = candidate;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Cover)));
+                previous?.Dispose();
+            }
+            if (_attachments > 0)
+            {
+                StartThumbnail();
+            }
+
+            return true;
+        }
+
+        /// <summary>Permits a prepared placeholder to retry after its owning surface transition has settled.</summary>
+        internal void ResumeCoverLoading()
+        {
+            if (_disposed || _preparedCoverIdentity is null)
+            {
+                return;
+            }
+
+            _preparedCoverIdentity = null;
+            if (_attachments > 0 && _lease?.Bitmap is null)
+            {
+                StartThumbnail();
+            }
+        }
+
         /// <summary>Releases one visible control without canceling another card's shared cover request.</summary>
         public void Deactivate()
         {
@@ -94,6 +144,16 @@ namespace MajMusic.Presentation.ViewModels
         {
             var previous = _track;
             var changedCover = CoverThumbnailCache.Identity(_track) != CoverThumbnailCache.Identity(track);
+            if (changedCover)
+            {
+                _preparedCoverIdentity = null;
+                if (_attachments == 0 && _lease is { } obsolete)
+                {
+                    _lease = null;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Cover)));
+                    obsolete.Dispose();
+                }
+            }
             _track = track;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Track)));
             var changedDownload = UpdateDownloadTrack(previous, track);
@@ -157,6 +217,11 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A task representing the observed shared request.</returns>
         private async Task LoadThumbnailAsync(MusicTrack track, int generation, CancellationToken token)
         {
+            if (_preparedCoverIdentity == CoverThumbnailCache.Identity(track))
+            {
+                return;
+            }
+
             CoverThumbnailCache.Lease? candidate = null;
             try
             {
@@ -183,6 +248,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Cancels this card's request and clears its binding before releasing the shared bitmap.</summary>
         private void StopThumbnail()
         {
+            _preparedCoverIdentity = null;
             _generation++;
             _activation?.Cancel();
             _activation = null;

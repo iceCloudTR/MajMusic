@@ -73,17 +73,6 @@ namespace MajMusic.Presentation.Views
             }
         }
 
-        /// <summary>Routes desktop navigation buttons to the existing page host.</summary>
-        /// <param name="sender">The section button whose tag is the zero-based page index.</param>
-        /// <param name="e">The click notification.</param>
-        private void OnNavigateSectionClicked(object? sender, RoutedEventArgs e)
-        {
-            if (sender is Control button && int.TryParse(button.Tag?.ToString(), out var section))
-            {
-                NavigateToSection(section);
-            }
-        }
-
         /// <summary>Exchanges active presentation trees so hidden account and song controls cannot duplicate user actions.</summary>
         /// <param name="sender">The shared root view.</param>
         /// <param name="e">The current viewport dimensions.</param>
