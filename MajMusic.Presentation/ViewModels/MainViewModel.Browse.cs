@@ -33,8 +33,8 @@ namespace MajMusic.Presentation.ViewModels
         public int BrowseColumns => _browseColumns;
         /// <summary>Gets the committed mode or search generation used to reset only a new browsing query.</summary>
         public long BrowseNavigationVersion => _homeVersion;
-        /// <summary>Gets the number of songs in the current browsing snapshot.</summary>
-        public string BrowseSummary => $"{Tracks.Count} 首";
+        /// <summary>Gets the recommendation batch total or the current catalog count independently of a prepared prefix.</summary>
+        public string BrowseSummary => IsRecommendationsMode ? $"{RecommendationTotalCount} 首推荐" : $"{Tracks.Count} 首";
         /// <summary>Gets the inspected song when it belongs to the current browsing snapshot.</summary>
         public MusicTrack? SelectedBrowseTrack => SelectedTrack is { } selected
             && _cardIndexes.TryGetValue((selected.Id, selected.SourceId, selected.EndpointId), out var index) ? Tracks[index] : null;

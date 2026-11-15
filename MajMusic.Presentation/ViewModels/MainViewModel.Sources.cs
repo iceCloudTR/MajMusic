@@ -24,10 +24,8 @@ namespace MajMusic.Presentation.ViewModels
         private List<MusicTrack>? _recommendationTracks;
         /// <summary>Identifies the account configuration that owns the recommendation snapshot.</summary>
         private string? _recommendationEndpointId;
-        /// <summary>Tracks the next recommendation page for the current snapshot.</summary>
-        private int _recommendationNextPage;
-        /// <summary>Indicates whether another finite recommendation page may exist.</summary>
-        private bool _hasMoreRecommendations;
+        /// <summary>Stores the selected local page of the current account's bounded recommendation batch.</summary>
+        private int _recommendationPageIndex;
 
         /// <summary>Gets saved endpoint configurations and their current account labels.</summary>
         public ObservableCollection<EndpointProfile> EndpointProfiles { get; } = new();
@@ -45,7 +43,7 @@ namespace MajMusic.Presentation.ViewModels
         public AsyncCommand RefreshCloudPlaylistsCommand { get; private set; } = null!;
         /// <summary>Gets the command opening a refreshed recommendation snapshot.</summary>
         public AsyncCommand RecommendationsCommand { get; private set; } = null!;
-        /// <summary>Gets the command appending the next recommendation page.</summary>
+        /// <summary>Gets the compatibility action opening the next cached recommendation page without a source request.</summary>
         public AsyncCommand MoreRecommendationsCommand { get; private set; } = null!;
         /// <summary>Gets whether the current library view is a recommendation snapshot.</summary>
         public bool IsRecommendationsView => IsRecommendationsMode;
@@ -122,8 +120,8 @@ namespace MajMusic.Presentation.ViewModels
             SynchronizeAllCommand = CreateCommand(SynchronizeAllAsync, () => OnlineEnabled && _settings.Endpoints.Count > 0);
             RefreshCloudPlaylistsCommand = CreateCommand(RefreshCloudPlaylistsAsync, () => _onlineWorkspace is not null && HasSelectedAccount);
             RecommendationsCommand = CreateCommand(RefreshRecommendationsAsync, () => _onlineWorkspace is not null && HasSelectedAccount);
-            MoreRecommendationsCommand = CreateCommand(LoadMoreRecommendationsAsync, () => _onlineWorkspace is not null
-                && HasSelectedAccount && IsRecommendationsView && _hasMoreRecommendations);
+            InitializeRecommendationPagingCommands();
+            MoreRecommendationsCommand = NextRecommendationPageCommand;
         }
 
         /// <summary>Rebuilds source labels without contacting a server or changing account ownership.</summary>
@@ -262,36 +260,6 @@ namespace MajMusic.Presentation.ViewModels
             await RequestHomeRecommendationsAsync(true);
         }
 
-        /// <summary>Appends another recommendation page while preserving the existing snapshot order.</summary>
-        /// <returns>A task representing one additional page.</returns>
-        private async Task LoadMoreRecommendationsAsync()
-        {
-            var owner = CurrentRecommendationOwner();
-            if (owner is null || _attachedRecommendationOwner != owner)
-            {
-                return;
-            }
-
-            var endpoint = _settings.Endpoints.FirstOrDefault(item => item.Id == _recommendationEndpointId)
-                ?? throw new InvalidOperationException("请重新打开猜你喜欢。");
-            var online = _onlineWorkspace ?? throw new NotSupportedException("当前宿主不支持猜你喜欢。");
-            var page = await online.GetRecommendationsAsync(endpoint, _recommendationNextPage, 50, _lifetime.Token);
-            if (!OnlineEnabled || CurrentRecommendationOwner() != owner)
-            {
-                return;
-            }
-
-            var existing = _recommendationTracks?.Select(item => item.Id).ToHashSet(StringComparer.Ordinal)
-                ?? new HashSet<string>(StringComparer.Ordinal);
-            _recommendationTracks ??= new List<MusicTrack>();
-            _recommendationTracks.AddRange(page.Where(item => existing.Add(item.Id)));
-            _recommendationNextPage++;
-            _hasMoreRecommendations = page.Count == 50;
-            _homeSnapshots[owner] = new RecommendationSnapshot(_recommendationTracks, _recommendationNextPage, _hasMoreRecommendations);
-            await ReloadLibraryCoreAsync(_lifetime.Token, true);
-            Status = $"已载入 {_recommendationTracks.Count} 首推荐";
-        }
-
         /// <summary>Synchronizes saved configurations independently so one unavailable server does not hide others.</summary>
         /// <returns>A task representing the explicitly requested multi-source refresh.</returns>
         private async Task SynchronizeAllAsync()
@@ -330,6 +298,11 @@ namespace MajMusic.Presentation.ViewModels
                 _homeSnapshots.Remove(key);
             }
 
+            foreach (var key in _recommendationAttemptVersions.Keys.Where(key => key.StartsWith(ownerPrefix, StringComparison.Ordinal)).ToArray())
+            {
+                _recommendationAttemptVersions.Remove(key);
+            }
+
             if (_recommendationRequestOwner?.StartsWith(ownerPrefix, StringComparison.Ordinal) == true)
             {
                 _recommendationRequestCancellation?.Cancel();
@@ -350,7 +323,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 _recommendationTracks = null;
                 _recommendationEndpointId = null;
-                _hasMoreRecommendations = false;
+                _recommendationPageIndex = 0;
             }
 
             if (clearView)
@@ -366,6 +339,8 @@ namespace MajMusic.Presentation.ViewModels
                 OnPropertyChanged(nameof(HasLibraryPages));
                 RefreshCommands();
             }
+
+            NotifyRecommendationPagination();
         }
 
         /// <summary>Removes private snapshots when an authenticated request invalidates one source session.</summary>

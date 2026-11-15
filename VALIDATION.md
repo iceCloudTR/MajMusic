@@ -30,6 +30,7 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- headless alignment 
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- arc-motion
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- surface-motion browse-loading appearance
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- cover-preload browse-entry catalog-read-ordering
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- recommendation-paging recommendation-paging-layout recommendation-playback card-feedback
 ```
 
 测试使用与桌面入口相同的 Arc 注册和主题。手机界面覆盖 360×640、390×844、430×932，检查安全区、软键盘收缩、底部导航、触摸目标、详情抽屉，以及桌面与窄屏切换时账号和 Guest 选择不变。该检查在 Skia 离屏窗口中运行；Android/iOS 宿主与实机播放另行验证。
@@ -41,6 +42,8 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- cover-preload brows
 `cover-preload` 检查有限封面预热、共享请求、超时、取消和独立图片引用；`browse-entry` 在真实卡片和横移中延迟查询及封面，检查动画中占位保持、首次入场已有封面、返回时复用、过期结果隔离，以及顶部导航的滑块和页面使用缓入缓出节奏。
 
 `catalog-read-ordering` 检查同页移除歌单曲目期间的并发查询与封面准备，旧读取不得覆盖新成员、元数据或已预热的首屏。
+
+推荐分页检查覆盖每页 50 首、总量上限 150、账号独立页号、分批加载与取消后续取；桌面和窄屏使用真实滚动、底部页码点击及横移中间帧验证。播放检查覆盖先播放首批、后续批次补齐队列、随机顺序与导航回滚，补齐期间不重开音频。卡片反馈检查覆盖悬停与选中的中间帧、下载完成提示、控件回收、减少及关闭动画模式，下载填充保持原色。
 
 `home-ui` 包含两万四千首曲目的整批通知、卡片懒创建、加载状态所有权与模式快切回归；`storage` 使用真实 SQLite 数据库锁验证界面队列可继续运行，以及取消后的结果隔离。
 

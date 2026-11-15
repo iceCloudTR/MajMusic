@@ -98,10 +98,16 @@ namespace MajMusic.Presentation.ViewModels
             _previewWarmCancellation?.Cancel();
             var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             _previewWarmCancellation = cancellation;
-            var targets = new[]
+            var candidates = new List<PreviewSpecification?>
             {
-                PreviewFor(HomeBrowseMode.Library), PreviewFor(HomeBrowseMode.Playlists, true), PreviewFor(HomeBrowseMode.Recommendations)
-            }.OfType<PreviewSpecification>().ToArray();
+                PreviewFor(HomeBrowseMode.Library), PreviewFor(HomeBrowseMode.Playlists, true)
+            };
+            for (var pageIndex = 0; pageIndex < RecommendationPageCount; pageIndex++)
+            {
+                candidates.Add(PreviewFor(HomeBrowseMode.Recommendations, recommendationPage: pageIndex));
+            }
+
+            var targets = candidates.OfType<PreviewSpecification>().ToArray();
             _browsePreloadUpdate = RunTrackedAsync(async () =>
             {
                 try
@@ -125,7 +131,7 @@ namespace MajMusic.Presentation.ViewModels
                         }
 
                         _browsePreviews.TryGetValue(target.Key, out var current);
-                        var nextTarget = PreviewFor(target.Key.Mode, true);
+                        var nextTarget = PreviewFor(target.Key.Mode, true, target.Key.PageIndex);
                         if (!ReferenceEquals(existing, current) || nextTarget is null || nextTarget.Key != target.Key
                             || !ReferenceEquals(nextTarget.Origin, target.Origin))
                         {
@@ -159,24 +165,27 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Gets one current source-scoped first-screen target without creating card controls or making requests.</summary>
         /// <param name="mode">The requested home mode.</param>
         /// <param name="nextNavigation">Whether a playlist preview follows the next insertion target rather than the currently opened playlist.</param>
+        /// <param name="recommendationPage">The cached recommendation page to prepare, otherwise the currently selected page.</param>
         /// <returns>The current preparation target, or null for an unavailable recommendation source.</returns>
-        private PreviewSpecification? PreviewFor(HomeBrowseMode mode, bool nextNavigation = false)
+        private PreviewSpecification? PreviewFor(HomeBrowseMode mode, bool nextNavigation = false, int? recommendationPage = null)
         {
             if (mode == HomeBrowseMode.Library)
             {
-                return new PreviewSpecification(new PreviewKey(mode, null, null, OnlineEnabled), _previewLibrary, _previewLibrary.Take(PreviewTrackLimit).ToArray());
+                return new PreviewSpecification(new PreviewKey(mode, null, null, OnlineEnabled, 0), _previewLibrary, _previewLibrary.Take(PreviewTrackLimit).ToArray());
             }
 
             if (mode == HomeBrowseMode.Playlists)
             {
                 var playlist = nextNavigation ? SelectedPlaylist : Playlists.FirstOrDefault(item => item.Id == _activePlaylistId) ?? SelectedPlaylist;
-                return playlist is null ? null : new PreviewSpecification(new PreviewKey(mode, playlist.Id, null, OnlineEnabled), playlist,
+                return playlist is null ? null : new PreviewSpecification(new PreviewKey(mode, playlist.Id, null, OnlineEnabled, 0), playlist,
                     playlist.TrackIds.Where(_previewLibraryById.ContainsKey).Take(PreviewTrackLimit).Select(id => _previewLibraryById[id]).ToArray());
             }
 
             var owner = CurrentRecommendationOwner();
+            var pageIndex = recommendationPage ?? _recommendationPageIndex;
             return owner is not null && _homeSnapshots.TryGetValue(owner, out var snapshot)
-                ? new PreviewSpecification(new PreviewKey(mode, null, owner, OnlineEnabled), snapshot.Tracks, snapshot.Tracks.Take(PreviewTrackLimit).ToArray()) : null;
+                ? new PreviewSpecification(new PreviewKey(mode, null, owner, OnlineEnabled, pageIndex), snapshot.Tracks,
+                    snapshot.Tracks.Skip(pageIndex * RecommendationPageSize).Take(PreviewTrackLimit).ToArray()) : null;
         }
 
         /// <summary>Installs a warm real first screen in the same input turn after the old surface has been captured.</summary>
@@ -249,7 +258,8 @@ namespace MajMusic.Presentation.ViewModels
         /// <param name="Playlist">The opened playlist identity, when applicable.</param>
         /// <param name="Owner">The selected recommendation account identity, when applicable.</param>
         /// <param name="Online">The network permission associated with this preparation.</param>
-        private readonly record struct PreviewKey(HomeBrowseMode Mode, string? Playlist, string? Owner, bool Online);
+        /// <param name="PageIndex">The cached recommendation page, otherwise zero.</param>
+        private readonly record struct PreviewKey(HomeBrowseMode Mode, string? Playlist, string? Owner, bool Online, int PageIndex);
         /// <summary>Retains a current source object and its bounded ordered metadata prefix.</summary>
         /// <param name="Key">The destination and account-scoped cache identity.</param>
         /// <param name="Origin">The immutable source object used to reject obsolete preparations.</param>

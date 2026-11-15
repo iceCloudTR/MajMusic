@@ -251,7 +251,7 @@ namespace MajMusic.Tests
                 await SettleSearchAsync(window, panel, token, () => ReadSearchWidth(window, panel, host, menuFrame, menu));
                 await WaitForHomeAsync(window, model, token);
                 var expanded = panel.DisplayedSearchWidth;
-                TestAssert.True(model.IsSearchExpanded && input.IsFocused && panel.RevealProgress >= 0.999
+                TestAssert.True(model.IsSearchExpanded && model.HomeMode == HomeBrowseMode.Library && input.IsFocused && panel.RevealProgress >= 0.999
                     && Math.Abs(expanded - panel.Bounds.Width) <= 1, "Expanding search must fill its available lane, retain keyboard focus and preserve the mode menu.");
                 AssertWidthTravel(opening, collapsed, expanded, true);
                 var sources = view.FindControl<Grid>("HomeSourceSelectors")!;
@@ -300,7 +300,7 @@ namespace MajMusic.Tests
                 await SettleSearchAsync(window, panel, token, () => ReadSearchWidth(window, panel, host, menuFrame, menu));
                 await WaitForHomeAsync(window, model, token);
                 AssertWidthTravel(closing, collapsed, expanded, false);
-                TestAssert.True(!model.IsSearchExpanded && panel.RevealProgress <= 0.001 && Math.Abs(panel.DisplayedSearchWidth - collapsed) <= 1
+                TestAssert.True(!model.IsSearchExpanded && model.IsLibraryMode && panel.RevealProgress <= 0.001 && Math.Abs(panel.DisplayedSearchWidth - collapsed) <= 1
                     && !input.IsVisible && view.FindControl<ArcButton>("BeginSearchButton")!.IsVisible,
                     $"Closing search must animate all the way back to the same icon before hiding the input frame: viewport={width}, model={model.IsSearchExpanded}, panel={panel.IsExpanded}, progress={panel.RevealProgress}, width={panel.DisplayedSearchWidth}, inputVisible={input.IsVisible}, beginVisible={view.FindControl<ArcButton>("BeginSearchButton")!.IsVisible}.");
                 Tap(window, view.FindControl<ArcButton>("BeginSearchButton")!);
@@ -310,7 +310,7 @@ namespace MajMusic.Tests
                 window.KeyReleaseQwerty(PhysicalKey.Escape, RawInputModifiers.None);
                 await SettleSearchAsync(window, panel, token);
                 await WaitForHomeAsync(window, model, token);
-                TestAssert.True(!model.IsSearchExpanded && panel.RevealProgress <= 0.001 && !input.IsVisible,
+                TestAssert.True(!model.IsSearchExpanded && model.IsLibraryMode && panel.RevealProgress <= 0.001 && !input.IsVisible,
                     "Escape in the actual search input must close the same extending toolbar and restore the icon.");
             }
 

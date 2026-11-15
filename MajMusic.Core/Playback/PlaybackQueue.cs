@@ -1,6 +1,7 @@
 #nullable enable
 
 using MajMusic.Core.Models;
+using System.Collections.ObjectModel;
 
 namespace MajMusic.Core.Playback
 {
@@ -19,6 +20,9 @@ namespace MajMusic.Core.Playback
 
         /// <summary>Exposes the original entries without exposing a mutable array.</summary>
         private IReadOnlyList<MusicTrack> _trackView = Array.Empty<MusicTrack>();
+
+        /// <summary>Distinguishes an explicitly replaced queue from navigation within the same feed.</summary>
+        private object _identity = new();
 
         /// <summary>Maps the stable playback order to original entry indexes.</summary>
         private int[] _order = Array.Empty<int>();
@@ -90,7 +94,8 @@ namespace MajMusic.Core.Playback
             }
 
             _tracks = entries;
-            _trackView = Array.AsReadOnly(entries);
+            _identity = new object();
+            _trackView = new TrackView(entries, _identity);
             _history.Clear();
             _historyPosition = -1;
             RebuildOrder(entries.Length == 0 ? -1 : startIndex);
@@ -98,6 +103,60 @@ namespace MajMusic.Core.Playback
             {
                 RecordVisit(startIndex);
             }
+        }
+
+        /// <summary>Appends a matching batch continuation without changing the current entry, existing order or history.</summary>
+        /// <param name="expectedPrefix">The complete original batch expected to own this queue.</param>
+        /// <param name="extendedTracks">The same ordered prefix followed by newly available entries.</param>
+        /// <returns>Whether this nonempty queue matched and received additional entries.</returns>
+        internal bool TryExtend(IReadOnlyList<MusicTrack> expectedPrefix, IReadOnlyList<MusicTrack> extendedTracks)
+        {
+            if (_tracks.Length == 0 || _tracks.Length != expectedPrefix.Count || extendedTracks.Count <= _tracks.Length)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < _tracks.Length; index++)
+            {
+                var current = _tracks[index];
+                var expected = expectedPrefix[index];
+                var extended = extendedTracks[index];
+                if (current.Id != expected.Id || current.SourceId != expected.SourceId || current.EndpointId != expected.EndpointId
+                    || expected.Id != extended.Id || expected.SourceId != extended.SourceId || expected.EndpointId != extended.EndpointId)
+                {
+                    return false;
+                }
+            }
+
+            var previousCount = _tracks.Length;
+            var entries = new MusicTrack[extendedTracks.Count];
+            Array.Copy(_tracks, entries, previousCount);
+            var order = new List<int>(_order);
+            for (var index = previousCount; index < entries.Length; index++)
+            {
+                entries[index] = extendedTracks[index];
+                if (_shuffle)
+                {
+                    order.Insert(_random.Next(_position + 1, order.Count + 1), index);
+                }
+                else
+                {
+                    order.Add(index);
+                }
+            }
+
+            _tracks = entries;
+            _trackView = new TrackView(entries, _identity);
+            _order = order.ToArray();
+            return true;
+        }
+
+        /// <summary>Checks whether a captured read-only view belongs to this explicitly started queue.</summary>
+        /// <param name="view">The original membership view retained by the recommendation owner.</param>
+        /// <returns>Whether navigation, appending or rollback has retained the same queue ownership.</returns>
+        internal bool Owns(IReadOnlyList<MusicTrack> view)
+        {
+            return view is TrackView tracks && ReferenceEquals(tracks.Owner, _identity);
         }
 
         /// <summary>Moves forward using the existing order or forward navigation history.</summary>
@@ -181,7 +240,7 @@ namespace MajMusic.Core.Playback
         /// <returns>An isolated navigation snapshot.</returns>
         internal QueueState CaptureState()
         {
-            return new QueueState(_tracks, _order.ToArray(), _history.ToArray(), _position, _historyPosition, _shuffle, RepeatMode);
+            return new QueueState(_tracks, _order.ToArray(), _history.ToArray(), _position, _historyPosition, _shuffle, RepeatMode, _identity);
         }
 
         /// <summary>Restores navigation after a failed or canceled audio operation.</summary>
@@ -189,7 +248,8 @@ namespace MajMusic.Core.Playback
         internal void RestoreState(QueueState state)
         {
             _tracks = state.Tracks;
-            _trackView = Array.AsReadOnly(_tracks);
+            _identity = state.Identity;
+            _trackView = new TrackView(_tracks, _identity);
             _order = state.Order;
             _history.Clear();
             _history.AddRange(state.History);
@@ -256,6 +316,22 @@ namespace MajMusic.Core.Playback
         /// <param name="HistoryPosition">The current history position.</param>
         /// <param name="Shuffle">Whether shuffle is enabled.</param>
         /// <param name="RepeatMode">The repeat behavior.</param>
-        internal sealed record QueueState(MusicTrack[] Tracks, int[] Order, int[] History, int Position, int HistoryPosition, bool Shuffle, RepeatMode RepeatMode);
+        /// <param name="Identity">The explicit queue owner retained across navigation and rollback.</param>
+        internal sealed record QueueState(MusicTrack[] Tracks, int[] Order, int[] History, int Position, int HistoryPosition, bool Shuffle, RepeatMode RepeatMode, object Identity);
+
+        /// <summary>Exposes immutable membership together with a private queue owner that survives navigation.</summary>
+        private sealed class TrackView : ReadOnlyCollection<MusicTrack>
+        {
+            /// <summary>Creates a read-only membership view for one explicitly started queue.</summary>
+            /// <param name="tracks">The immutable original-order entries.</param>
+            /// <param name="owner">The private queue identity.</param>
+            public TrackView(MusicTrack[] tracks, object owner) : base(tracks)
+            {
+                Owner = owner;
+            }
+
+            /// <summary>Gets the private owner shared only by views of the same queue.</summary>
+            public object Owner { get; }
+        }
     }
 }

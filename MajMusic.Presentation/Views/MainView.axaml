@@ -104,7 +104,7 @@
                             <arc:Button x:Name="BeginSearchButton" Classes="icon" Width="44" Height="44" CornerRadius="22" IsPressScaleEnabled="False" LabelSwapMode="None" Transitions="{x:Null}" Command="{Binding BeginSearchCommand}" Click="OnBeginSearchClicked" ToolTip.Tip="搜索音乐" AutomationProperties.Name="搜索音乐">
                                 <Path Data="M 8,2 A 6,6 0 1 0 8,14 A 6,6 0 1 0 8,2 M 12.5,12.5 L 18,18" Stroke="{DynamicResource MusicTextBrush}" StrokeThickness="1.8" Width="17" Height="17" Stretch="Uniform" />
                             </arc:Button>
-                            <arc:Button x:Name="CancelSearchButton" Classes="icon" Width="44" Height="44" CornerRadius="22" Background="Transparent" IsPressScaleEnabled="False" LabelSwapMode="None" Transitions="{x:Null}" Click="OnCancelSearchClicked" ToolTip.Tip="返回推荐" AutomationProperties.Name="返回推荐">
+                            <arc:Button x:Name="CancelSearchButton" Classes="icon" Width="44" Height="44" CornerRadius="22" Background="Transparent" IsPressScaleEnabled="False" LabelSwapMode="None" Transitions="{x:Null}" Click="OnCancelSearchClicked" ToolTip.Tip="关闭搜索" AutomationProperties.Name="关闭搜索">
                                 <Path Data="M 3,3 L 13,13 M 13,3 L 3,13" Stroke="{DynamicResource MusicTextBrush}" StrokeThickness="1.8" StrokeLineCap="Round" Width="16" Height="16" Stretch="None" />
                             </arc:Button>
                         </theme:SearchRevealPanel>
@@ -142,7 +142,6 @@
                     </Border>
                     <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="6">
                         <TextBlock Text="{Binding BrowseSummary}" Classes="muted" FontSize="11" VerticalAlignment="Center" />
-                        <arc:Button Grid.Column="1" Content="更多推荐" Command="{Binding MoreRecommendationsCommand}" IsVisible="{Binding HasMoreRecommendations}" Padding="10,2" MinHeight="28" />
                     </Grid>
                 </Grid>
             </TabItem>

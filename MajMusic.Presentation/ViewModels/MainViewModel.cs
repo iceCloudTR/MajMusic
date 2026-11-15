@@ -927,7 +927,7 @@ namespace MajMusic.Presentation.ViewModels
             var playlistIds = Playlists.FirstOrDefault(item => item.Id == _activePlaylistId)?.TrackIds.ToArray();
             var sourceNames = _settings.Endpoints.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
             IReadOnlyList<MusicTrack> found = !searching && mode == HomeBrowseMode.Recommendations
-                ? _recommendationTracks?.ToArray() ?? (IReadOnlyList<MusicTrack>)Array.Empty<MusicTrack>()
+                ? CurrentRecommendationPageTracks()
                 : await _workspace.SearchAsync(searching ? SearchText : null, cancellationToken);
             var entries = await Task.Run(() =>
             {
@@ -1384,10 +1384,14 @@ namespace MajMusic.Presentation.ViewModels
                     return;
                 }
 
-                var index = Tracks.IndexOf(track);
+                var entries = IsRecommendationsMode && _recommendationTracks is { } recommendations
+                    ? recommendations.ToArray() : Tracks.ToArray();
+                var recommendationOwner = IsRecommendationsMode ? CurrentRecommendationOwner() : null;
+                var index = Array.FindIndex(entries, item => item.Id == track.Id && item.SourceId == track.SourceId && item.EndpointId == track.EndpointId);
                 if (index >= 0)
                 {
-                    await _playback.SetQueueAsync(Tracks.ToArray(), index, _lifetime.Token);
+                    await _playback.SetQueueAsync(entries, index, _lifetime.Token);
+                    OnPlaybackQueueStarted(recommendationOwner, entries);
                 }
             }
         }
@@ -1489,7 +1493,8 @@ namespace MajMusic.Presentation.ViewModels
                 SynchronizeCommand, DownloadCommand, ClearCacheCommand, PlayCommand, PauseCommand, NextCommand, PreviousCommand,
                 ToggleFavoriteCommand, OpenFavoritesCommand, RescanCommand, NewEndpointCommand, RemoveEndpointCommand,
                 LoginCommand, GuestCommand, SynchronizeAllCommand, RefreshCloudPlaylistsCommand, RecommendationsCommand,
-                MoreRecommendationsCommand, PreviousLibraryPageCommand, NextLibraryPageCommand, NewAccountCommand,
+                MoreRecommendationsCommand, PreviousRecommendationPageCommand, NextRecommendationPageCommand,
+                PreviousLibraryPageCommand, NextLibraryPageCommand, NewAccountCommand,
                 SaveAccountCommand, RemoveAccountCommand, NewDirectoryCommand, SaveDirectoryCommand, ScanDirectoryCommand, RemoveDirectoryCommand,
                 RefreshOutputDevicesCommand, SaveAudioSettingsCommand, TogglePlayPauseCommand,
                 ToggleShuffleCommand, CycleRepeatModeCommand,

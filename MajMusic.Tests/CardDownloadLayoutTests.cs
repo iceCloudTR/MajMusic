@@ -12,6 +12,7 @@ using MajMusic.Core.Models;
 using MajMusic.Core.Playback;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
+using MajMusic.Presentation.Theme;
 using SkiaSharp;
 
 namespace MajMusic.Tests
@@ -185,8 +186,42 @@ namespace MajMusic.Tests
                 var y = (int)Math.Round(paneOrigin.Y + pane.Bounds.Height * fraction);
                 var color = ResourceColor(card, fraction >= 1 - percent / 100 ? "MusicDownloadBrush" : "MusicPanelBrush");
                 var expected = new SKColor(color.R, color.G, color.B, color.A);
+                if (selected && card.DataContext is SongCardViewModel { HasDownloadStatus: false })
+                {
+                    var feedback = card.FindControl<CardFeedbackBorder>("CardFeedback")!;
+                    var accent = ResourceColor(card, "MusicAccentBrush");
+                    var actual = pixels.GetPixel(x, y);
+                    TestAssert.True(feedback.InformationOpacity is > 0 and <= .04 && actual != expected
+                        && Math.Abs(actual.Red - color.R) <= Math.Ceiling(Math.Abs(accent.R - color.R) * .04) + 1
+                        && Math.Abs(actual.Green - color.G) <= Math.Ceiling(Math.Abs(accent.G - color.G) * .04) + 1
+                        && Math.Abs(actual.Blue - color.B) <= Math.Ceiling(Math.Abs(accent.B - color.B) * .04) + 1,
+                        "An idle selected card may apply only its restrained four-percent information wash.");
+                    continue;
+                }
+
                 TestAssert.Equal(expected, pixels.GetPixel(x, y),
                     "Information background pixels must distinguish undownloaded and downloaded areas without tinting the cover.");
+            }
+
+            var artwork = card.GetVisualDescendants().OfType<Image>().First(image => image.IsEffectivelyVisible);
+            var artworkOrigin = artwork.TranslatePoint(default, card)!.Value;
+            var referenceImage = new Image { Source = artwork.Source, Stretch = artwork.Stretch, Width = artwork.Bounds.Width, Height = artwork.Bounds.Height, UseLayoutRounding = false };
+            var reference = new Canvas { Width = card.Bounds.Width, Height = card.Bounds.Height, UseLayoutRounding = false, Children = { referenceImage } };
+            Canvas.SetLeft(referenceImage, artworkOrigin.X);
+            Canvas.SetTop(referenceImage, artworkOrigin.Y);
+            reference.Measure(card.Bounds.Size);
+            reference.Arrange(new Rect(card.Bounds.Size));
+            using var referenceFrame = new RenderTargetBitmap(rendered.PixelSize);
+            referenceFrame.Render(reference);
+            using var referenceEncoded = new MemoryStream();
+            referenceFrame.Save(referenceEncoded, PngBitmapEncoderOptions.Default);
+            using var referencePixels = SKBitmap.Decode(referenceEncoded.ToArray());
+            foreach (var fraction in new[] { .25, .5, .75 })
+            {
+                var coverX = (int)Math.Round(artworkOrigin.X + artwork.Bounds.Width * fraction);
+                var coverY = (int)Math.Round(artworkOrigin.Y + artwork.Bounds.Height * fraction);
+                TestAssert.Equal(referencePixels.GetPixel(coverX, coverY), pixels.GetPixel(coverX, coverY),
+                    "The selected wash and transfer fill must preserve exact independently rendered artwork pixels.");
             }
         }
 

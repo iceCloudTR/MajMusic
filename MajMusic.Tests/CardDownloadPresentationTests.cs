@@ -109,6 +109,7 @@ namespace MajMusic.Tests
             await card.ActivateAsync();
             TestAssert.True(card.IsDownloaded, "Visible checking must use the validated completion path when row metadata still has no local path.");
             view.BeginSearchCommand.Execute(null);
+            view.SearchText = "absent-download-fixture";
             await view.HomeUpdate;
             TestAssert.Equal(0, view.CardTracks.Count, "The fixture must remove the completed song from the current query.");
             await ShowLibraryAsync(view);

@@ -376,8 +376,9 @@ namespace MajMusic.Tests
             window.MouseUp(searchPoint, MouseButton.Left);
             await viewModel.HomeUpdate;
             Dispatcher.UIThread.RunJobs();
-            TestAssert.True(viewModel.IsSearchExpanded && view.FindControl<TextBox>("LibrarySearch")!.IsFocused,
-                "The search icon must reveal and focus the single search input.");
+            TestAssert.True(viewModel.IsSearchExpanded && viewModel.HomeMode == HomeBrowseMode.Library
+                && view.FindControl<TextBox>("LibrarySearch")!.IsFocused,
+                "The search icon must select the library and focus its single search input.");
             view.FindControl<TextBox>("LibrarySearch")!.Text = "Bio";
             await viewModel.HomeUpdate;
             TestAssert.True(viewModel.IsSearching && viewModel.Tracks.All(track => track.Title.Contains("Bio", StringComparison.OrdinalIgnoreCase)),
@@ -391,7 +392,7 @@ namespace MajMusic.Tests
             window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
             window.KeyReleaseQwerty(PhysicalKey.Escape, RawInputModifiers.None);
             await viewModel.HomeUpdate;
-            TestAssert.True(!viewModel.IsSearchExpanded && viewModel.IsRecommendationsMode, "Escape in the real Arc search input must return to recommendations.");
+            TestAssert.True(!viewModel.IsSearchExpanded && viewModel.IsLibraryMode, "Escape in the real Arc search input must retain the library.");
             window.MouseDown(searchPoint, MouseButton.Left);
             window.MouseUp(searchPoint, MouseButton.Left);
             await viewModel.HomeUpdate;
@@ -450,12 +451,12 @@ namespace MajMusic.Tests
             TestAssert.True(browseScroll.Offset.Y <= 1, "A new search must begin at the top of the artwork results.");
             cardsList.ScrollIntoView(viewModel.BrowseRows[^1]);
             Dispatcher.UIThread.RunJobs();
-            TestAssert.True(browseScroll.Offset.Y > 0, "The search fixture must be scrolled before returning to recommendations.");
+            TestAssert.True(browseScroll.Offset.Y > 0, "The search fixture must be scrolled before returning to the library.");
             viewModel.CancelSearchCommand.Execute(null);
             await viewModel.HomeUpdate;
             Dispatcher.UIThread.RunJobs();
-            TestAssert.True(!viewModel.IsSearchExpanded && viewModel.IsRecommendationsMode, "Canceling search must restore recommendations.");
-            TestAssert.True(browseScroll.Offset.Y <= 1, "Returning from a scrolled search must show recommendations from the beginning.");
+            TestAssert.True(!viewModel.IsSearchExpanded && viewModel.IsLibraryMode, "Canceling search must restore the complete library.");
+            TestAssert.True(browseScroll.Offset.Y <= 1, "Returning from a scrolled search must show the complete library from the beginning.");
             cardsList.ScrollIntoView(viewModel.BrowseRows[5]);
             Dispatcher.UIThread.RunJobs();
             var beforeResize = browseScroll.Offset.Y;
@@ -465,21 +466,6 @@ namespace MajMusic.Tests
                 "Resizing the shared card container must not reset the current browsing position.");
             window.Width = 1100;
             Dispatcher.UIThread.RunJobs();
-            if (viewModel.HasMoreRecommendations)
-            {
-                var beforeAppend = browseScroll.Offset.Y;
-                viewModel.MoreRecommendationsCommand.Execute(null);
-                using var append = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                while (viewModel.IsBusy)
-                {
-                    await Task.Delay(10, append.Token);
-                }
-
-                Dispatcher.UIThread.RunJobs();
-                TestAssert.True(Math.Abs(browseScroll.Offset.Y - beforeAppend) <= 1,
-                    "Appending more recommendations must preserve the existing scroll position.");
-            }
-
             cardsList.ScrollIntoView(viewModel.BrowseRows[0]);
             Dispatcher.UIThread.RunJobs();
             window.Width = 720;

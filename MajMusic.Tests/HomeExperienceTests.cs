@@ -172,22 +172,29 @@ namespace MajMusic.Tests
             TestAssert.Equal(0, workspace.RecommendationRequests.Count, "Offline startup must not request a feed.");
             var recommendationSurface = view.BrowseTransitionVersion;
             await ExecuteHomeAsync(view, view.BeginSearchCommand);
-            TestAssert.True(view.IsSearchExpanded && !view.IsSearching && view.Tracks.Count == 0,
-                "Expanding an empty search field keeps recommendation content.");
-            TestAssert.Equal(recommendationSurface, view.BrowseTransitionVersion,
-                "Expanding search over the same recommendations must animate the field without sliding the unchanged song panel.");
+            TestAssert.True(view.IsSearchExpanded && !view.IsSearching && view.IsLibraryMode && view.Tracks.Count == 20,
+                "Expanding search immediately opens the full local library before a keyword is entered.");
+            TestAssert.True(view.BrowseTransitionVersion > recommendationSurface,
+                "Opening search from recommendations must transition to the library surface.");
+            var searchSurface = view.BrowseTransitionVersion;
             view.SearchText = "Local 02";
             await view.HomeUpdate.WaitAsync(TimeSpan.FromSeconds(3));
             TestAssert.True(view.IsSearching && view.Tracks.Single().Id == "local-02", "Nonempty search reads the entire indexed library.");
-            TestAssert.Equal(recommendationSurface, view.BrowseTransitionVersion,
+            TestAssert.Equal(searchSurface, view.BrowseTransitionVersion,
                 "Progressive typing must update results without restarting a full-page slide for every letter.");
             view.SelectedVisibleTrack = view.VisibleTracks.Single();
             var inspected = view.SelectedTrack;
+            view.SearchText = string.Empty;
+            await view.HomeUpdate.WaitAsync(TimeSpan.FromSeconds(3));
+            TestAssert.True(view.IsSearchExpanded && view.IsLibraryMode && view.Tracks.Count == 20,
+                "Clearing the keyword retains the full library and the open search field.");
+            view.SearchText = "Local 02";
+            await view.HomeUpdate.WaitAsync(TimeSpan.FromSeconds(3));
             await ExecuteHomeAsync(view, view.CancelSearchCommand);
-            TestAssert.True(view.IsRecommendationsMode && !view.IsSearchExpanded && view.Tracks.Count == 0,
-                "Canceling search restores recommendations.");
-            TestAssert.True(ReferenceEquals(inspected, view.SelectedTrack) && view.SelectedVisibleTrack is null,
-                "Changing content retains the inspected music without selecting a nonexistent visible row.");
+            TestAssert.True(view.IsLibraryMode && !view.IsSearchExpanded && view.Tracks.Count == 20,
+                "Closing search retains the full library.");
+            TestAssert.True(ReferenceEquals(inspected, view.SelectedTrack) && view.SelectedVisibleTrack?.Id == inspected?.Id,
+                "Returning to the library retains the inspected music and its available visible row.");
 
             view.SelectedPlaylist = view.Playlists.Single(item => item.Id == "ordered");
             await ExecuteHomeAsync(view, view.ShowPlaylistsModeCommand);
@@ -250,7 +257,10 @@ namespace MajMusic.Tests
             view.SelectedEndpointProfile = view.EndpointProfiles.Single(item => item.Configuration.Id == "b");
             TestAssert.True(view.IsSearching && view.Tracks.Count == 3, "Changing the recommendation source cannot replace active search results.");
             await ExecuteHomeAsync(view, view.CancelSearchCommand);
-            TestAssert.Equal("b-feed", view.Tracks.Single().Id, "Closing search restores only the selected account's feed.");
+            TestAssert.True(view.IsLibraryMode && view.Tracks.Count == workspace.Library.Count,
+                "Closing search stays in the library even after the selected source changes.");
+            await ExecuteHomeAsync(view, view.ShowRecommendationsModeCommand);
+            TestAssert.Equal("b-feed", view.Tracks.Single().Id, "Explicitly opening recommendations selects only the current account's feed.");
             view.SelectedEndpointProfile = view.EndpointProfiles.Single(item => item.Configuration.Id == "a");
             await view.HomeUpdate.WaitAsync(TimeSpan.FromSeconds(3));
             TestAssert.Equal("a-feed", view.Tracks.Single().Id, "Returning to an account restores its own finite snapshot.");
@@ -327,7 +337,10 @@ namespace MajMusic.Tests
                 await Task.WhenAll(feed, expanding).WaitAsync(TimeSpan.FromSeconds(3));
                 TestAssert.True(view.IsSearching && view.Tracks.Single().Id == "local-02", "A returning feed cannot steal an active search view.");
                 await ExecuteHomeAsync(view, view.CancelSearchCommand);
-                TestAssert.Equal("feed", view.Tracks.Single().Id, "Closing search displays the feed that arrived in the background.");
+                TestAssert.True(view.IsLibraryMode && view.Tracks.Count == 4,
+                    "Closing search retains the full library, including metadata indexed by a completed background feed.");
+                await ExecuteHomeAsync(view, view.ShowRecommendationsModeCommand);
+                TestAssert.Equal("feed", view.Tracks.Single().Id, "Explicit recommendations can reuse the feed that arrived during search.");
             }
             finally
             {

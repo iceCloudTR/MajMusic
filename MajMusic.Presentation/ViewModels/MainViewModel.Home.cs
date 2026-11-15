@@ -78,8 +78,8 @@ namespace MajMusic.Presentation.ViewModels
         public bool IsSearchExpanded => _isSearchExpanded;
         /// <summary>Gets whether a nonempty search currently owns the home list.</summary>
         public bool IsSearching => _isSearchExpanded && !string.IsNullOrWhiteSpace(SearchText);
-        /// <summary>Gets whether the current online account has another finite recommendation page.</summary>
-        public bool HasMoreRecommendations => IsRecommendationsMode && HasSelectedAccount && _hasMoreRecommendations;
+        /// <summary>Gets whether another locally cached recommendation page follows the current page.</summary>
+        public bool HasMoreRecommendations => IsRecommendationsMode && _recommendationPageIndex + 1 < RecommendationPageCount;
         /// <summary>Gets or opens the playlist currently browsed at home, independently of the sidebar's insertion target.</summary>
         public MusicPlaylist? SelectedHomePlaylist
         {
@@ -112,7 +112,7 @@ namespace MajMusic.Presentation.ViewModels
         public AsyncCommand ShowLibraryModeCommand { get; private set; } = null!;
         /// <summary>Gets the command expanding the home search field.</summary>
         public AsyncCommand BeginSearchCommand { get; private set; } = null!;
-        /// <summary>Gets the command closing search and returning to recommendations.</summary>
+        /// <summary>Gets the command closing search while retaining the full music library.</summary>
         public AsyncCommand CancelSearchCommand { get; private set; } = null!;
 
         /// <summary>Creates content-navigation actions without blocking transport controls.</summary>
@@ -123,13 +123,13 @@ namespace MajMusic.Presentation.ViewModels
             ShowLibraryModeCommand = CreateHomeModeCommand(HomeBrowseMode.Library);
             BeginSearchCommand = new AsyncCommand(() =>
             {
-                UseHomeMode(HomeBrowseMode.Recommendations);
+                UseHomeMode(HomeBrowseMode.Library);
                 _isSearchExpanded = true;
                 NotifyHomeState();
                 QueueHomeUpdate(false);
                 return Task.CompletedTask;
             }, ReportError, () => !Volatile.Read(ref _isDisposing));
-            CancelSearchCommand = CreateHomeModeCommand(HomeBrowseMode.Recommendations);
+            CancelSearchCommand = CreateHomeModeCommand(HomeBrowseMode.Library);
         }
 
         /// <summary>Creates a mode command that leaves asynchronous transport commands available.</summary>
@@ -193,7 +193,7 @@ namespace MajMusic.Presentation.ViewModels
 
             if (string.IsNullOrWhiteSpace(SearchText))
             {
-                _homeMode = HomeBrowseMode.Recommendations;
+                _homeMode = HomeBrowseMode.Library;
                 _activePlaylistId = null;
                 AttachRecommendationSnapshot();
             }
@@ -212,13 +212,15 @@ namespace MajMusic.Presentation.ViewModels
             BeginBrowseLoad(true);
             if (!string.IsNullOrWhiteSpace(SearchText))
             {
+                _homeMode = HomeBrowseMode.Library;
+                _activePlaylistId = null;
                 _isSearchExpanded = true;
                 _homeVersion++;
                 NotifyHomeState();
             }
             else if (IsSearchExpanded)
             {
-                _homeMode = HomeBrowseMode.Recommendations;
+                _homeMode = HomeBrowseMode.Library;
                 _activePlaylistId = null;
                 AttachRecommendationSnapshot();
                 NotifyHomeState();
@@ -345,7 +347,8 @@ namespace MajMusic.Presentation.ViewModels
         public Task EnsureHomeRecommendationsAsync()
         {
             if (!IsRecommendationsMode || _onlineWorkspace is null || !HasSelectedAccount
-                || CurrentRecommendationOwner() is not { } owner || _homeSnapshots.ContainsKey(owner))
+                || CurrentRecommendationOwner() is not { } owner
+                || _homeSnapshots.TryGetValue(owner, out var snapshot) && snapshot.IsComplete)
             {
                 return Task.CompletedTask;
             }
@@ -363,17 +366,19 @@ namespace MajMusic.Presentation.ViewModels
                 return Task.CompletedTask;
             }
 
-            if (!force && _homeSnapshots.ContainsKey(owner))
-            {
-                return Task.CompletedTask;
-            }
-
             if (_recommendationRequestOwner == owner && !_recommendationRequest.IsCompleted)
             {
                 return _recommendationRequest;
             }
 
+            if (!force && (_homeSnapshots.TryGetValue(owner, out var snapshot) && snapshot.IsComplete
+                || _recommendationAttemptVersions.TryGetValue(owner, out var attemptedVersion) && attemptedVersion == _homeVersion))
+            {
+                return Task.CompletedTask;
+            }
+
             _recommendationRequestCancellation?.Cancel();
+            _recommendationAttemptVersions[owner] = _homeVersion;
             var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             _recommendationRequestCancellation = cancellation;
             _recommendationRequestOwner = owner;
@@ -382,19 +387,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 try
                 {
-                    var page = await _onlineWorkspace.GetRecommendationsAsync(endpoint, 0, 50, cancellation.Token);
-                    cancellation.Token.ThrowIfCancellationRequested();
-                    if (!OnlineEnabled || CurrentRecommendationOwner() != owner)
-                    {
-                        return;
-                    }
-
-                    _homeSnapshots[owner] = new RecommendationSnapshot(page.ToList(), 1, page.Count == 50);
-                    AttachRecommendationSnapshot();
-                    if (IsRecommendationsMode)
-                    {
-                        await ReloadLibraryCoreAsync(cancellation.Token);
-                    }
+                    await LoadRecommendationBatchAsync(endpoint, owner, force, cancellation.Token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -443,16 +436,16 @@ namespace MajMusic.Presentation.ViewModels
             {
                 _recommendationTracks = snapshot.Tracks;
                 _recommendationEndpointId = SelectedEndpointProfile?.Configuration.Id;
-                _recommendationNextPage = snapshot.NextPage;
-                _hasMoreRecommendations = snapshot.HasMore;
+                _recommendationPageIndex = Math.Clamp(snapshot.PageIndex, 0, Math.Max(0, (snapshot.Tracks.Count - 1) / RecommendationPageSize));
             }
             else
             {
                 _recommendationTracks = null;
                 _recommendationEndpointId = null;
-                _recommendationNextPage = 0;
-                _hasMoreRecommendations = false;
+                _recommendationPageIndex = 0;
             }
+
+            NotifyRecommendationPagination();
         }
 
         /// <summary>Notifies mode and search bindings without moving the surrounding layout.</summary>
@@ -469,13 +462,15 @@ namespace MajMusic.Presentation.ViewModels
             OnPropertyChanged(nameof(HasMoreRecommendations));
             OnPropertyChanged(nameof(SelectedHomePlaylist));
             OnPropertyChanged(nameof(LibraryViewTitle));
+            NotifyRecommendationPagination();
             RefreshCommands();
         }
 
-        /// <summary>Retains one finite account recommendation snapshot and its continuation cursor.</summary>
+        /// <summary>Retains one bounded account recommendation batch and its selected local page.</summary>
         /// <param name="Tracks">The loaded entries in server order.</param>
-        /// <param name="NextPage">The next server page to request.</param>
-        /// <param name="HasMore">Whether the last page was full.</param>
-        private sealed record RecommendationSnapshot(List<MusicTrack> Tracks, int NextPage, bool HasMore);
+        /// <param name="PageIndex">The zero-based selected page in this account's cached batch.</param>
+        /// <param name="NextServerPage">The next uncommitted server page, retained when a batch is interrupted.</param>
+        /// <param name="IsComplete">Whether the source ended or the three-page batch limit has been reached.</param>
+        private sealed record RecommendationSnapshot(List<MusicTrack> Tracks, int PageIndex, int NextServerPage, bool IsComplete);
     }
 }

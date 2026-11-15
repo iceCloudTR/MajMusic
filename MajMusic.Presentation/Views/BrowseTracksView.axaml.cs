@@ -8,6 +8,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
+using System.Collections;
 using System.ComponentModel;
 
 namespace MajMusic.Presentation.Views
@@ -17,6 +18,9 @@ namespace MajMusic.Presentation.Views
     {
         /// <summary>Identifies a touch viewport that keeps complete cover cards in one column.</summary>
         public static readonly StyledProperty<bool> ForceSingleColumnProperty = AvaloniaProperty.Register<BrowseTracksView, bool>(nameof(ForceSingleColumn));
+        /// <summary>Identifies the indexed music rows and their optional trailing recommendation pager.</summary>
+        public static readonly DirectProperty<BrowseTracksView, IEnumerable?> PresentationRowsProperty =
+            AvaloniaProperty.RegisterDirect<BrowseTracksView, IEnumerable?>(nameof(PresentationRows), view => view.PresentationRows);
 
         /// <summary>Gets or sets whether this browser reserves one complete card per row.</summary>
         public bool ForceSingleColumn
@@ -24,6 +28,8 @@ namespace MajMusic.Presentation.Views
             get => GetValue(ForceSingleColumnProperty);
             set => SetValue(ForceSingleColumnProperty, value);
         }
+        /// <summary>Gets the unchanged lightweight music rows followed by an available recommendation footer.</summary>
+        public IEnumerable? PresentationRows => _rowsPresentation;
 
         /// <inheritdoc />
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -47,6 +53,10 @@ namespace MajMusic.Presentation.Views
         private long _transitionRegistration;
         /// <summary>Retains observation of the current surface's finite Arc animation.</summary>
         private Task _transitionObservation = Task.CompletedTask;
+        /// <summary>Maps native list indices to existing music rows without constructing invisible cards.</summary>
+        private BrowseRowsPresentation? _rowsPresentation;
+        /// <summary>Rejects deferred footer focus after another navigation gesture.</summary>
+        private long _keyboardNavigationVersion;
 
         /// <summary>Initializes the shared card presentation and its keyboard navigation.</summary>
         public BrowseTracksView()
@@ -54,6 +64,7 @@ namespace MajMusic.Presentation.Views
             InitializeComponent();
             DataContextChanged += OnBrowseContextChanged;
             this.FindControl<ListBox>("CardRowsList")!.AddHandler(KeyDownEvent, OnBrowseKeyDown, RoutingStrategies.Tunnel);
+            this.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!.PropertyChanged += OnBrowseSurfaceChanged;
         }
 
         /// <inheritdoc />
@@ -79,6 +90,7 @@ namespace MajMusic.Presentation.Views
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             ReleaseBrowseTransition();
+            _keyboardNavigationVersion++;
             if (_browseOwner is { } owner)
             {
                 owner.PropertyChanged -= OnBrowseOwnerChanged;
@@ -105,6 +117,10 @@ namespace MajMusic.Presentation.Views
             }
 
             _browseOwner = DataContext as MainViewModel;
+            var previousRows = _rowsPresentation;
+            previousRows?.Dispose();
+            _rowsPresentation = _browseOwner is { } current ? new BrowseRowsPresentation(current) : null;
+            RaisePropertyChanged(PresentationRowsProperty, previousRows, _rowsPresentation);
             _navigationVersion = -1;
             if (_browseOwner is { } owner)
             {
@@ -119,6 +135,7 @@ namespace MajMusic.Presentation.Views
 
                 ResetNavigationOffset();
                 UpdateSkeletonViewport();
+                UpdateRecommendationFooter();
                 if (TopLevel.GetTopLevel(this) is not null)
                 {
                     RegisterBrowseTransition(owner);
@@ -142,6 +159,33 @@ namespace MajMusic.Presentation.Views
             else if (e.PropertyName is nameof(MainViewModel.IsBrowseLoading) or nameof(MainViewModel.BrowseColumns))
             {
                 UpdateSkeletonViewport();
+            }
+
+            if (e.PropertyName is nameof(MainViewModel.IsBrowseLoading) or nameof(MainViewModel.CardTracks)
+                or nameof(MainViewModel.HasRecommendationPages) or nameof(MainViewModel.RecommendationCurrentPageTrackCount)
+                or nameof(MainViewModel.IsRecommendationsMode))
+            {
+                UpdateRecommendationFooter();
+            }
+        }
+
+        /// <summary>Appends pagination only after the complete target page has finished its existing slide.</summary>
+        private void UpdateRecommendationFooter()
+        {
+            var owner = _browseOwner;
+            _rowsPresentation?.SetFooterVisible(owner is { HasRecommendationPages: true, IsBrowseLoading: false }
+                && owner.CardTracks.Count == owner.RecommendationCurrentPageTrackCount
+                && this.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!.TransitionProgress >= 1);
+        }
+
+        /// <summary>Updates only the trailing footer when the incoming target finishes moving.</summary>
+        /// <param name="sender">The existing horizontal browsing presenter.</param>
+        /// <param name="e">The changed actual Arc progress.</param>
+        private void OnBrowseSurfaceChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.Property == MusicSurfaceHost.TransitionProgressProperty)
+            {
+                UpdateRecommendationFooter();
             }
         }
 
@@ -264,6 +308,7 @@ namespace MajMusic.Presentation.Views
             }
 
             e.Handled = true;
+            var keyboardVersion = ++_keyboardNavigationVersion;
             var selected = owner.SelectedBrowseCard;
             var index = owner.GetBrowseCardIndex(selected);
 
@@ -282,6 +327,25 @@ namespace MajMusic.Presentation.Views
             var list = (ListBox)sender!;
             list.SelectedItem = row;
             list.ScrollIntoView(row);
+            if (e.Key == Key.End && _rowsPresentation?.Footer is { } footer)
+            {
+                list.ScrollIntoView(footer);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (_keyboardNavigationVersion == keyboardVersion && ReferenceEquals(_browseOwner, owner)
+                        && ReferenceEquals(_rowsPresentation?.Footer, footer) && TopLevel.GetTopLevel(this) is not null)
+                    {
+                        var container = list.ContainerFromIndex(_rowsPresentation.Count - 1);
+                        container?.GetVisualDescendants().OfType<TKCode.Arc.Button>()
+                            .FirstOrDefault(button => button.IsEffectivelyVisible && button.IsEffectivelyEnabled)?.Focus();
+                    }
+                }, DispatcherPriority.Loaded);
+            }
+            else
+            {
+                list.Focus();
+            }
+
             await owner.LoadCoverAsync();
         }
     }

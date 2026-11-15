@@ -203,19 +203,31 @@ namespace MajMusic.Tests
                 "Cloud refresh selects the newest projected playlist object");
 
             await ExecuteAsync(viewModel, viewModel.RecommendationsCommand);
-            TestAssert.True(viewModel.IsRecommendationsView && viewModel.Tracks.Count == 50 && viewModel.MoreRecommendationsCommand.CanExecute(null),
-                "The first finite recommendation page opens as its own playable snapshot");
-            await ExecuteAsync(viewModel, viewModel.MoreRecommendationsCommand);
-            TestAssert.True(viewModel.Tracks.Count == 52 && !viewModel.MoreRecommendationsCommand.CanExecute(null),
-                "Additional recommendation pages preserve order, remove overlap and stop at a short final page");
+            TestAssert.True(viewModel.IsRecommendationsView && viewModel.Tracks.Count == 50
+                && viewModel.RecommendationPageNumber == 1 && viewModel.RecommendationPageCount == 2
+                && viewModel.RecommendationTotalCount == 52 && viewModel.BrowseSummary == "52 首推荐"
+                && viewModel.NextRecommendationPageCommand.CanExecute(null),
+                "A finite deduplicated feed displays its first fifty songs and exposes the remaining local page");
+            await ExecuteAsync(viewModel, viewModel.NextRecommendationPageCommand);
+            await viewModel.HomeUpdate.WaitAsync(TimeSpan.FromSeconds(3));
+            TestAssert.True(viewModel.Tracks.Select(track => track.Id).SequenceEqual(recommended.Skip(50).Select(track => track.Id))
+                && viewModel.RecommendationPageNumber == 2 && !viewModel.NextRecommendationPageCommand.CanExecute(null),
+                "The final local page contains only the remaining songs and cannot advance beyond the finite feed");
             TestAssert.True(workspace.RecommendationRequests.SequenceEqual(new[] { (first.Id, 0), (first.Id, 1) }),
                 "Recommendation paging is finite and tied to its owning endpoint");
-            viewModel.SelectedTrack = viewModel.Tracks[10];
+            viewModel.SelectedTrack = viewModel.Tracks[0];
             await viewModel.PlaySelectedAsync();
-            TestAssert.True(playback.Queue.Tracks.Select(track => track.Id).SequenceEqual(viewModel.Tracks.Select(track => track.Id))
+            TestAssert.True(playback.Queue.Tracks.Select(track => track.Id).SequenceEqual(recommended.Select(track => track.Id))
                 && playback.Queue.Tracks.Count == 52 && backend.OpenCount == 1,
-                "Recommendation playback captures exactly the current finite feed rather than the entire library");
+                "Recommendation playback captures the full finite feed across its display pages");
+            await ExecuteAsync(viewModel, viewModel.PreviousRecommendationPageCommand);
+            await viewModel.HomeUpdate.WaitAsync(TimeSpan.FromSeconds(3));
+            TestAssert.True(viewModel.RecommendationPageNumber == 1 && viewModel.Tracks.Count == 50
+                && playback.Queue.Tracks.Count == 52 && playback.Queue.Current?.Id == recommended[50].Id && backend.OpenCount == 1,
+                "Browsing another recommendation page must retain the playing queue and audio instance");
             await ExecuteAsync(viewModel, viewModel.NextCommand);
+            TestAssert.Equal(recommended[51].Id, playback.Queue.Current?.Id,
+                "Playback must continue within the finite feed even while another display page is open");
             TestAssert.Equal(2, workspace.RecommendationRequests.Count, "Queue navigation does not fetch more recommendation pages implicitly");
             viewModel.SelectedPlaylist = viewModel.Playlists.Single(playlist => playlist.Id == "mixed");
             await ExecuteAsync(viewModel, viewModel.OpenPlaylistCommand);
@@ -352,6 +364,8 @@ namespace MajMusic.Tests
             public Func<string?, CancellationToken, Task<IReadOnlyList<MusicTrack>>>? SearchOverride { get; set; }
             /// <summary>Gets an optional controllable feed response for home ownership cases.</summary>
             public Func<EndpointConfiguration, int, CancellationToken, Task<IReadOnlyList<MusicTrack>>>? RecommendationOverride { get; set; }
+            /// <summary>Gets or sets optional controlled cover resolution without opening source audio.</summary>
+            public Func<MusicTrack, CancellationToken, Task<string?>>? ResolveCoverOverride { get; set; }
             /// <summary>Gets or sets the non-secret saved source configurations.</summary>
             public AppSettings Settings { get; set; } = new();
             /// <summary>Gets the library snapshot shared by searches, playlists and recommendation indexing.</summary>
@@ -463,7 +477,7 @@ namespace MajMusic.Tests
             public Task<string?> ResolveCoverAsync(MusicTrack track, CancellationToken cancellationToken = default)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return Task.FromResult<string?>(null);
+                return ResolveCoverOverride?.Invoke(track, cancellationToken) ?? Task.FromResult<string?>(null);
             }
 
             /// <inheritdoc />
