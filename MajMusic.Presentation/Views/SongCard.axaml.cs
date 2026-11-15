@@ -28,6 +28,8 @@ namespace MajMusic.Presentation.Views
         private SongCardViewModel? _attachedCard;
         /// <summary>Tracks whether this control currently belongs to a rendered viewport.</summary>
         private bool _attached;
+        /// <summary>Prevents a completed long press from also opening the normal song inspector.</summary>
+        private bool _suppressContextTap;
 
         /// <summary>Registers layout invalidation for compact-mode changes.</summary>
         static SongCard()
@@ -42,6 +44,9 @@ namespace MajMusic.Presentation.Views
             DataContextChanged += OnCardDataContextChanged;
             Loaded += OnCardLoaded;
             EffectiveViewportChanged += OnCardViewportChanged;
+            SetValue(InputElement.IsHoldingEnabledProperty, true);
+            AddHandler(ContextRequestedEvent, OnCardContextRequested, RoutingStrategies.Bubble);
+            AddHandler(HoldingEvent, OnCardHolding, RoutingStrategies.Bubble);
         }
 
         /// <summary>Gets or sets whether this song uses a compact searchable row.</summary>
@@ -93,6 +98,7 @@ namespace MajMusic.Presentation.Views
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             _attached = false;
+            MusicContextMenus.Close(this);
             DeactivateCard();
             base.OnDetachedFromVisualTree(e);
         }
@@ -102,6 +108,7 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The data-context change notification.</param>
         private async void OnCardDataContextChanged(object? sender, EventArgs e)
         {
+            MusicContextMenus.Close(this);
             if (_attached)
             {
                 await ActivateCardAsync();
@@ -176,6 +183,13 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The click notification.</param>
         private async void OnSelectClicked(object? sender, RoutedEventArgs e)
         {
+            if (_suppressContextTap)
+            {
+                _suppressContextTap = false;
+                e.Handled = true;
+                return;
+            }
+
             var host = this.FindAncestorOfType<MainView>();
             if (DataContext is SongCardViewModel card && host?.DataContext is MainViewModel owner)
             {
@@ -183,6 +197,59 @@ namespace MajMusic.Presentation.Views
                 host.OpenTrackDetails();
                 await owner.LoadCoverAsync();
             }
+        }
+
+        /// <summary>Opens the current card's captured actions without using the inspector's older selected song.</summary>
+        /// <param name="sender">The artwork card.</param>
+        /// <param name="e">The actual pointer or keyboard context request.</param>
+        private void OnCardContextRequested(object? sender, ContextRequestedEventArgs e)
+        {
+            if (!e.Handled && OpenCardMenu(e.TryGetPosition(this, out var point) ? point : null))
+            {
+                e.Handled = true;
+            }
+        }
+
+        /// <summary>Provides the same captured actions to a touch or pen long press.</summary>
+        /// <param name="sender">The touched card.</param>
+        /// <param name="e">The platform holding gesture.</param>
+        private void OnCardHolding(object? sender, HoldingRoutedEventArgs e)
+        {
+            if (e.PointerType == PointerType.Mouse)
+            {
+                return;
+            }
+
+            if (e.HoldingState == HoldingState.Started && OpenCardMenu(new Point(Bounds.Width / 2, Bounds.Height / 2)))
+            {
+                _suppressContextTap = true;
+                e.Handled = true;
+            }
+            else if (e.HoldingState == HoldingState.Canceled)
+            {
+                _suppressContextTap = false;
+            }
+            else if (e.HoldingState == HoldingState.Completed)
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => _suppressContextTap = false,
+                    Avalonia.Threading.DispatcherPriority.Background);
+            }
+        }
+
+        /// <summary>Captures the card's exact descriptor for a mouse, keyboard or touch menu.</summary>
+        /// <param name="position">The optional location relative to this card.</param>
+        /// <returns>Whether an attached music target was available.</returns>
+        private bool OpenCardMenu(Point? position)
+        {
+            var owner = this.FindAncestorOfType<MainView>()?.DataContext as MainViewModel
+                ?? this.FindAncestorOfType<MobileMusicView>()?.DataContext as MainViewModel;
+            if (!_attached || DataContext is not SongCardViewModel card || owner is null)
+            {
+                return false;
+            }
+
+            MusicContextMenus.OpenTrack(this, owner, card.Track, position);
+            return true;
         }
 
         /// <summary>Starts the chosen song using the existing playback queue action.</summary>

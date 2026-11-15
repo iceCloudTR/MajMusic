@@ -316,7 +316,7 @@ namespace MajMusic.Presentation.ViewModels
 
             if (SelectedPlaylist is { IsCloud: true } selected && selected.EndpointId == endpointId)
             {
-                SelectedPlaylist = _favorites;
+                SelectedPlaylist = _favorites is { } favorites ? VisiblePlaylistForLocal(favorites) : null;
             }
 
             if (_recommendationEndpointId == endpointId)

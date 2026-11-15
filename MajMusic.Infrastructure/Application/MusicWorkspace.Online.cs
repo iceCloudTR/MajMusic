@@ -133,6 +133,7 @@ namespace MajMusic.Infrastructure.Application
         {
             var connection = GetConnection(endpoint);
             using var lifetime = connection.CreateCancellation(cancellationToken);
+            using var mirrorRead = await AcquireCloudPlaylistReadAsync(endpoint, connection, lifetime.Token).ConfigureAwait(false);
             var lists = await connection.Provider.GetCloudPlaylistsAsync(lifetime.Token).ConfigureAwait(false);
             var server = await connection.Provider.GetServerAsync(lifetime.Token).ConfigureAwait(false);
             var tracks = await _library.SearchAsync(null, lifetime.Token).ConfigureAwait(false);
@@ -148,12 +149,15 @@ namespace MajMusic.Infrastructure.Application
             var byHash = tracks.Where(track => track.RemoteId is not null && track.EndpointId == endpoint.Id && track.SourceId == server.Id && !string.IsNullOrEmpty(track.Revision))
                 .GroupBy(track => track.Revision!, StringComparer.Ordinal)
                 .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.Ordinal);
+            var mirrors = await ReadCloudPlaylistMirrorsAsync(endpoint, connection, server.Id, tracks, lifetime.Token).ConfigureAwait(false);
             return lists.Select(list => new MusicPlaylist
             {
                 Id = $"cloud:{Uri.EscapeDataString(endpoint.Id)}:{Uri.EscapeDataString(list.Id)}",
                 Name = list.Name,
                 RemoteId = list.Id,
                 EndpointId = endpoint.Id,
+                LocalMirrorId = mirrors.GetValueOrDefault(list.Id)?.LocalId,
+                LocalMirrorHasPendingChanges = mirrors.GetValueOrDefault(list.Id)?.HasPendingChanges ?? false,
                 TrackIds = list.SourceHashes.Where(byHash.ContainsKey).Select(hash => byHash[hash]).ToArray(),
                 MajCollection = new MajCollectionDefinition
                 {

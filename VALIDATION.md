@@ -31,6 +31,7 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- arc-motion
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- surface-motion browse-loading appearance
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- cover-preload browse-entry catalog-read-ordering
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- recommendation-paging recommendation-paging-layout recommendation-playback card-feedback
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- playback-region-motion playlist-mirrors context-actions context-menus-layout
 ```
 
 测试使用与桌面入口相同的 Arc 注册和主题。手机界面覆盖 360×640、390×844、430×932，检查安全区、软键盘收缩、底部导航、触摸目标、详情抽屉，以及桌面与窄屏切换时账号和 Guest 选择不变。该检查在 Skia 离屏窗口中运行；Android/iOS 宿主与实机播放另行验证。
@@ -44,6 +45,8 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- recommendation-pagi
 `catalog-read-ordering` 检查同页移除歌单曲目期间的并发查询与封面准备，旧读取不得覆盖新成员、元数据或已预热的首屏。
 
 推荐分页检查覆盖每页 50 首、总量上限 150、账号独立页号、分批加载与取消后续取；桌面和窄屏使用真实滚动、底部页码点击及横移中间帧验证。播放检查覆盖先播放首批、后续批次补齐队列、随机顺序与导航回滚，补齐期间不重开音频。卡片反馈检查覆盖悬停与选中的中间帧、下载完成提示、控件回收、减少及关闭动画模式，下载填充保持原色。
+
+播放器区域检查覆盖深浅外观和实际显示缩放下的封面、文字与播放图标中间帧，原始图片释放、快速切歌及控件回收。同步收藏检查覆盖精确账号绑定、单一 MajNet 入口、完整成员和本地编辑在旧云端快照及重启后的保留。菜单检查用真实右键、键盘和触摸操作验证目标归属、歌单连续滚动、重命名、导出与删除。
 
 `home-ui` 包含两万四千首曲目的整批通知、卡片懒创建、加载状态所有权与模式快切回归；`storage` 使用真实 SQLite 数据库锁验证界面队列可继续运行，以及取消后的结果隔离。
 

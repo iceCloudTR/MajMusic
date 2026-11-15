@@ -125,7 +125,13 @@ namespace MajMusic.Presentation.ViewModels
 
                     if (refreshed)
                     {
+                        var previousMembers = BrowsedPlaylist?.TrackIds.ToArray();
                         await ReloadPlaylistsAsync(false);
+                        if (IsPlaylistsMode && BrowsedPlaylist is { } opened
+                            && !(previousMembers ?? []).SequenceEqual(opened.TrackIds))
+                        {
+                            await ReloadLibraryCoreAsync(_lifetime.Token, preservePage: true);
+                        }
                     }
 
                     if (currentResults.Any(item => !item.Succeeded))

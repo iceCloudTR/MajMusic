@@ -122,7 +122,7 @@
                             </Grid.RowDefinitions>
                             <Viewbox Stretch="Uniform" MaxWidth="120" MaxHeight="120" HorizontalAlignment="Center" VerticalAlignment="Top">
                                 <Border Width="120" Height="120" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}" ClipToBounds="True">
-                                    <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                    <theme:CoverTransition Source="{Binding Cover}" Stretch="UniformToFill" />
                                 </Border>
                             </Viewbox>
                             <StackPanel Grid.Row="1" Spacing="2">
@@ -156,14 +156,15 @@
                         <arc:Button Grid.Column="5" Classes="icon" Content="↻" FontSize="18" Command="{Binding RefreshCloudPlaylistsCommand}" ToolTip.Tip="刷新云端歌单" />
                     </Grid>
                     <Border Grid.Row="1" Classes="card" Padding="6">
-                        <ListBox x:Name="PlaylistList" ItemsSource="{Binding VisiblePlaylists}" SelectedItem="{Binding SelectedPlaylist}" SizeChanged="OnPlaylistViewportSizeChanged" ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+                        <ListBox x:Name="PlaylistList" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}" ContextRequested="OnPlaylistContextRequested" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
                     </Border>
-                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,32,32" ColumnSpacing="6" VerticalAlignment="Center">
+                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="6" VerticalAlignment="Center">
                         <arc:Input Text="{Binding NewPlaylistName}" Placeholder="新歌单名称" />
                         <arc:Button Grid.Column="1" Content="创建" Command="{Binding CreatePlaylistCommand}" />
-                        <TextBlock Grid.Column="2" Text="{Binding PlaylistPageText}" Classes="muted" FontSize="11" VerticalAlignment="Center" Margin="8,0" />
-                        <arc:Button Grid.Column="3" Classes="icon" Content="‹" FontSize="20" Command="{Binding PreviousPlaylistPageCommand}" ToolTip.Tip="上一页" />
-                        <arc:Button Grid.Column="4" Classes="icon" Content="›" FontSize="20" Command="{Binding NextPlaylistPageCommand}" ToolTip.Tip="下一页" />
                     </Grid>
                 </Grid>
             </TabItem>
@@ -265,10 +266,12 @@
             <Grid RowDefinitions="40,48" RowSpacing="3">
                 <Grid>
                     <Grid ColumnDefinitions="*,224,*">
-                        <StackPanel x:Name="PlaybackMetadata" Spacing="3" VerticalAlignment="Center" ToolTip.Tip="{Binding AudioDetails}">
-                            <TextBlock Text="{Binding PlaybackTitle}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Text="{Binding PlaybackArtist}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
+                        <theme:MetadataTransition ChangeKey="{Binding PlaybackTitle}" SecondaryKey="{Binding PlaybackArtist}" VerticalAlignment="Center" HorizontalContentAlignment="Stretch">
+                            <StackPanel x:Name="PlaybackMetadata" Spacing="3" VerticalAlignment="Center" ToolTip.Tip="{Binding AudioDetails}">
+                                <TextBlock Text="{Binding PlaybackTitle}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding PlaybackArtist}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </theme:MetadataTransition>
                         <Grid x:Name="PlaybackVolume" Grid.Column="2" ColumnDefinitions="*,Auto,100" ColumnSpacing="8" Height="40" VerticalAlignment="Center">
                             <arc:Checkbox Grid.Column="1" Content="静音" VerticalAlignment="Center" UseLayoutRounding="False" IsChecked="{Binding IsMuted}" IsEnabled="{Binding CanConfigureAudio}" FontSize="11" />
                             <arc:Slider IsValueVisible="False" Grid.Column="2" Value="{Binding Volume}" Minimum="0" Maximum="100" Height="32" VerticalAlignment="Center" UseLayoutRounding="False" IsEnabled="{Binding CanConfigureAudio}" ToolTip.Tip="{Binding VolumeText}">
@@ -287,10 +290,12 @@
                             </Canvas>
                         </arc:Button>
                         <arc:Button x:Name="TransportButton" Grid.Column="2" Classes="primary transportPrimary" Command="{Binding TogglePlayPauseCommand}" Width="36" Height="36" MinHeight="0" Padding="0" CornerRadius="18" ToolTip.Tip="{Binding TransportButtonText}" AutomationProperties.Name="{Binding TransportButtonText}">
-                            <Canvas Width="16" Height="16">
-                                <Path x:Name="TransportPlayIcon" Data="M 5,2 L 13,8 L 5,14 Z" Fill="{DynamicResource MusicAccentTextBrush}" Width="16" Height="16" Stretch="None" IsVisible="{Binding !IsPlaying}" />
-                                <Path x:Name="TransportPauseIcon" Data="M 4,2 L 7,2 L 7,14 L 4,14 Z M 9,2 L 12,2 L 12,14 L 9,14 Z" Fill="{DynamicResource MusicAccentTextBrush}" Width="16" Height="16" Stretch="None" IsVisible="{Binding IsPlaying}" />
-                            </Canvas>
+                            <theme:PlayPauseTransition x:Name="TransportGlyphTransition" IsPlaying="{Binding IsPlaying}" Width="16" Height="16">
+                                <Canvas Width="16" Height="16">
+                                    <Path x:Name="TransportPlayIcon" Data="M 5,2 L 13,8 L 5,14 Z" Fill="{DynamicResource MusicAccentTextBrush}" Width="16" Height="16" Stretch="None" IsVisible="{Binding !IsPlaying}" />
+                                    <Path x:Name="TransportPauseIcon" Data="M 4,2 L 7,2 L 7,14 L 4,14 Z M 9,2 L 12,2 L 12,14 L 9,14 Z" Fill="{DynamicResource MusicAccentTextBrush}" Width="16" Height="16" Stretch="None" IsVisible="{Binding IsPlaying}" />
+                                </Canvas>
+                            </theme:PlayPauseTransition>
                         </arc:Button>
                         <arc:Button x:Name="NextTrackButton" Grid.Column="3" Classes="transport" Command="{Binding NextCommand}" ToolTip.Tip="下一首" AutomationProperties.Name="下一首">
                             <Canvas Width="16" Height="16">

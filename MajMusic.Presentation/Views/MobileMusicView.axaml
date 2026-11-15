@@ -102,7 +102,7 @@
                     <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.Endpoint}" ItemsSource="{Binding EndpointProfiles}" SelectedItem="{Binding SelectedEndpointProfile}" Placeholder="接入点" />
                     <arcm:Button Grid.Column="1" Content="刷新" Variant="Tinted" Command="{Binding RefreshCloudPlaylistsCommand}" />
                 </Grid>
-                <ListBox x:Name="MobilePlaylistsList" Grid.Row="2" Classes="mobileList" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListBox x:Name="MobilePlaylistsList" Grid.Row="2" Classes="mobileList" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}" ContextRequested="OnPlaylistContextRequested" Loaded="OnPlaylistListLoaded" Holding="OnPlaylistHolding" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
                     </ListBox.ItemsPanel>
@@ -268,16 +268,20 @@
                 <Border x:Name="MobileMiniPlayer" Background="{DynamicResource MusicPanelBrush}" CornerRadius="12" Margin="12,6" Padding="12,6">
                     <Grid RowDefinitions="44,44,Auto">
                         <Grid ColumnDefinitions="*,44,44,44" ColumnSpacing="2">
-                            <StackPanel VerticalAlignment="Center" Spacing="2">
-                                <TextBlock Text="{Binding PlaybackTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" FontSize="13" />
-                                <TextBlock Text="{Binding PlaybackArtist}" Classes="mobileLabel" TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
+                            <theme:MetadataTransition ChangeKey="{Binding PlaybackTitle}" SecondaryKey="{Binding PlaybackArtist}" VerticalAlignment="Center" HorizontalContentAlignment="Stretch">
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="{Binding PlaybackTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" FontSize="13" />
+                                    <TextBlock Text="{Binding PlaybackArtist}" Classes="mobileLabel" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </theme:MetadataTransition>
                             <arcm:IconButton x:Name="MobilePreviousButton" Grid.Column="1" Icon="{StaticResource MobilePreviousIcon}" Variant="Plain" Command="{Binding PreviousCommand}" AutomationProperties.Name="上一首" />
                             <arcm:Button x:Name="MobilePlayPauseButton" Grid.Column="2" Variant="Tinted" Command="{Binding TogglePlayPauseCommand}" Padding="0" AutomationProperties.Name="{Binding TransportButtonText}">
-                                <Canvas Width="20" Height="20">
-                                    <Path Data="M 6,3 L 16,10 L 6,17 Z" Fill="{DynamicResource MusicTextBrush}" IsVisible="{Binding !IsPlaying}" />
-                                    <Path Data="M 5,3 L 8,3 L 8,17 L 5,17 Z M 12,3 L 15,3 L 15,17 L 12,17 Z" Fill="{DynamicResource MusicTextBrush}" IsVisible="{Binding IsPlaying}" />
-                                </Canvas>
+                                <theme:PlayPauseTransition x:Name="MobileTransportGlyphTransition" IsPlaying="{Binding IsPlaying}" Width="20" Height="20">
+                                    <Canvas Width="20" Height="20">
+                                        <Path Data="M 6,3 L 16,10 L 6,17 Z" Fill="{DynamicResource MusicTextBrush}" IsVisible="{Binding !IsPlaying}" />
+                                        <Path Data="M 5,3 L 8,3 L 8,17 L 5,17 Z M 12,3 L 15,3 L 15,17 L 12,17 Z" Fill="{DynamicResource MusicTextBrush}" IsVisible="{Binding IsPlaying}" />
+                                    </Canvas>
+                                </theme:PlayPauseTransition>
                             </arcm:Button>
                             <arcm:IconButton x:Name="MobileNextButton" Grid.Column="3" Icon="{StaticResource MobileNextIcon}" Variant="Plain" Command="{Binding NextCommand}" AutomationProperties.Name="下一首" />
                         </Grid>
@@ -305,7 +309,7 @@
             <arcm:Sheet x:Name="MobileTrackSheet" Title="{Binding SelectedTitle}" MaxHeightFraction="0.94">
                 <StackPanel Spacing="12" Margin="4,0,4,8">
                     <Border Width="144" Height="144" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}" HorizontalAlignment="Center" ClipToBounds="True">
-                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                        <theme:CoverTransition Source="{Binding Cover}" Stretch="UniformToFill" />
                     </Border>
                     <StackPanel Spacing="4">
                         <TextBlock Text="{Binding SelectedArtist}" TextWrapping="Wrap" HorizontalAlignment="Center" FontSize="14" />

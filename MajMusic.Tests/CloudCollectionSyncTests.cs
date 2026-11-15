@@ -444,6 +444,8 @@ namespace MajMusic.Tests
             private readonly Dictionary<(string Host, string Account), HashSet<string>> _favorites = new();
             /// <summary>Identifies the next source whose update should wait.</summary>
             private string? _blockedHost;
+            /// <summary>Identifies one cloud snapshot whose already captured response waits for explicit release.</summary>
+            private string? _blockedFavoriteReadHost;
             /// <summary>Gets observed mutation metadata without logging request cookies or passwords.</summary>
             public ConcurrentQueue<(string Host, string Account, string Method, string Path)> Writes { get; } = new();
             /// <summary>Gets the count of committed collection creations.</summary>
@@ -458,6 +460,18 @@ namespace MajMusic.Tests
             public TaskCompletionSource UpdateStarted { get; private set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
             /// <summary>Releases the one intentionally blocked replacement request.</summary>
             public TaskCompletionSource ReleaseUpdate { get; private set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            /// <summary>Signals that the source has captured an old cloud-list response.</summary>
+            public TaskCompletionSource FavoriteReadStarted { get; private set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            /// <summary>Releases the captured cloud-list response.</summary>
+            public TaskCompletionSource ReleaseFavoriteRead { get; private set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            /// <summary>Holds one source list after snapshotting its current remote membership.</summary>
+            /// <param name="host">The exact synthetic origin to hold.</param>
+            public void BlockNextFavoriteRead(string host)
+            {
+                _blockedFavoriteReadHost = host;
+                FavoriteReadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                ReleaseFavoriteRead = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
             /// <summary>Blocks the next replacement at a particular synthetic origin.</summary>
             /// <param name="host">The exact synthetic origin.</param>
             public void BlockNextUpdate(string host)
@@ -550,6 +564,30 @@ namespace MajMusic.Tests
                 }
 
                 var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+                if (path == "/api/account/favorite/collection/list" && host == _blockedFavoriteReadHost)
+                {
+                    _blockedFavoriteReadHost = null;
+                    HttpResponseMessage snapshot;
+                    lock (_gate)
+                    {
+                        var favorites = _favorites.GetValueOrDefault((host, account)) ?? [];
+                        snapshot = Json(favorites.Where(id => _collections.ContainsKey((host, id))).Select(id => _collections[(host, id)])
+                            .Select(collection => new { id = collection.Id, name = collection.Name, description = collection.Description, songHashs = collection.Items.Select(Hash).ToArray(), isPlayList = true }).ToArray());
+                    }
+
+                    FavoriteReadStarted.TrySetResult();
+                    try
+                    {
+                        await ReleaseFavoriteRead.Task.WaitAsync(cancellationToken);
+                        return snapshot;
+                    }
+                    catch
+                    {
+                        snapshot.Dispose();
+                        throw;
+                    }
+                }
+
                 if (request.Method == HttpMethod.Put && host == _blockedHost)
                 {
                     _blockedHost = null;

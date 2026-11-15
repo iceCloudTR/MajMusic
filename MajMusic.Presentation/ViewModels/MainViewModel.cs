@@ -115,7 +115,7 @@ namespace MajMusic.Presentation.ViewModels
             _playbackSnapshot = playback.Snapshot;
             SearchCommand = CreateCommand(ExecuteSearchAsync);
             CreatePlaylistCommand = CreateCommand(CreatePlaylistAsync);
-            AddToPlaylistCommand = CreateCommand(AddToPlaylistAsync, () => SelectedTrack is not null && SelectedPlaylist is { IsCloud: false });
+            AddToPlaylistCommand = CreateCommand(AddToPlaylistAsync, () => SelectedTrack is not null && SelectedPlaylist is { } selected && ResolveLocalPlaylist(selected) is not null);
             OpenPlaylistCommand = CreateCommand(OpenPlaylistAsync, () => SelectedPlaylist is not null);
             ShowAllCommand = CreateCommand(ShowAllAsync);
             SaveSettingsCommand = CreateCommand(SaveSettingsAsync);
@@ -191,9 +191,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Gets the selected music's favorite action text.</summary>
         public string FavoriteButtonText => IsSelectedFavorite ? "♥ 已喜欢" : "♡ 我喜欢";
         /// <summary>Gets whether the selected entry or its portable Maj identity is favorited.</summary>
-        public bool IsSelectedFavorite => SelectedTrack is { } track && _favorites is { } favorites
-            && (favorites.TrackIds.Contains(track.Id, StringComparer.Ordinal)
-                || TrackMajHash(track) is { } hash && _favoriteHashes.Contains(hash));
+        public bool IsSelectedFavorite => SelectedTrack is { } track && IsTrackFavorite(track);
         /// <summary>Gets readable properties of the actual loaded audio stream.</summary>
         public string AudioDetails => FormatAudioDetails(_playbackSnapshot.AudioInfo);
         /// <summary>Gets whether actual loaded audio properties are available.</summary>
@@ -1044,35 +1042,17 @@ namespace MajMusic.Presentation.ViewModels
                 playlists.Add(_favorites);
             }
 
-            _favoriteHashes.Clear();
-            var favoriteIds = _favorites.TrackIds.ToHashSet(StringComparer.Ordinal);
-            if (favoriteIds.Count > 0)
-            {
-                var all = await _workspace.SearchAsync(null, _lifetime.Token);
-                foreach (var track in all)
-                {
-                    if (favoriteIds.Contains(track.Id) && TrackMajHash(track) is { } hash)
-                    {
-                        _favoriteHashes.Add(hash);
-                    }
-                }
-            }
-
-            foreach (var entry in _favorites.MajCollection?.Entries ?? Array.Empty<MajCollectionEntry>())
-            {
-                if (entry.TrackId is null || favoriteIds.Contains(entry.TrackId))
-                {
-                    _favoriteHashes.Add(entry.Hash);
-                }
-            }
-
             _lifetime.Token.ThrowIfCancellationRequested();
             var library = (await _workspace.SearchAsync(null, _lifetime.Token)).ToDictionary(item => item.Id, StringComparer.Ordinal);
             _lifetime.Token.ThrowIfCancellationRequested();
-            playlists.AddRange(_cloudPlaylists.Values.SelectMany(items => items));
             var selectedId = SelectedPlaylist?.Id;
+            var selectedLocalId = selectedId is null ? null : _playlistMirrorBackings.GetValueOrDefault(selectedId) ?? selectedId;
+            var activeLocalId = _activePlaylistId is null ? null : _playlistMirrorBackings.GetValueOrDefault(_activePlaylistId) ?? _activePlaylistId;
+            var projected = ProjectPlaylistMirrors(playlists, _cloudPlaylists.Values.SelectMany(items => items).ToArray(), library);
+            _favorites = _localPlaylistSnapshots[_favorites.Id];
+            RefreshFavoriteMembership(library);
             Playlists.Clear();
-            foreach (var playlist in playlists.OrderByDescending(item => item.IsFavorite))
+            foreach (var playlist in projected.OrderByDescending(item => item.IsFavorite))
             {
                 var summary = PlaylistContentClassifier.GetSummary(playlist, library);
                 Playlists.Add(playlist with
@@ -1083,9 +1063,9 @@ namespace MajMusic.Presentation.ViewModels
                 });
             }
 
-            var favoritesId = _favorites.Id;
-            _favorites = Playlists.FirstOrDefault(item => item.Id == favoritesId);
-            SelectedPlaylist = Playlists.FirstOrDefault(item => item.Id == selectedId) ?? _favorites;
+            SelectedPlaylist = Playlists.FirstOrDefault(item => item.Id == selectedId)
+                ?? (selectedLocalId is not null && _localPlaylistSnapshots.TryGetValue(selectedLocalId, out var selectedLocal)
+                    ? VisiblePlaylistForLocal(selectedLocal) : VisiblePlaylistForLocal(_favorites));
             RefreshPlaylistPages();
             OnPropertyChanged(nameof(SelectedHomePlaylist));
             OnPropertyChanged(nameof(FavoriteButtonText));
@@ -1093,8 +1073,11 @@ namespace MajMusic.Presentation.ViewModels
             OnPropertyChanged(nameof(ExportFileName));
             if (!Playlists.Any(item => item.Id == _activePlaylistId))
             {
-                _activePlaylistId = null;
+                _activePlaylistId = activeLocalId is not null && _localPlaylistSnapshots.TryGetValue(activeLocalId, out var activeLocal)
+                    ? VisiblePlaylistForLocal(activeLocal).Id : null;
             }
+
+            OnPropertyChanged(nameof(LibraryViewTitle));
 
             RefreshPlaylistManagementCommands();
             RefreshEndpointCardCommands();
@@ -1103,15 +1086,24 @@ namespace MajMusic.Presentation.ViewModels
 
         /// <summary>Toggles a favorite by portable identity when available, otherwise by local entry.</summary>
         /// <returns>A task representing the local favorite update.</returns>
-        private async Task ToggleFavoriteAsync()
+        private Task ToggleFavoriteAsync()
         {
-            if (SelectedTrack is not { } track || _favorites is not { } favorites)
+            return SelectedTrack is { } track ? ToggleFavoriteTrackCoreAsync(track) : Task.CompletedTask;
+        }
+
+        /// <summary>Changes one captured song's logical favorite membership without changing the inspected song.</summary>
+        /// <param name="track">The exact song targeted by the user action.</param>
+        /// <returns>A task representing local persistence and any configured mirror synchronization.</returns>
+        private async Task ToggleFavoriteTrackCoreAsync(MusicTrack track)
+        {
+            if (_favorites is not { } favorites)
             {
                 return;
             }
 
             MusicPlaylist updated;
-            if (IsSelectedFavorite)
+            var removing = IsTrackFavorite(track);
+            if (removing)
             {
                 var hash = TrackMajHash(track);
                 var all = await _workspace.SearchAsync(null, _lifetime.Token);
@@ -1138,8 +1130,17 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             await _workspace.SavePlaylistAsync(updated, _lifetime.Token);
+            if (removing)
+            {
+                RememberPlaylistMirrorRemoval(favorites, track);
+            }
+            else
+            {
+                RestorePlaylistMirrorMember(favorites.Id, track);
+            }
+
             await ReloadPlaylistsAsync();
-            if (_activePlaylistId == FavoritesId)
+            if (IsLocalPlaylistOpen(favorites.Id))
             {
                 await ReloadLibraryAsync();
             }
@@ -1147,13 +1148,12 @@ namespace MajMusic.Presentation.ViewModels
             Status = "我喜欢已更新";
         }
 
-        /// <summary>Opens the local favorites collection.</summary>
+        /// <summary>Opens the logical favorites collection through its current source or local presentation.</summary>
         /// <returns>A task representing the local list refresh.</returns>
         private Task OpenFavoritesAsync()
         {
-            SelectedPlaylist = _favorites;
+            SelectedPlaylist = _favorites is { } favorites ? VisiblePlaylistForLocal(favorites) : null;
             UseHomeMode(HomeBrowseMode.Playlists);
-            _activePlaylistId = FavoritesId;
             return ReloadLibraryAsync();
         }
 
@@ -1221,7 +1221,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A task representing persistence.</returns>
         private async Task AddToPlaylistAsync()
         {
-            if (SelectedTrack is not { } track || SelectedPlaylist is not { IsCloud: false } playlist)
+            if (SelectedTrack is not { } track || SelectedPlaylist is not { } visible || ResolveLocalPlaylist(visible) is not { } playlist)
             {
                 return;
             }
@@ -1233,8 +1233,9 @@ namespace MajMusic.Presentation.ViewModels
                 UpdatedAt = DateTimeOffset.UtcNow
             };
             await _workspace.SavePlaylistAsync(updated, _lifetime.Token);
+            RestorePlaylistMirrorMember(playlist.Id, track);
             await ReloadPlaylistsAsync();
-            if (_activePlaylistId == playlist.Id)
+            if (IsLocalPlaylistOpen(playlist.Id))
             {
                 await ReloadLibraryAsync();
             }

@@ -11,6 +11,14 @@ namespace MajMusic.Core.Models
         [System.Text.Json.Serialization.JsonIgnore]
         public string? SourceName { get; init; }
 
+        /// <summary>Gets the verified local backing identity of an application-owned cloud mirror, assigned only during projection.</summary>
+        [JsonIgnore]
+        public string? LocalMirrorId { get; init; }
+
+        /// <summary>Gets whether the local backing differs from its last confirmed upload and must not import stale cloud members.</summary>
+        [JsonIgnore]
+        public bool LocalMirrorHasPendingChanges { get; init; }
+
         /// <summary>Gets the stable playlist identity.</summary>
         public required string Id { get; init; }
 

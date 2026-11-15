@@ -53,27 +53,10 @@ namespace MajMusic.Presentation.Views
                 return;
             }
 
-            var playlistHeight = this.FindControl<ListBox>("PlaylistList")!.Bounds.Height;
             var directoryHeight = this.FindControl<ListBox>("DirectoryList")!.Bounds.Height;
-            if (playlistHeight > 0)
-            {
-                viewModel.SetPlaylistViewportHeight(playlistHeight);
-            }
-
             if (directoryHeight > 0)
             {
                 viewModel.SetDirectoryViewportHeight(directoryHeight);
-            }
-        }
-
-        /// <summary>Fits the current playlist page to the available list area.</summary>
-        /// <param name="sender">The playlist list.</param>
-        /// <param name="e">The updated available size.</param>
-        private void OnPlaylistViewportSizeChanged(object? sender, SizeChangedEventArgs e)
-        {
-            if (e.NewSize.Height > 0 && DataContext is MainViewModel viewModel)
-            {
-                viewModel.SetPlaylistViewportHeight(e.NewSize.Height);
             }
         }
 

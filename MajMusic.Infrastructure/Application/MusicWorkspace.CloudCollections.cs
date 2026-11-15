@@ -167,7 +167,7 @@ namespace MajMusic.Infrastructure.Application
                         favorites.Add(details.Id);
                     }
 
-                    var fingerprint = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { playlist.Name, Items = items })));
+                    var fingerprint = CloudCollectionFingerprint(playlist.Name, items);
                     await store.SaveAsync(binding with { AppliedFingerprint = fingerprint }, token).ConfigureAwait(false);
                     bindings.Remove(playlist.Id);
                     count++;

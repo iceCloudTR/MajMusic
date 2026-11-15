@@ -20,7 +20,7 @@ namespace MajMusic.Presentation.Converters
         public static Func<object?, string?> OutputDevice { get; } = static item => (item as AudioOutputDevice)?.Name;
         /// <summary>Gets a playlist name and its local, mixed or cloud classification.</summary>
         public static Func<object?, string?> Playlist { get; } = static item => item is MusicPlaylist playlist
-            ? playlist.Name + " · " + (playlist.IsCloud ? "云端" : playlist.ContentKind switch
+            ? playlist.Name + " · " + (playlist.IsCloud ? playlist.SourceName ?? "云端" : playlist.ContentKind switch
             {
                 PlaylistContentKind.Local => "本地",
                 PlaylistContentKind.Online => "在线",
