@@ -12,14 +12,14 @@ using TKCode.Arc.Motion;
 namespace MajMusic.Tests
 {
     /// <summary>Checks deterministic Arc surface timing, snapshot ownership and interruption without real I/O.</summary>
-    internal static class SurfaceMotionTests
+    internal static partial class SurfaceMotionTests
     {
         /// <summary>Checks surface and search motion on the actual production controls using Arc's frame clock.</summary>
         /// <returns>A task representing deterministic surface regressions.</returns>
         public static async Task RunAsync()
         {
             await using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessFullMotionTestApplication));
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             await session.Dispatch<bool>(async () =>
             {
                 var clock = new ManualFrameClock();
@@ -55,8 +55,8 @@ namespace MajMusic.Tests
 
                     host.Content = destination;
                     Pump(window);
-                    TestAssert.True(host.HasSnapshot && host.TransitionProgress == 0 && host.IncomingOffset == 12,
-                        "Changing pages must immediately capture the old surface and start the incoming page below its final position.");
+                    TestAssert.True(host.HasSnapshot && host.TransitionProgress == 0 && host.IncomingOffset == host.Bounds.Width,
+                        "Changing pages must immediately capture the old surface and place the incoming page one viewport to the right.");
                     TestAssert.Equal(1, host.GetVisualDescendants().OfType<Button>().Count(),
                         "The outgoing surface must be a bitmap, not another interactive page tree.");
                     TestAssert.True(ReferenceEquals(destination, host.Content), "Only the newest page may own the live presenter.");
@@ -121,6 +121,8 @@ namespace MajMusic.Tests
                     window.Close();
                 }
 
+                ValidatePixelMatrix(clock);
+                await ValidateActualCardsAsync(clock);
                 return true;
             }, timeout.Token);
         }

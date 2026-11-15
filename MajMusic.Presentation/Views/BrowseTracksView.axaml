@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MajMusic.Presentation.ViewModels"
              xmlns:views="using:MajMusic.Presentation.Views"
-             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:theme="using:MajMusic.Presentation.Theme"
              x:Class="MajMusic.Presentation.Views.BrowseTracksView"
              x:DataType="vm:MainViewModel">
@@ -25,9 +24,10 @@
         </Style>
     </UserControl.Styles>
     <theme:MusicSurfaceHost x:Name="BrowseSurfaceTransition" ChangeVersion="{Binding BrowseTransitionVersion}"
+                            SlideDirection="{Binding BrowseTransitionDirection}"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
         <Grid x:Name="BrowseSurface" SizeChanged="OnBrowseSizeChanged" ClipToBounds="True">
-            <arc:PresenceHost x:Name="BrowseContentPresentation" IsPresent="{Binding !IsBrowseLoading}" Mode="Fade"
+            <Grid x:Name="BrowseContentPresentation" IsVisible="{Binding !IsBrowseLoading}"
                               IsHitTestVisible="{Binding !IsBrowseLoading}" IsEnabled="{Binding !IsBrowseLoading}">
                 <Grid>
                     <ListBox x:Name="CardRowsList" Classes="browseList" ItemsSource="{Binding BrowseRows}" Focusable="True" AutoScrollToSelectedItem="False"
@@ -56,11 +56,10 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
                 </Grid>
-            </arc:PresenceHost>
-            <arc:PresenceHost x:Name="BrowseSkeletonPresentation" IsPresent="{Binding IsBrowseLoading}" Mode="Fade" IsHitTestVisible="False"
-                              Exited="OnSkeletonHidden">
+            </Grid>
+            <Grid x:Name="BrowseSkeletonPresentation" IsVisible="{Binding IsBrowseLoading}" IsHitTestVisible="False">
                 <views:BrowseSkeletonView x:Name="BrowseSkeletonSurface" VerticalAlignment="Top" />
-            </arc:PresenceHost>
+            </Grid>
         </Grid>
     </theme:MusicSurfaceHost>
 </UserControl>

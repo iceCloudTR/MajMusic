@@ -36,6 +36,8 @@ namespace MajMusic.Tests
             view.Tracks.CollectionChanged += (_, _) => trackChanges++;
             view.BrowseRows.CollectionChanged += (_, _) => rowChanges++;
             await ExecuteHomeAsync(view, view.ShowLibraryModeCommand);
+            TestAssert.True(view.BrowseTransitionDirection > 0,
+                "Moving from recommendations to the later library mode must enter from the right.");
             TestAssert.True(view.Tracks.Count == 24000 && view.BrowseRows.Count == 12000,
                 "The complete catalog must remain available through the virtualized card rows.");
             TestAssert.True(trackChanges == 1 && rowChanges == 1,
@@ -52,6 +54,8 @@ namespace MajMusic.Tests
             rowChanges = 0;
             view.SelectedPlaylist = view.Playlists.Single(item => item.Id == "ordered");
             await ExecuteHomeAsync(view, view.ShowPlaylistsModeCommand);
+            TestAssert.True(view.BrowseTransitionDirection < 0,
+                "Moving back from the library to playlists must enter from the left.");
             TestAssert.True(view.Tracks.Select(item => item.Id).SequenceEqual(["local-04", "local-02"])
                 && trackChanges == 1 && rowChanges == 1,
                 "Switching from a large library to a small ordered playlist must replace both snapshots once.");
@@ -166,12 +170,17 @@ namespace MajMusic.Tests
             TestAssert.True(view.IsRecommendationsMode && !view.IsSearchExpanded && view.Tracks.Count == 0,
                 "Offline startup must show the recommendation mode without substituting the indexed library.");
             TestAssert.Equal(0, workspace.RecommendationRequests.Count, "Offline startup must not request a feed.");
+            var recommendationSurface = view.BrowseTransitionVersion;
             await ExecuteHomeAsync(view, view.BeginSearchCommand);
             TestAssert.True(view.IsSearchExpanded && !view.IsSearching && view.Tracks.Count == 0,
                 "Expanding an empty search field keeps recommendation content.");
+            TestAssert.Equal(recommendationSurface, view.BrowseTransitionVersion,
+                "Expanding search over the same recommendations must animate the field without sliding the unchanged song panel.");
             view.SearchText = "Local 02";
             await view.HomeUpdate.WaitAsync(TimeSpan.FromSeconds(3));
             TestAssert.True(view.IsSearching && view.Tracks.Single().Id == "local-02", "Nonempty search reads the entire indexed library.");
+            TestAssert.Equal(recommendationSurface, view.BrowseTransitionVersion,
+                "Progressive typing must update results without restarting a full-page slide for every letter.");
             view.SelectedVisibleTrack = view.VisibleTracks.Single();
             var inspected = view.SelectedTrack;
             await ExecuteHomeAsync(view, view.CancelSearchCommand);

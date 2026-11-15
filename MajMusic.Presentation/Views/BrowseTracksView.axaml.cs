@@ -129,14 +129,7 @@ namespace MajMusic.Presentation.Views
             {
                 this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.SetViewport(_browseViewport, owner.BrowseColumns);
             }
-        }
-
-        /// <summary>Releases placeholder pulses after the completed loading surface has faded away.</summary>
-        /// <param name="sender">The Arc placeholder presence host.</param>
-        /// <param name="e">The completed exit notification.</param>
-        private void OnSkeletonHidden(object? sender, EventArgs e)
-        {
-            if (_browseOwner?.IsBrowseLoading != true)
+            else
             {
                 this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.ClearPlaceholders();
             }

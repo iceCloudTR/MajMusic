@@ -336,6 +336,6 @@
                 </StackPanel>
             </arcm:Sheet>
         </arcm:Page.Overlay>
-        <theme:MusicSurfaceHost x:Name="MobileSectionHost" Margin="12,8,12,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+        <theme:MusicSurfaceHost x:Name="MobileSectionHost" ChangeVersion="{Binding SelectedSectionIndex, ElementName=MobileRoot}" Margin="12,8,12,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
     </arcm:Page>
 </UserControl>

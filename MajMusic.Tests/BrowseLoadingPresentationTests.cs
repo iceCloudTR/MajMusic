@@ -14,7 +14,6 @@ using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
 using TKCode.Arc;
 using TKCode.Arc.Motion;
-using TKCode.Arc.Primitives;
 
 namespace MajMusic.Tests
 {
@@ -93,7 +92,7 @@ namespace MajMusic.Tests
                     var obsolete = model.HomeUpdate;
                     TestAssert.True(model.IsBrowseLoading && model.IsRecommendationsMode && model.BrowseTransitionVersion > transition,
                         "The actual mode click must announce its target and loading presentation before awaiting the network.");
-                    TestAssert.True(!list.IsVisible && !browser.FindControl<PresenceHost>("BrowseContentPresentation")!.IsEnabled,
+                    TestAssert.True(!list.IsVisible && !browser.FindControl<Grid>("BrowseContentPresentation")!.IsEnabled,
                         "Old songs must immediately stop accepting interaction while the target loads.");
                     await firstStarted.Task.WaitAsync(timeout.Token);
                     await AdvanceAsync(clock, window, 110, timeout.Token);
@@ -120,30 +119,14 @@ namespace MajMusic.Tests
                     await AdvanceAsync(clock, window, 400, timeout.Token);
                     AssertSkeleton(browser, skeleton, model.BrowseColumns);
                     Capture(window, "ui-browse-loading-skeleton.png");
-                    var content = browser.FindControl<PresenceHost>("BrowseContentPresentation")!;
-                    var progress = new List<double>();
-                    void OnPresenceChanged(object? sender, AvaloniaPropertyChangedEventArgs args)
-                    {
-                        if (args.Property == Visual.OpacityProperty)
-                        {
-                            progress.Add(content.Progress);
-                        }
-                    }
-
-                    content.PropertyChanged += OnPresenceChanged;
-                    try
-                    {
-                        secondRelease.TrySetResult(Enumerable.Range(24001, 50).Select(index => Track(index, second)).ToArray());
-                        await model.HomeUpdate.WaitAsync(timeout.Token);
-                        await AdvanceAsync(clock, window, 420, timeout.Token);
-                    }
-                    finally
-                    {
-                        content.PropertyChanged -= OnPresenceChanged;
-                    }
-
-                    TestAssert.True(progress.Any(value => value > 0 && value < 1) && content.Progress >= 0.999,
-                        "Completed songs must enter through genuine intermediate Arc presence frames.");
+                    var content = browser.FindControl<Grid>("BrowseContentPresentation")!;
+                    secondRelease.TrySetResult(Enumerable.Range(24001, 50).Select(index => Track(index, second)).ToArray());
+                    await model.HomeUpdate.WaitAsync(timeout.Token);
+                    Pump(window);
+                    TestAssert.True(content.Opacity == 1 && content.RenderTransform is null
+                        && skeleton.Opacity == 1 && skeleton.RenderTransform is null,
+                        "Completed songs must replace their placeholders immediately without a second fade, scale or vertical entrance.");
+                    await AdvanceAsync(clock, window, 420, timeout.Token);
                     TestAssert.True(!model.IsBrowseLoading && model.Tracks.Count == 50 && list.IsVisible
                         && model.MaterializedCardCount < 50 && skeleton.PlaceholderCount == 0,
                         "Completion must replace bounded placeholders with only the first viewport of the current account's songs.");

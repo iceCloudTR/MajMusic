@@ -18,6 +18,9 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Replays a surface transition when the same live view changes its browsing generation.</summary>
         public static readonly StyledProperty<long> ChangeVersionProperty =
             AvaloniaProperty.Register<MusicSurfaceHost, long>(nameof(ChangeVersion));
+        /// <summary>Chooses forward motion with a positive value, backward motion with a negative value, or automatic version ordering with zero.</summary>
+        public static readonly StyledProperty<int> SlideDirectionProperty =
+            AvaloniaProperty.Register<MusicSurfaceHost, int>(nameof(SlideDirection));
         /// <summary>Identifies the current eased transition progress.</summary>
         public static readonly DirectProperty<MusicSurfaceHost, double> TransitionProgressProperty =
             AvaloniaProperty.RegisterDirect<MusicSurfaceHost, double>(nameof(TransitionProgress), host => host.TransitionProgress);
@@ -28,17 +31,23 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Limits the longest side of a transient snapshot independently of display scaling.</summary>
         private const int MaximumSnapshotEdge = 1920;
         /// <summary>Contains the two paint surfaces without changing their layout size.</summary>
-        private Grid? _surface;
+        private SurfacePanel? _surface;
         /// <summary>Contains only the latest live page and its interactive controls.</summary>
         private ContentPresenter? _live;
         /// <summary>Paints one outgoing page without retaining its old interactive tree.</summary>
-        private Image? _outgoing;
+        private SnapshotSurface? _outgoing;
         /// <summary>Positions the incoming surface independently of its layout.</summary>
         private readonly TranslateTransform _incomingTransform = new();
         /// <summary>Positions the outgoing snapshot independently of its layout.</summary>
         private readonly TranslateTransform _outgoingTransform = new();
         /// <summary>Owns the only retained outgoing bitmap.</summary>
         private RenderTargetBitmap? _snapshot;
+        /// <summary>Retains the original logical viewport painted into the snapshot.</summary>
+        private Size _snapshotViewport;
+        /// <summary>Retains the current layout viewport independently of the outgoing bitmap's dimensions.</summary>
+        private Size _viewport;
+        /// <summary>Retains the direction of the active transition even when the next direction binding changes.</summary>
+        private int _activeDirection = 1;
         /// <summary>Owns the attached surface's interruptible Arc animation.</summary>
         private MotionValue<double>? _motion;
         /// <summary>Retains the current eased progress.</summary>
@@ -63,15 +72,15 @@ namespace MajMusic.Presentation.Theme
                     VerticalContentAlignment = VerticalAlignment.Stretch,
                     RenderTransform = _incomingTransform
                 };
-                _outgoing = new Image
+                _outgoing = new SnapshotSurface
                 {
                     Name = "PART_OutgoingSurface",
-                    Stretch = Stretch.Fill,
                     IsHitTestVisible = false,
                     Focusable = false,
+                    UseLayoutRounding = false,
                     RenderTransform = _outgoingTransform
                 };
-                _surface = new Grid { ClipToBounds = true, Children = { _outgoing, _live } };
+                _surface = new SurfacePanel(this, _live, _outgoing) { ClipToBounds = true };
                 return _surface;
             });
         }
@@ -82,6 +91,12 @@ namespace MajMusic.Presentation.Theme
             get => GetValue(ChangeVersionProperty);
             set => SetValue(ChangeVersionProperty, value);
         }
+        /// <summary>Gets or sets the slide direction; zero infers it from a changed version's ordering.</summary>
+        public int SlideDirection
+        {
+            get => GetValue(SlideDirectionProperty);
+            set => SetValue(SlideDirectionProperty, value);
+        }
         /// <summary>Gets the actual eased progress from zero to one.</summary>
         public double TransitionProgress => _transitionProgress;
         /// <summary>Gets whether a noninteractive outgoing bitmap is currently retained.</summary>
@@ -89,9 +104,11 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Gets the latest transition's completion; false indicates that a newer transition superseded it.</summary>
         public Task<bool> TransitionUpdate => _transitionUpdate;
         /// <summary>Gets the current incoming translation in logical pixels.</summary>
-        public double IncomingOffset => _incomingTransform.Y;
+        public double IncomingOffset => _incomingTransform.X;
         /// <summary>Gets the current outgoing translation in logical pixels.</summary>
-        public double OutgoingOffset => _outgoingTransform.Y;
+        public double OutgoingOffset => _outgoingTransform.X;
+        /// <summary>Gets the original logical snapshot viewport, whose size is independent of subsequent layout.</summary>
+        public Size SnapshotViewport => _snapshotViewport;
 
         /// <inheritdoc />
         protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
@@ -131,8 +148,10 @@ namespace MajMusic.Presentation.Theme
             var contentChanged = change.Property == ContentProperty || change.Property == ContentTemplateProperty;
             var transitionChanged = contentChanged || change.Property == ChangeVersionProperty;
             var canAnimate = transitionChanged && _live is not null && _motion is not null && IsLoaded
-                && IsEffectivelyVisible && ArcMotion.GetEffectiveLevel(this) == ArcMotionLevel.Full;
-            var captured = canAnimate ? CaptureSurface() : null;
+                && IsEffectivelyVisible && ArcMotion.GetEffectiveLevel(this) == ArcMotionLevel.Full
+                && !(change.Property == ContentProperty && change.NewValue is null);
+            var reuseSnapshot = canAnimate && HasSnapshot && TransitionProgress == 0;
+            var captured = canAnimate && !reuseSnapshot ? CaptureSurface() : null;
             base.OnPropertyChanged(change);
             if (!transitionChanged || _live is null)
             {
@@ -144,7 +163,7 @@ namespace MajMusic.Presentation.Theme
                 PresentLatestContent();
             }
 
-            if (captured is null || _motion is null)
+            if ((!reuseSnapshot && captured is null) || _motion is null)
             {
                 _motion?.Jump(1);
                 ApplyProgress(1);
@@ -153,10 +172,26 @@ namespace MajMusic.Presentation.Theme
             }
 
             _motion.Stop();
-            ReleaseSnapshot();
-            _snapshot = captured;
-            _outgoing!.Source = captured;
-            SetAndRaise(HasSnapshotProperty, ref _hasSnapshot, true);
+            if (SlideDirection != 0)
+            {
+                _activeDirection = Math.Sign(SlideDirection);
+            }
+            else if (change.Property == ChangeVersionProperty && change.OldValue is long previous && change.NewValue is long current
+                && previous != current)
+            {
+                _activeDirection = current > previous ? 1 : -1;
+            }
+
+            if (!reuseSnapshot && captured is { } frame)
+            {
+                ReleaseSnapshot();
+                _snapshot = frame.Bitmap;
+                _snapshotViewport = frame.Viewport;
+                _outgoing!.SetSnapshot(frame.Bitmap, frame.Viewport);
+                SetAndRaise(HasSnapshotProperty, ref _hasSnapshot, true);
+                _surface?.InvalidateArrange();
+            }
+
             _motion.Jump(0);
             _transitionUpdate = _motion.AnimateTo(1, MotionSpec.Tween(MusicMotion.SurfaceDuration, MusicMotion.InOut));
         }
@@ -176,7 +211,7 @@ namespace MajMusic.Presentation.Theme
 
         /// <summary>Captures the currently painted composite before its live page or generation changes.</summary>
         /// <returns>A bounded snapshot, or null when the host has not yet acquired a drawable viewport.</returns>
-        private RenderTargetBitmap? CaptureSurface()
+        private (RenderTargetBitmap Bitmap, Size Viewport)? CaptureSurface()
         {
             if (_surface is not { Bounds.Width: > 0, Bounds.Height: > 0 } surface)
             {
@@ -191,7 +226,7 @@ namespace MajMusic.Presentation.Theme
             try
             {
                 bitmap.Render(surface);
-                return bitmap;
+                return (bitmap, size);
             }
             catch (InvalidOperationException)
             {
@@ -206,16 +241,18 @@ namespace MajMusic.Presentation.Theme
         {
             var value = Math.Clamp(progress, 0, 1);
             SetAndRaise(TransitionProgressProperty, ref _transitionProgress, value);
-            _incomingTransform.Y = 12 * (1 - value);
-            _outgoingTransform.Y = -10 * value;
+            _incomingTransform.X = _activeDirection * _viewport.Width * (1 - value);
+            _incomingTransform.Y = 0;
+            _outgoingTransform.X = -_activeDirection * Math.Max(_viewport.Width, _snapshotViewport.Width) * value;
+            _outgoingTransform.Y = 0;
             if (_live is not null)
             {
-                _live.Opacity = value;
+                _live.Opacity = 1;
             }
 
             if (_outgoing is not null)
             {
-                _outgoing.Opacity = 1 - value;
+                _outgoing.Opacity = 1;
             }
 
             if (value >= 1)
@@ -229,12 +266,96 @@ namespace MajMusic.Presentation.Theme
         {
             if (_outgoing is not null)
             {
-                _outgoing.Source = null;
+                _outgoing.SetSnapshot(null, default);
             }
 
             _snapshot?.Dispose();
             _snapshot = null;
+            _snapshotViewport = default;
             SetAndRaise(HasSnapshotProperty, ref _hasSnapshot, false);
+        }
+
+        /// <summary>Arranges the live viewport while keeping the outgoing snapshot entirely out of desired-size measurement.</summary>
+        private sealed class SurfacePanel : Panel
+        {
+            /// <summary>Receives the actual viewport used by horizontal motion.</summary>
+            private readonly MusicSurfaceHost _owner;
+            /// <summary>Is the sole child contributing to this panel's desired layout.</summary>
+            private readonly Control _content;
+            /// <summary>Paints the outgoing viewport without constraining its parent.</summary>
+            private readonly Control _ghost;
+
+            /// <summary>Creates a layout containing one live child and one nonmeasuring overlay.</summary>
+            /// <param name="owner">The transition owner.</param>
+            /// <param name="content">The current live presenter.</param>
+            /// <param name="ghost">The outgoing bitmap painter.</param>
+            public SurfacePanel(MusicSurfaceHost owner, Control content, Control ghost)
+            {
+                _owner = owner;
+                _content = content;
+                _ghost = ghost;
+                Children.Add(ghost);
+                Children.Add(content);
+            }
+
+            /// <inheritdoc />
+            protected override Size MeasureOverride(Size availableSize)
+            {
+                _content.Measure(availableSize);
+                _ghost.Measure(default);
+                return _content.DesiredSize;
+            }
+
+            /// <inheritdoc />
+            protected override Size ArrangeOverride(Size finalSize)
+            {
+                _owner._viewport = finalSize;
+                _owner.ApplyProgress(_owner.TransitionProgress);
+                _content.Arrange(new Rect(finalSize));
+                _ghost.Arrange(new Rect(_owner._snapshotViewport));
+                return finalSize;
+            }
+        }
+
+        /// <summary>Paints captured pixels at their original logical size without participating in layout or applying image stretching.</summary>
+        private sealed class SnapshotSurface : Control
+        {
+            /// <summary>References the bitmap owned by the transition host.</summary>
+            private Bitmap? _bitmap;
+            /// <summary>Clips fractional pixel rounding to the original viewport.</summary>
+            private Size _capturedViewport;
+
+            /// <summary>Replaces the noninteractive captured frame.</summary>
+            /// <param name="bitmap">The captured bitmap, or null to stop painting.</param>
+            /// <param name="viewport">The original logical viewport.</param>
+            public void SetSnapshot(Bitmap? bitmap, Size viewport)
+            {
+                _bitmap = bitmap;
+                _capturedViewport = viewport;
+                InvalidateVisual();
+            }
+
+            /// <inheritdoc />
+            protected override Size MeasureOverride(Size availableSize)
+            {
+                return default;
+            }
+
+            /// <inheritdoc />
+            public override void Render(DrawingContext context)
+            {
+                base.Render(context);
+                if (_bitmap is { } bitmap)
+                {
+                    // Source coordinates are physical pixels; destination coordinates are logical units.
+                    var imageBounds = new Rect(bitmap.Size);
+                    var pixelBounds = new Rect(0, 0, bitmap.PixelSize.Width, bitmap.PixelSize.Height);
+                    using (context.PushClip(new Rect(_capturedViewport)))
+                    {
+                        context.DrawImage(bitmap, pixelBounds, imageBounds);
+                    }
+                }
+            }
         }
     }
 }

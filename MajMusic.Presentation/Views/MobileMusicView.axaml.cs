@@ -135,10 +135,10 @@ namespace MajMusic.Presentation.Views
         /// <summary>Creates just the active page and restores its browsing segment without navigating again.</summary>
         private void PresentSection()
         {
-            ReleaseSection();
             this.FindControl<Navbar>("MobileNavbar")!.Title = SectionTitles[SelectedSectionIndex];
             if (DataContext is not MainViewModel owner)
             {
+                ReleaseSection();
                 return;
             }
 
@@ -148,7 +148,13 @@ namespace MajMusic.Presentation.Views
                 var template = (IDataTemplate)Resources[SectionTemplates[SelectedSectionIndex]]!;
                 var section = template.Build(owner)!;
                 section.DataContext = owner;
-                this.FindControl<ContentControl>("MobileSectionHost")!.Content = section;
+                var host = this.FindControl<ContentControl>("MobileSectionHost")!;
+                var previous = host.Content as Control;
+                host.Content = section;
+                if (previous is not null)
+                {
+                    previous.DataContext = null;
+                }
                 RestoreBrowsingMode();
                 UpdateBrowseViewport();
             }

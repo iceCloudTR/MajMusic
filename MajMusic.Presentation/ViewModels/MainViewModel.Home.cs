@@ -35,6 +35,8 @@ namespace MajMusic.Presentation.ViewModels
         private Task _homeUpdate = Task.CompletedTask;
         /// <summary>Identifies the surface transition started by the latest browsing intent.</summary>
         private long _browseTransitionVersion;
+        /// <summary>Enters later home modes from the right and earlier modes from the left.</summary>
+        private int _browseTransitionDirection = 1;
         /// <summary>Identifies the only operation allowed to finish the current loading presentation.</summary>
         private long _browseLoadOwner;
         /// <summary>Retains the current target's loading state independently of the displayed catalog.</summary>
@@ -98,6 +100,8 @@ namespace MajMusic.Presentation.ViewModels
         public bool IsBrowseLoading => _isBrowseLoading;
         /// <summary>Gets the transition generation published immediately when the user chooses new content.</summary>
         public long BrowseTransitionVersion => _browseTransitionVersion;
+        /// <summary>Gets the horizontal direction of the latest home navigation, positive for forward.</summary>
+        public int BrowseTransitionDirection => _browseTransitionDirection;
         /// <summary>Gets the command selecting recommendations.</summary>
         public AsyncCommand ShowRecommendationsModeCommand { get; private set; } = null!;
         /// <summary>Gets the command selecting playlists.</summary>
@@ -151,13 +155,17 @@ namespace MajMusic.Presentation.ViewModels
         /// <param name="mode">The requested content mode.</param>
         internal void UseHomeMode(HomeBrowseMode mode)
         {
+            var previousMode = _homeMode;
+            var wasSearching = IsSearching;
+            var playlistId = mode == HomeBrowseMode.Playlists ? SelectedPlaylist?.Id : null;
+            var contentChanged = previousMode != mode || wasSearching || _activePlaylistId != playlistId;
             _changingHomeState = true;
             try
             {
                 _homeMode = mode;
                 _isSearchExpanded = false;
                 SearchText = string.Empty;
-                _activePlaylistId = mode == HomeBrowseMode.Playlists ? SelectedPlaylist?.Id : null;
+                _activePlaylistId = playlistId;
                 AttachRecommendationSnapshot();
             }
             finally
@@ -167,7 +175,7 @@ namespace MajMusic.Presentation.ViewModels
 
             _homeVersion++;
             _homeUpdateCancellation?.Cancel();
-            BeginBrowseLoad(true);
+            BeginBrowseLoad(contentChanged, wasSearching ? -1 : Math.Sign((int)mode - (int)previousMode));
             NotifyHomeState();
         }
 
@@ -187,7 +195,7 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             _homeVersion++;
-            BeginBrowseLoad(true);
+            BeginBrowseLoad(false);
             NotifyHomeState();
             QueueHomeUpdate(IsSearching);
         }
@@ -270,12 +278,20 @@ namespace MajMusic.Presentation.ViewModels
 
         /// <summary>Starts a target presentation before storage, metadata or network work can delay its first frame.</summary>
         /// <param name="transition">Whether the visible surface should begin a new transition.</param>
+        /// <param name="direction">The horizontal navigation direction; zero uses the forward direction.</param>
         /// <returns>The owner allowed to finish this loading presentation.</returns>
-        private long BeginBrowseLoad(bool transition)
+        private long BeginBrowseLoad(bool transition, int direction = 1)
         {
             var owner = ++_browseLoadOwner;
             if (transition)
             {
+                var nextDirection = direction < 0 ? -1 : 1;
+                if (_browseTransitionDirection != nextDirection)
+                {
+                    _browseTransitionDirection = nextDirection;
+                    OnPropertyChanged(nameof(BrowseTransitionDirection));
+                }
+
                 _browseTransitionVersion++;
                 OnPropertyChanged(nameof(BrowseTransitionVersion));
             }
