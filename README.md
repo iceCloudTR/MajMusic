@@ -1,8 +1,8 @@
 # MajMusic
 基于 Avalonia 和 .NET 10 的桌面音乐播放器，支持本地曲库与兼容 MajNet 的音乐来源。
 
-#还在头痛不能随时随地听MajNet上的音乐吗？！
-#立刻启动 MajMusic！！！
+# 还在头痛不能随时随地听MajNet上的音乐吗？！
+# 立刻启动 MajMusic！！！
 
 ## 功能
 
