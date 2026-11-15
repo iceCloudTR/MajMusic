@@ -10,6 +10,7 @@
              x:Class="MajMusic.Presentation.Views.MainView"
              x:Name="ViewRoot"
              x:DataType="vm:MainViewModel"
+             theme:AppearanceBridge.FollowPreference="True"
              Background="{DynamicResource MusicCanvasBrush}">
     <UserControl.Styles>
         <StyleInclude Source="avares://MajMusic.Presentation/Styles/MusicStyles.axaml" />
@@ -68,7 +69,7 @@
                 <arc:Button x:Name="NavigateSettings" Classes="navigation" Variant="Ghost" Content="设置" Tag="4" Click="OnNavigateSectionClicked" />
             </StackPanel>
         </Grid>
-        <TabControl x:Name="MainTabs" Classes="desktopPages" Grid.Row="1" Padding="0" SelectionChanged="OnDesktopSectionChanged" theme:MusicMotion.RevealChanges="True">
+        <TabControl x:Name="MainTabs" Classes="desktopPages" Grid.Row="1" Padding="0" SelectionChanged="OnDesktopSectionChanged">
             <TabItem x:Name="LibraryTab" Header="主页">
                 <Grid x:Name="LibraryLayout" RowDefinitions="44,*,28" RowSpacing="10" ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
@@ -218,6 +219,14 @@
             </TabItem>
             <TabItem x:Name="SettingsTab" Header="设置">
                 <StackPanel Margin="0" Spacing="10">
+                    <Border x:Name="AppearanceSettingsPanel" Classes="card" Padding="10">
+                        <Grid ColumnDefinitions="80,*" ColumnSpacing="10">
+                            <TextBlock Text="外观" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <arc:Select x:Name="AppearancePicker" Grid.Column="1" ItemsSource="{Binding AppearanceOptions}"
+                                        TextSelector="{x:Static converters:MusicSelectLabels.Appearance}"
+                                        SelectedItem="{Binding SelectedAppearanceOption, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                        </Grid>
+                    </Border>
                     <Border x:Name="AudioSettingsPanel" Classes="card" Padding="10">
                         <Grid RowDefinitions="38,38,16" RowSpacing="8" ColumnDefinitions="80,*,38,Auto" ColumnSpacing="10">
                             <TextBlock Text="输出设备" FontWeight="SemiBold" VerticalAlignment="Center" />

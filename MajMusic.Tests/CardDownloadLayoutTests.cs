@@ -157,7 +157,7 @@ namespace MajMusic.Tests
             var button = card.GetVisualDescendants().OfType<Button>().Single();
             var presenter = button.GetVisualDescendants().OfType<Border>()
                 .Single(control => control.Name == "PART_Frame");
-            TestAssert.Equal(selected ? Color.Parse("#7AD8C1") : Color.Parse("#2B3743"),
+            TestAssert.Equal(ResourceColor(card, selected ? "MusicAccentBrush" : "MusicLineBrush"),
                 ((ISolidColorBrush)presenter.BorderBrush!).Color,
                 "Selection must use its own border color independently of download fill.");
             foreach (var name in new[] { "CardDownloadStatus", "CardDownloadDetails" })
@@ -183,10 +183,22 @@ namespace MajMusic.Tests
             foreach (var fraction in new[] { 0.12, 0.5, 0.88 })
             {
                 var y = (int)Math.Round(paneOrigin.Y + pane.Bounds.Height * fraction);
-                var expected = fraction >= 1 - percent / 100 ? new SKColor(44, 70, 95) : new SKColor(25, 33, 42);
+                var color = ResourceColor(card, fraction >= 1 - percent / 100 ? "MusicDownloadBrush" : "MusicPanelBrush");
+                var expected = new SKColor(color.R, color.G, color.B, color.A);
                 TestAssert.Equal(expected, pixels.GetPixel(x, y),
                     "Information background pixels must distinguish undownloaded and downloaded areas without tinting the cover.");
             }
+        }
+
+        /// <summary>Resolves the active theme's opaque paint rather than fixing visual tests to one palette.</summary>
+        /// <param name="control">The card participating in the current theme scope.</param>
+        /// <param name="key">The semantic brush resource.</param>
+        /// <returns>The resolved solid color.</returns>
+        private static Color ResourceColor(Control control, string key)
+        {
+            TestAssert.True(control.TryFindResource(key, control.ActualThemeVariant, out var value) && value is ISolidColorBrush,
+                "The active theme must provide a solid " + key + " brush.");
+            return ((ISolidColorBrush)value!).Color;
         }
 
         /// <summary>Publishes one track-owned visual state without contacting a remote source.</summary>

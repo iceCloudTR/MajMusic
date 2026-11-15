@@ -28,13 +28,16 @@ Arc 界面检查：
 ```sh
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- headless alignment endpoint-cards-layout card-download-layout arc-responsive
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- arc-motion
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- surface-motion browse-loading appearance
 ```
 
 测试使用与桌面入口相同的 Arc 注册和主题。手机界面覆盖 360×640、390×844、430×932，检查安全区、软键盘收缩、底部导航、触摸目标、详情抽屉，以及桌面与窄屏切换时账号和 Guest 选择不变。该检查在 Skia 离屏窗口中运行；Android/iOS 宿主与实机播放另行验证。
 
-布局检查关闭动画以固定截图。`arc-motion` 使用应用默认的完整动效，逐帧检查按钮按压与恢复、模式滑块、换页淡入，以及搜索框从右侧图标展开、收起时的宽度、锚点与菜单对齐；同时验证快速反转和窗口缩放后的布局。中间帧保存在 `.work/ui-arc-motion-*.png`。
+布局检查关闭动画以固定截图。`arc-motion` 使用应用默认的完整动效，逐帧检查按钮按压与恢复、模式滑块、页面位移与透明度，以及搜索框从右侧图标展开、收起时的宽度、锚点与菜单对齐；同时验证快速反转和窗口缩放后的布局。中间帧保存在 `.work/ui-arc-motion-*.png`。
 
-`home-ui` 包含两万四千首曲目的整批通知与模式快切回归；`storage` 使用真实 SQLite 数据库锁验证界面队列可继续运行，以及取消后的结果隔离。
+`surface-motion` 用 Arc 可控时钟检查整页双层位移、缓入缓出速度、快切、中断与快照释放；`browse-loading` 检查真实点击后立即出现有限骨架、慢请求隔离、首屏卡片懒创建和加载完成过渡；`appearance` 检查三种外观的即时应用、保存、重启恢复及深浅渲染。
+
+`home-ui` 包含两万四千首曲目的整批通知、卡片懒创建、加载状态所有权与模式快切回归；`storage` 使用真实 SQLite 数据库锁验证界面队列可继续运行，以及取消后的结果隔离。
 
 下载与播放准备的专项回归：
 

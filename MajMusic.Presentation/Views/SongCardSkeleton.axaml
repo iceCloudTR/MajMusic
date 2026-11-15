@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             x:Class="MajMusic.Presentation.Views.SongCardSkeleton"
+             IsHitTestVisible="False" Focusable="False">
+    <Border CornerRadius="12" ClipToBounds="True" BorderThickness="1"
+            BorderBrush="{DynamicResource MusicLineBrush}" Background="{DynamicResource MusicPanelBrush}">
+        <Grid ColumnDefinitions="*,*">
+            <Border x:Name="SkeletonCover" Background="{arc:SkeletonTokenResource BlockColor}" />
+            <Grid Grid.Column="1" Margin="12" RowDefinitions="Auto,*,Auto">
+                <arc:Skeleton x:Name="SkeletonTitle" Lines="2" Label="正在加载音乐" />
+                <arc:Skeleton Grid.Row="2" Lines="1" Label="正在加载音频信息" />
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

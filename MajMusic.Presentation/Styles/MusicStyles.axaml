@@ -1,32 +1,33 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:arc="https://github.com/AIDotNet/TKCode.Arc">
+        xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+        xmlns:theme="using:MajMusic.Presentation.Theme">
     <Styles.Resources>
         <ResourceDictionary>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="MusicCanvasBrush" Color="#11161C" />
-                    <SolidColorBrush x:Key="MusicPanelBrush" Color="#19212A" />
-                    <SolidColorBrush x:Key="MusicRaisedBrush" Color="#222D38" />
-                    <SolidColorBrush x:Key="MusicLineBrush" Color="#2B3743" />
-                    <SolidColorBrush x:Key="MusicTextBrush" Color="#E8EDF2" />
-                    <SolidColorBrush x:Key="MusicMutedBrush" Color="#97A7B7" />
-                    <SolidColorBrush x:Key="MusicAccentBrush" Color="#7AD8C1" />
-                    <SolidColorBrush x:Key="MusicAccentTextBrush" Color="#102820" />
-                    <SolidColorBrush x:Key="MusicSelectionBrush" Color="#243E44" />
-                    <SolidColorBrush x:Key="MusicDownloadBrush" Color="#2C465F" />
+                    <SolidColorBrush x:Key="MusicCanvasBrush" Color="#141416" />
+                    <SolidColorBrush x:Key="MusicPanelBrush" Color="#1C1C1F" />
+                    <SolidColorBrush x:Key="MusicRaisedBrush" Color="#27272C" />
+                    <SolidColorBrush x:Key="MusicLineBrush" Color="#36363D" />
+                    <SolidColorBrush x:Key="MusicTextBrush" Color="#F4F4F5" />
+                    <SolidColorBrush x:Key="MusicMutedBrush" Color="#A1A1AA" />
+                    <SolidColorBrush x:Key="MusicAccentBrush" Color="#8B8CF8" />
+                    <SolidColorBrush x:Key="MusicAccentTextBrush" Color="#161625" />
+                    <SolidColorBrush x:Key="MusicSelectionBrush" Color="#2D2B48" />
+                    <SolidColorBrush x:Key="MusicDownloadBrush" Color="#35353D" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="MusicCanvasBrush" Color="#F4F6F9" />
+                    <SolidColorBrush x:Key="MusicCanvasBrush" Color="#F5F5F7" />
                     <SolidColorBrush x:Key="MusicPanelBrush" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="MusicRaisedBrush" Color="#E9EEF4" />
-                    <SolidColorBrush x:Key="MusicLineBrush" Color="#DDE4EC" />
-                    <SolidColorBrush x:Key="MusicTextBrush" Color="#243344" />
-                    <SolidColorBrush x:Key="MusicMutedBrush" Color="#687C90" />
-                    <SolidColorBrush x:Key="MusicAccentBrush" Color="#177F71" />
+                    <SolidColorBrush x:Key="MusicRaisedBrush" Color="#EEEEF1" />
+                    <SolidColorBrush x:Key="MusicLineBrush" Color="#DCDCE2" />
+                    <SolidColorBrush x:Key="MusicTextBrush" Color="#202024" />
+                    <SolidColorBrush x:Key="MusicMutedBrush" Color="#66666F" />
+                    <SolidColorBrush x:Key="MusicAccentBrush" Color="#5B5BD6" />
                     <SolidColorBrush x:Key="MusicAccentTextBrush" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="MusicSelectionBrush" Color="#E0F0EE" />
-                    <SolidColorBrush x:Key="MusicDownloadBrush" Color="#D8E8F4" />
+                    <SolidColorBrush x:Key="MusicSelectionBrush" Color="#EBEAFB" />
+                    <SolidColorBrush x:Key="MusicDownloadBrush" Color="#E3E3EA" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
@@ -151,11 +152,14 @@
                     <ItemsPresenter Name="PART_ItemsPresenter" Height="0" Opacity="0" ClipToBounds="True"
                                     IsHitTestVisible="False" ItemsPanel="{TemplateBinding ItemsPanel}"
                                     KeyboardNavigation.TabNavigation="None" />
-                    <ContentPresenter Name="PART_SelectedContentHost" Grid.Row="1"
-                                      Content="{TemplateBinding SelectedContent}"
-                                      ContentTemplate="{TemplateBinding SelectedContentTemplate}"
-                                      HorizontalContentAlignment="Stretch"
-                                      VerticalContentAlignment="Stretch" />
+                    <theme:MusicSurfaceHost Name="PageSurfaceTransition" Grid.Row="1"
+                                            ChangeVersion="{TemplateBinding SelectedIndex}"
+                                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                        <ContentPresenter Name="PART_SelectedContentHost"
+                                          Content="{TemplateBinding SelectedContent}"
+                                          ContentTemplate="{TemplateBinding SelectedContentTemplate}"
+                                          HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+                    </theme:MusicSurfaceHost>
                 </Grid>
             </ControlTemplate>
         </Setter>

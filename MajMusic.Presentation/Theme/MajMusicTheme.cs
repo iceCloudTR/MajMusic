@@ -1,6 +1,7 @@
 #nullable enable
 
 using Avalonia;
+using MajMusic.Core.Models;
 using TKCode.Arc;
 using TKCode.Arc.Localization;
 using TKCode.Arc.Mobile;
@@ -17,21 +18,21 @@ namespace MajMusic.Presentation.Theme
             .Token("RadiusPanel", "12")
             .Token("RadiusSurface", "12")
             .ForDark(dark => dark
-                .Token("Background", "#11161C").Token("Surface", "#19212A")
-                .Token("SurfaceRaised", "#222D38").Token("SurfaceMuted", "#222D38")
-                .Token("Border", "#2B3743").Token("Foreground", "#E8EDF2")
-                .Token("TextSecondary", "#97A7B7").Token("TextMuted", "#748493")
-                .Token("Accent", "#7AD8C1").Token("AccentSubtle", "#243E44")
-                .Token("AccentForeground", "#102820").Token("ControlOn", "#7AD8C1")
-                .Token("ControlFill", "#7AD8C1").Token("ControlThumbOn", "#102820"))
+                .Token("Background", "#141416").Token("Surface", "#1C1C1F")
+                .Token("SurfaceRaised", "#27272C").Token("SurfaceMuted", "#242428")
+                .Token("Border", "#36363D").Token("Foreground", "#F4F4F5")
+                .Token("TextSecondary", "#A1A1AA").Token("TextMuted", "#92929C")
+                .Token("Accent", "#8B8CF8").Token("AccentSubtle", "#2D2B48")
+                .Token("AccentForeground", "#161625").Token("ControlOn", "#8B8CF8")
+                .Token("ControlFill", "#8B8CF8").Token("ControlThumbOn", "#161625"))
             .ForLight(light => light
-                .Token("Background", "#F4F6F9").Token("Surface", "#FFFFFF")
-                .Token("SurfaceRaised", "#E9EEF4").Token("SurfaceMuted", "#E9EEF4")
-                .Token("Border", "#DDE4EC").Token("Foreground", "#243344")
-                .Token("TextSecondary", "#687C90").Token("TextMuted", "#8290A0")
-                .Token("Accent", "#177F71").Token("AccentSubtle", "#E0F0EE")
-                .Token("AccentForeground", "#FFFFFF").Token("ControlOn", "#177F71")
-                .Token("ControlFill", "#177F71").Token("ControlThumbOn", "#FFFFFF")));
+                .Token("Background", "#F5F5F7").Token("Surface", "#FFFFFF")
+                .Token("SurfaceRaised", "#EEEEF1").Token("SurfaceMuted", "#F0F0F3")
+                .Token("Border", "#DCDCE2").Token("Foreground", "#202024")
+                .Token("TextSecondary", "#66666F").Token("TextMuted", "#72727C")
+                .Token("Accent", "#5B5BD6").Token("AccentSubtle", "#EBEAFB")
+                .Token("AccentForeground", "#FFFFFF").Token("ControlOn", "#5B5BD6")
+                .Token("ControlFill", "#5B5BD6").Token("ControlThumbOn", "#FFFFFF")));
 
         /// <summary>Installs Arc's controls, mobile components, language resources and the shared music palette.</summary>
         /// <param name="builder">The Avalonia host being configured.</param>
@@ -43,7 +44,28 @@ namespace MajMusic.Presentation.Theme
         {
             return builder.UseArc(arc => arc.UseArcControls().UseArcMobile()
                 .UseLanguages(LanguageTags.ZhCN, [LanguageTags.ZhCN, LanguageTags.EnUS])
-                .WithTheme(theme => theme.Appearance(appearance).Accent(ArcAccentPreset.Green).MotionLevel(motion).Preset(Palette)));
+                .WithTheme(theme => theme.Appearance(appearance).Accent(ArcAccentPreset.Violet).MotionLevel(motion).Preset(Palette)));
+        }
+
+        /// <summary>Applies a persisted appearance while preserving the registered palette and motion policy.</summary>
+        /// <param name="appearance">The toolkit-independent light, dark or system preference.</param>
+        public static void ApplyAppearance(AppearancePreference appearance)
+        {
+            if (ArcThemeManager.Current is not { } theme)
+            {
+                return;
+            }
+
+            var requested = appearance switch
+            {
+                AppearancePreference.Light => ArcAppearance.Light,
+                AppearancePreference.System => ArcAppearance.System,
+                _ => ArcAppearance.Dark
+            };
+            if (theme.State.Appearance != requested)
+            {
+                theme.Apply(builder => builder.Appearance(requested));
+            }
         }
     }
 }

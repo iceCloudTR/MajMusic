@@ -387,8 +387,10 @@ namespace MajMusic.Presentation.ViewModels
                 CancelAutomaticLogin();
                 _accountSettingsLoaded = false;
                 await PrepareOnlinePreferencesAsync();
+                await PrepareAppearanceSettingsAsync();
                 _settings = LocalDirectorySettings.Normalize(await _workspace.LoadSettingsAsync(_lifetime.Token));
                 _lifetime.Token.ThrowIfCancellationRequested();
+                RestoreAppearanceSettings(_settings.Appearance);
                 RestoreOnlinePreference(_settings.OnlineEnabled);
                 var endpoint = _settings.Endpoints.FirstOrDefault(item => item.Id == _settings.ActiveEndpointId)
                     ?? _settings.Endpoints.FirstOrDefault();
@@ -891,8 +893,29 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Reads one versioned home snapshot while preserving the inspected song.</summary>
         /// <param name="cancellationToken">Cancels an obsolete merged search.</param>
         /// <param name="preservePage">Whether a feed append should retain the current page.</param>
+        /// <param name="manageLoading">Whether this operation owns its loading presentation.</param>
         /// <returns>A task representing the current visible content snapshot.</returns>
-        private async Task ReloadLibraryCoreAsync(CancellationToken cancellationToken, bool preservePage = false)
+        private async Task ReloadLibraryCoreAsync(CancellationToken cancellationToken, bool preservePage = false, bool manageLoading = true)
+        {
+            var loadingOwner = manageLoading && !preservePage ? BeginBrowseLoad(false) : 0;
+            try
+            {
+                await ReadLibrarySnapshotAsync(cancellationToken, preservePage);
+            }
+            finally
+            {
+                if (loadingOwner != 0)
+                {
+                    FinishBrowseLoad(loadingOwner);
+                }
+            }
+        }
+
+        /// <summary>Prepares pure catalog data on a worker and publishes only the latest query's lightweight rows.</summary>
+        /// <param name="cancellationToken">Cancels an obsolete catalog read.</param>
+        /// <param name="preservePage">Whether a recommendation continuation retains its scroll position.</param>
+        /// <returns>A task representing publication of the current snapshot.</returns>
+        private async Task ReadLibrarySnapshotAsync(CancellationToken cancellationToken, bool preservePage)
         {
             var version = _homeVersion;
             var searching = IsSearching;
@@ -915,7 +938,14 @@ namespace MajMusic.Presentation.ViewModels
                 var prepared = visible.Select(track => track.EndpointId is { } endpointId && sourceNames.TryGetValue(endpointId, out var name)
                     && name != track.SourceName ? track with { SourceName = name } : track).ToArray();
                 cancellationToken.ThrowIfCancellationRequested();
-                return prepared;
+                var indexes = new Dictionary<(string, string, string?), int>(prepared.Length);
+                for (var index = 0; index < prepared.Length; index++)
+                {
+                    var track = prepared[index];
+                    indexes[(track.Id, track.SourceId, track.EndpointId)] = index;
+                }
+
+                return new BrowseSnapshot(prepared, indexes);
             }, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (version != _homeVersion)
@@ -924,10 +954,10 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             var inspected = SelectedTrack;
-            _tracks.ReplaceAll(entries);
+            _tracks.ReplaceAll(entries.Tracks);
 
+            RefreshCardTracks(preservePage, entries);
             SelectedTrack = Tracks.FirstOrDefault(item => item.Id == inspected?.Id) ?? inspected;
-            RefreshCardTracks(preservePage);
             _libraryPageIndex = preservePage ? Math.Clamp(_libraryPageIndex, 0, Math.Max(0, (Tracks.Count - 1) / LibraryPageSize)) : 0;
             RefreshVisibleTracks();
             OnPropertyChanged(nameof(LibrarySummary));

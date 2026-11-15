@@ -107,6 +107,11 @@ namespace MajMusic.Infrastructure.Storage
         /// <exception cref="InvalidDataException">A preference or endpoint is invalid.</exception>
         internal static void Validate(AppSettings settings)
         {
+            if (!Enum.IsDefined(settings.Appearance))
+            {
+                throw new InvalidDataException("The appearance preference must be light, dark or system.");
+            }
+
             if (settings.AudioOutput is null || settings.AudioOutput.Volume is < 0 or > 100
                 || settings.AudioOutput.DeviceId is { Length: > 4096 } || settings.AudioOutput.DeviceId?.Contains('\0') == true)
             {

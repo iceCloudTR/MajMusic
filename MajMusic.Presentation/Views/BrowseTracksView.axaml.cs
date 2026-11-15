@@ -38,6 +38,8 @@ namespace MajMusic.Presentation.Views
         private MainViewModel? _browseOwner;
         /// <summary>Retains the generation whose scroll position is currently displayed.</summary>
         private long _navigationVersion = -1;
+        /// <summary>Retains the actual viewport used by both real card rows and bounded loading placeholders.</summary>
+        private Size _browseViewport;
 
         /// <summary>Initializes the shared card presentation and its keyboard navigation.</summary>
         public BrowseTracksView()
@@ -45,6 +47,36 @@ namespace MajMusic.Presentation.Views
             InitializeComponent();
             DataContextChanged += OnBrowseContextChanged;
             this.FindControl<ListBox>("CardRowsList")!.AddHandler(KeyDownEvent, OnBrowseKeyDown, RoutingStrategies.Tunnel);
+        }
+
+        /// <inheritdoc />
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+            if (_browseOwner is { } owner)
+            {
+                owner.PropertyChanged -= OnBrowseOwnerChanged;
+                owner.PropertyChanged += OnBrowseOwnerChanged;
+                if (Bounds.Width > 0)
+                {
+                    owner.SetBrowseViewportWidth(CardViewportWidth(Bounds.Width));
+                }
+
+                UpdateSkeletonViewport();
+                ResetNavigationOffset();
+            }
+        }
+
+        /// <inheritdoc />
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            if (_browseOwner is { } owner)
+            {
+                owner.PropertyChanged -= OnBrowseOwnerChanged;
+            }
+
+            this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.ClearPlaceholders();
+            base.OnDetachedFromVisualTree(e);
         }
 
         /// <summary>Applies the current viewport when an existing browser receives another workspace view.</summary>
@@ -61,13 +93,17 @@ namespace MajMusic.Presentation.Views
             _navigationVersion = -1;
             if (_browseOwner is { } owner)
             {
-                owner.PropertyChanged += OnBrowseOwnerChanged;
-                if (Bounds.Width > 0)
+                if (TopLevel.GetTopLevel(this) is not null)
                 {
-                    owner.SetBrowseViewportWidth(CardViewportWidth(Bounds.Width));
+                    owner.PropertyChanged += OnBrowseOwnerChanged;
+                    if (Bounds.Width > 0)
+                    {
+                        owner.SetBrowseViewportWidth(CardViewportWidth(Bounds.Width));
+                    }
                 }
 
                 ResetNavigationOffset();
+                UpdateSkeletonViewport();
             }
         }
 
@@ -79,6 +115,30 @@ namespace MajMusic.Presentation.Views
             if (e.PropertyName == nameof(MainViewModel.BrowseNavigationVersion))
             {
                 ResetNavigationOffset();
+            }
+            else if (e.PropertyName is nameof(MainViewModel.IsBrowseLoading) or nameof(MainViewModel.BrowseColumns))
+            {
+                UpdateSkeletonViewport();
+            }
+        }
+
+        /// <summary>Creates placeholders only for an actively loading viewport.</summary>
+        private void UpdateSkeletonViewport()
+        {
+            if (TopLevel.GetTopLevel(this) is not null && _browseOwner is { IsBrowseLoading: true } owner)
+            {
+                this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.SetViewport(_browseViewport, owner.BrowseColumns);
+            }
+        }
+
+        /// <summary>Releases placeholder pulses after the completed loading surface has faded away.</summary>
+        /// <param name="sender">The Arc placeholder presence host.</param>
+        /// <param name="e">The completed exit notification.</param>
+        private void OnSkeletonHidden(object? sender, EventArgs e)
+        {
+            if (_browseOwner?.IsBrowseLoading != true)
+            {
+                this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.ClearPlaceholders();
             }
         }
 
@@ -113,9 +173,11 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The new viewport dimensions.</param>
         private void OnBrowseSizeChanged(object? sender, SizeChangedEventArgs e)
         {
+            _browseViewport = e.NewSize;
             if (DataContext is MainViewModel owner)
             {
                 owner.SetBrowseViewportWidth(CardViewportWidth(e.NewSize.Width));
+                UpdateSkeletonViewport();
             }
         }
 
@@ -132,7 +194,7 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The navigation key pressed in the list or one of its cards.</param>
         private async void OnBrowseKeyDown(object? sender, KeyEventArgs e)
         {
-            if (DataContext is not MainViewModel owner || owner.CardTracks.Count == 0 || e.KeyModifiers != KeyModifiers.None
+            if (DataContext is not MainViewModel owner || owner.IsBrowseLoading || owner.CardTracks.Count == 0 || e.KeyModifiers != KeyModifiers.None
                 || e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End))
             {
                 return;
@@ -140,15 +202,7 @@ namespace MajMusic.Presentation.Views
 
             e.Handled = true;
             var selected = owner.SelectedBrowseCard;
-            var index = -1;
-            for (var candidate = 0; candidate < owner.CardTracks.Count; candidate++)
-            {
-                if (ReferenceEquals(owner.CardTracks[candidate], selected))
-                {
-                    index = candidate;
-                    break;
-                }
-            }
+            var index = owner.GetBrowseCardIndex(selected);
 
             var last = owner.CardTracks.Count - 1;
             var target = e.Key switch

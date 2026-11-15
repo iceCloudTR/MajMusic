@@ -105,7 +105,7 @@ namespace MajMusic.Presentation.Theme
                 }
 
                 SynchronizeControls();
-                var specification = MotionSpec.Tween(TimeSpan.FromMilliseconds(260), ArcEasings.Standard);
+                var specification = MotionSpec.Tween(TimeSpan.FromMilliseconds(260), MusicMotion.InOut);
                 _revealUpdate = _motion.AnimateTo(target, specification);
             }
         }

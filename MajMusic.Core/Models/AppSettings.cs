@@ -8,6 +8,9 @@ namespace MajMusic.Core.Models
         /// <summary>Gets whether the user has explicitly enabled configured online sources.</summary>
         public bool OnlineEnabled { get; init; }
 
+        /// <summary>Gets the saved light, dark or system appearance; existing installations retain dark mode.</summary>
+        public AppearancePreference Appearance { get; init; } = AppearancePreference.Dark;
+
         /// <summary>Gets the configured endpoint selected for explicit online actions.</summary>
         public string? ActiveEndpointId { get; init; }
 

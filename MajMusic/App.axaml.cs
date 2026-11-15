@@ -6,6 +6,7 @@ using MajMusic.Core.Playback;
 using MajMusic.Audio.Desktop;
 using MajMusic.Infrastructure.Application;
 using MajMusic.Infrastructure.Metadata;
+using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
 
 #nullable enable
@@ -27,6 +28,16 @@ namespace MajMusic
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
                 var workspace = new MusicWorkspace();
+                try
+                {
+                    var preferences = workspace.LoadSettingsAsync().GetAwaiter().GetResult();
+                    MajMusicTheme.ApplyAppearance(preferences.Appearance);
+                }
+                catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+                {
+                    System.Diagnostics.Trace.TraceWarning("Startup appearance could not be restored: {0}", exception.GetType().Name);
+                }
+
                 var playback = new PlaybackService(DesktopPlaybackBackendFactory.Create(), resolveAudioPath:
                     (track, cancellationToken) => workspace.ResolveAudioAsync(track, false, cancellationToken));
                 var metadata = new CachedTrackMetadataProvider(new LocalAudioMetadataReader(),

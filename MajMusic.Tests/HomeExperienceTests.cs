@@ -21,6 +21,7 @@ namespace MajMusic.Tests
             await ValidateFeedDuringSearchAsync();
             await ValidateLargeLibraryPublicationAsync();
             await ValidateInterruptedModeLoadAsync();
+            await ValidateLoadingOwnershipAsync();
         }
 
         /// <summary>Publishes a large catalog and its row grouping as complete snapshots instead of one event per song.</summary>
@@ -39,6 +40,14 @@ namespace MajMusic.Tests
                 "The complete catalog must remain available through the virtualized card rows.");
             TestAssert.True(trackChanges == 1 && rowChanges == 1,
                 "A large library must publish exactly one track snapshot and one row snapshot, independent of its song count.");
+            TestAssert.Equal(0, view.MaterializedCardCount,
+                "Publishing a large catalog and grouping its rows must not construct invisible song presentations.");
+            var last = view.CardTracks[^1];
+            TestAssert.True(view.MaterializedCardCount == 1 && view.GetBrowseCardIndex(last) == 23999,
+                "An explicit jump to the final song must materialize only that song and locate it without walking the catalog.");
+            view.SelectedTrack = last.Track;
+            TestAssert.True(ReferenceEquals(last, view.SelectedBrowseCard) && view.MaterializedCardCount == 1,
+                "Selection and its sidebar lookup must not materialize unrelated catalog entries.");
             trackChanges = 0;
             rowChanges = 0;
             view.SelectedPlaylist = view.Playlists.Single(item => item.Id == "ordered");
@@ -46,6 +55,58 @@ namespace MajMusic.Tests
             TestAssert.True(view.Tracks.Select(item => item.Id).SequenceEqual(["local-04", "local-02"])
                 && trackChanges == 1 && rowChanges == 1,
                 "Switching from a large library to a small ordered playlist must replace both snapshots once.");
+        }
+
+        /// <summary>Shows the target's loading state immediately and prevents an obsolete read from hiding its replacement skeleton.</summary>
+        /// <returns>A task representing synchronous loading, request ownership and completion assertions.</returns>
+        private static async Task ValidateLoadingOwnershipAsync()
+        {
+            var workspace = Workspace(5);
+            await using var view = View(workspace, new LibraryExperienceTests.ExperienceBackend());
+            await view.InitializeAsync();
+            var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var first = new TaskCompletionSource<IReadOnlyList<MusicTrack>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var second = new TaskCompletionSource<IReadOnlyList<MusicTrack>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reads = 0;
+            workspace.SearchOverride = (_, _) =>
+            {
+                TestAssert.True(view.IsBrowseLoading, "The loading presentation must already be active when storage starts.");
+                if (Interlocked.Increment(ref reads) == 1)
+                {
+                    firstStarted.TrySetResult();
+                    return first.Task;
+                }
+
+                secondStarted.TrySetResult();
+                return second.Task;
+            };
+            try
+            {
+                var version = view.BrowseTransitionVersion;
+                view.ShowLibraryModeCommand.Execute(null);
+                var obsolete = view.HomeUpdate;
+                TestAssert.True(view.IsBrowseLoading && view.BrowseTransitionVersion > version,
+                    "Choosing a mode must start its surface transition and loading state in the same input callback.");
+                await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+                view.SelectedPlaylist = view.Playlists.Single(item => item.Id == "ordered");
+                view.ShowPlaylistsModeCommand.Execute(null);
+                var current = view.HomeUpdate;
+                await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+                first.SetResult([Track("obsolete", "Old catalog")]);
+                await obsolete.WaitAsync(TimeSpan.FromSeconds(3));
+                TestAssert.True(view.IsBrowseLoading && view.IsPlaylistsMode,
+                    "An obsolete query's completion cannot remove the newer target's skeleton.");
+                second.SetResult(workspace.Library.ToArray());
+                await current.WaitAsync(TimeSpan.FromSeconds(3));
+                TestAssert.True(!view.IsBrowseLoading && view.Tracks.Select(item => item.Id).SequenceEqual(["local-04", "local-02"]),
+                    "Only the latest complete target may finish loading and expose its ordered content.");
+            }
+            finally
+            {
+                first.TrySetResult([]);
+                second.TrySetResult([]);
+            }
         }
 
         /// <summary>Keeps mode navigation available while an earlier catalog read waits and rejects its late result.</summary>

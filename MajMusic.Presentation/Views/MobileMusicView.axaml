@@ -10,6 +10,7 @@
              x:Class="MajMusic.Presentation.Views.MobileMusicView"
              x:Name="MobileRoot"
              x:DataType="vm:MainViewModel"
+             theme:AppearanceBridge.FollowPreference="True"
              Background="{DynamicResource MusicCanvasBrush}">
     <UserControl.Styles>
         <Style Selector="arc|Select">
@@ -202,6 +203,14 @@
                 <StackPanel Spacing="14">
                     <Border Classes="mobilePanel">
                         <StackPanel Spacing="12">
+                            <TextBlock Text="外观" FontSize="17" FontWeight="SemiBold" />
+                            <arc:Select x:Name="MobileAppearancePicker" Size="Medium" Height="44" ItemsSource="{Binding AppearanceOptions}"
+                                        TextSelector="{x:Static converters:MusicSelectLabels.Appearance}"
+                                        SelectedItem="{Binding SelectedAppearanceOption, Mode=TwoWay}" />
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="mobilePanel">
+                        <StackPanel Spacing="12">
                             <TextBlock Text="声音" FontSize="17" FontWeight="SemiBold" />
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                 <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.OutputDevice}" ItemsSource="{Binding OutputDevices}" SelectedItem="{Binding SelectedOutputDevice}" Placeholder="输出设备" IsEnabled="{Binding CanConfigureAudio}" />
@@ -327,6 +336,6 @@
                 </StackPanel>
             </arcm:Sheet>
         </arcm:Page.Overlay>
-        <ContentControl x:Name="MobileSectionHost" Margin="12,8,12,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" theme:MusicMotion.RevealChanges="True" />
+        <theme:MusicSurfaceHost x:Name="MobileSectionHost" Margin="12,8,12,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
     </arcm:Page>
 </UserControl>

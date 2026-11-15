@@ -191,19 +191,20 @@ namespace MajMusic.Tests
         private static async Task ValidateRevealsAsync(Window window, MainView view, MainViewModel model, string output, CancellationToken token)
         {
             var tabs = view.FindControl<TabControl>("MainTabs")!;
+            var page = tabs.GetVisualDescendants().OfType<MusicSurfaceHost>().Single(host => host.Name == "PageSurfaceTransition");
             Tap(window, view.FindControl<ArcButton>("NavigateAccounts")!);
-            var pageFrames = await SampleAsync(window, () => tabs.Opacity, 110, token,
+            var pageFrames = await SampleAsync(window, () => page.TransitionProgress, 110, token,
                 () => SaveFrame(window, Path.Combine(output, "ui-arc-motion-page-middle.png")));
-            await SampleAsync(window, () => tabs.Opacity, 180, token);
-            TestAssert.True(pageFrames.Any(value => value > 0.36 && value < 0.99),
-                "A page change must paint intermediate opacity frames. Page=" + tabs.SelectedIndex + "; frames=" + string.Join(",", pageFrames.Select(value => value.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture))));
-            TestAssert.True(tabs.SelectedIndex == 3 && Math.Abs(tabs.Opacity - 1) < 0.001, "The selected page must settle fully visible.");
+            await SampleAsync(window, () => page.TransitionProgress, 340, token);
+            TestAssert.True(pageFrames.Any(value => value > 0 && value < 0.99),
+                "A page change must paint intermediate whole-surface Arc frames. Page=" + tabs.SelectedIndex + "; frames=" + string.Join(",", pageFrames.Select(value => value.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture))));
+            TestAssert.True(tabs.SelectedIndex == 3 && Math.Abs(page.TransitionProgress - 1) < 0.001 && !page.HasSnapshot && Math.Abs(page.IncomingOffset) < 0.001, "The selected page must settle fully visible.");
             Tap(window, view.FindControl<ArcButton>("NavigateSettings")!);
-            await SampleAsync(window, () => tabs.Opacity, 20, token);
+            await SampleAsync(window, () => page.TransitionProgress, 20, token);
             Tap(window, view.FindControl<ArcButton>("NavigateDirectories")!);
             Tap(window, view.FindControl<ArcButton>("NavigateHome")!);
-            await SampleAsync(window, () => tabs.Opacity, 270, token);
-            TestAssert.True(tabs.SelectedIndex == 0 && Math.Abs(tabs.Opacity - 1) < 0.001, "Rapid page changes must cancel older fades without leaving the latest page translucent.");
+            await SampleAsync(window, () => page.TransitionProgress, 420, token);
+            TestAssert.True(tabs.SelectedIndex == 0 && Math.Abs(page.TransitionProgress - 1) < 0.001 && !page.HasSnapshot, "Rapid page changes must cancel older fades without leaving the latest page translucent.");
             await ValidateSearchExtensionAsync(window, view, model, output, token);
         }
 
@@ -443,21 +444,22 @@ namespace MajMusic.Tests
         private static async Task ValidateResponsiveInterruptionAsync(Window window, MainView view, string output, CancellationToken token)
         {
             var tabs = view.FindControl<TabControl>("MainTabs")!;
+            var page = tabs.GetVisualDescendants().OfType<MusicSurfaceHost>().Single(host => host.Name == "PageSurfaceTransition");
             Tap(window, view.FindControl<ArcButton>("NavigateAccounts")!);
-            await SampleAsync(window, () => tabs.Opacity, 25, token);
+            await SampleAsync(window, () => page.TransitionProgress, 25, token);
             window.Width = 390;
             window.Height = 844;
             Pump(window);
             var mobile = view.GetVisualDescendants().OfType<MobileMusicView>().Single();
-            var host = mobile.FindControl<ContentControl>("MobileSectionHost")!;
+            var host = mobile.FindControl<MusicSurfaceHost>("MobileSectionHost")!;
             view.NavigateToSection(4);
-            var changing = await SampleAsync(window, () => host.Opacity, 110, token,
+            var changing = await SampleAsync(window, () => host.TransitionProgress, 110, token,
                 () => SaveFrame(window, Path.Combine(output, "ui-arc-motion-mobile-page-middle.png")));
-            await SampleAsync(window, () => host.Opacity, 180, token);
-            TestAssert.True(changing.Any(value => value > 0.36 && value < 0.99) && Math.Abs(host.Opacity - 1) < 0.001,
-                "Actual mobile page replacement must render intermediate opacity and then settle fully visible.");
+            await SampleAsync(window, () => host.TransitionProgress, 340, token);
+            TestAssert.True(changing.Any(value => value > 0 && value < 0.99) && Math.Abs(host.TransitionProgress - 1) < 0.001,
+                "Actual mobile page replacement must render intermediate whole-surface Arc frames and settle fully visible.");
             view.NavigateToSection(0);
-            await SampleAsync(window, () => host.Opacity, 270, token);
+            await SampleAsync(window, () => host.TransitionProgress, 420, token);
             var mobileSearch = mobile.GetVisualDescendants().OfType<SearchRevealPanel>().Single(control => control.Name == "MobileSearchReveal");
             var searchHost = (Border)mobileSearch.Children[1];
             var browser = mobile.GetVisualDescendants().OfType<BrowseTracksView>().Single(control => control.Name == "MobileSongBrowser");
@@ -493,12 +495,12 @@ namespace MajMusic.Tests
             TestAssert.True(!search.IsVisible && mobileSearch.RevealProgress <= 0.001 && Math.Abs(mobileSearch.DisplayedSearchWidth - 44) <= 1,
                 "Closing phone search must retract continuously to its icon without moving the browser.");
             view.NavigateToSection(2);
-            await SampleAsync(window, () => host.Opacity, 25, token);
+            await SampleAsync(window, () => host.TransitionProgress, 25, token);
             window.Width = 1100;
             window.Height = 760;
-            await SampleAsync(window, () => tabs.Opacity, 270, token);
-            TestAssert.True(!view.IsMobileLayout && view.SelectedSectionIndex == 2 && Math.Abs(tabs.Opacity - 1) < 0.001
-                && Math.Abs(host.Opacity - 1) < 0.001, "Resizing away during page motion must cancel detached animations without leaving either presentation translucent.");
+            await SampleAsync(window, () => page.TransitionProgress, 420, token);
+            TestAssert.True(!view.IsMobileLayout && view.SelectedSectionIndex == 2 && Math.Abs(page.TransitionProgress - 1) < 0.001
+                && Math.Abs(host.TransitionProgress - 1) < 0.001, "Resizing away during page motion must cancel detached animations without leaving either presentation translucent.");
         }
 
         /// <summary>Samples real rendering frames while the regular animation clock continues advancing.</summary>

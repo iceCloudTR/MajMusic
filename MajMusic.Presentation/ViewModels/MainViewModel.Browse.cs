@@ -36,11 +36,13 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Gets the number of songs in the current browsing snapshot.</summary>
         public string BrowseSummary => $"{Tracks.Count} 首";
         /// <summary>Gets the inspected song when it belongs to the current browsing snapshot.</summary>
-        public MusicTrack? SelectedBrowseTrack => Tracks.FirstOrDefault(track => track.Id == SelectedTrack?.Id);
+        public MusicTrack? SelectedBrowseTrack => SelectedTrack is { } selected
+            && _cardIndexes.TryGetValue((selected.Id, selected.SourceId, selected.EndpointId), out var index) ? Tracks[index] : null;
         /// <summary>Gets or selects the artwork-card presentation for the inspected song.</summary>
         public SongCardViewModel? SelectedBrowseCard
         {
-            get => CardTracks.FirstOrDefault(card => card.Track.Id == SelectedTrack?.Id);
+            get => SelectedTrack is { } selected && _cardIndexes.TryGetValue((selected.Id, selected.SourceId, selected.EndpointId), out var index)
+                ? CardTracks[index] : null;
             set
             {
                 if (value is not null)
@@ -71,19 +73,21 @@ namespace MajMusic.Presentation.ViewModels
         /// <param name="appendRows">Whether to retain existing containers when extending a recommendation feed.</param>
         private void RefreshBrowseRows(bool appendRows = false)
         {
-            var next = CardTracks.Chunk(_browseColumns).ToArray();
-            var rows = new SongCardRow[next.Length];
+            var count = (CardTracks.Count + _browseColumns - 1) / _browseColumns;
+            var rows = new SongCardRow[count];
             var unchangedPrefix = true;
-            for (var index = 0; index < next.Length; index++)
+            for (var index = 0; index < count; index++)
             {
+                var start = index * _browseColumns;
+                var length = Math.Min(_browseColumns, CardTracks.Count - start);
                 if (index < BrowseRows.Count && BrowseRows[index].Columns == _browseColumns
-                    && BrowseRows[index].Tracks.SequenceEqual(next[index]))
+                    && BrowseRows[index].Tracks is CardSlice previous && previous.Matches(CardTracks, start, length))
                 {
                     rows[index] = BrowseRows[index];
                     continue;
                 }
 
-                rows[index] = new SongCardRow(next[index], _browseColumns);
+                rows[index] = new SongCardRow(new CardSlice(CardTracks, start, length), _browseColumns);
                 unchangedPrefix &= index >= BrowseRows.Count;
             }
 

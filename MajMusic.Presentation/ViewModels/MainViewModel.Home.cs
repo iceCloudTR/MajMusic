@@ -33,6 +33,12 @@ namespace MajMusic.Presentation.ViewModels
         private CancellationTokenSource? _homeUpdateCancellation;
         /// <summary>Exposes completion of the latest merged home update.</summary>
         private Task _homeUpdate = Task.CompletedTask;
+        /// <summary>Identifies the surface transition started by the latest browsing intent.</summary>
+        private long _browseTransitionVersion;
+        /// <summary>Identifies the only operation allowed to finish the current loading presentation.</summary>
+        private long _browseLoadOwner;
+        /// <summary>Retains the current target's loading state independently of the displayed catalog.</summary>
+        private bool _isBrowseLoading;
         /// <summary>Preserves finite feeds separately for each source/account choice during this view lifetime.</summary>
         private readonly Dictionary<string, RecommendationSnapshot> _homeSnapshots = new(StringComparer.Ordinal);
         /// <summary>Identifies the account whose cached feed is currently attached.</summary>
@@ -88,6 +94,10 @@ namespace MajMusic.Presentation.ViewModels
         }
         /// <summary>Gets the latest observed mode or search update.</summary>
         public Task HomeUpdate => _homeUpdate;
+        /// <summary>Gets whether the latest browsing target is still preparing its content.</summary>
+        public bool IsBrowseLoading => _isBrowseLoading;
+        /// <summary>Gets the transition generation published immediately when the user chooses new content.</summary>
+        public long BrowseTransitionVersion => _browseTransitionVersion;
         /// <summary>Gets the command selecting recommendations.</summary>
         public AsyncCommand ShowRecommendationsModeCommand { get; private set; } = null!;
         /// <summary>Gets the command selecting playlists.</summary>
@@ -157,6 +167,7 @@ namespace MajMusic.Presentation.ViewModels
 
             _homeVersion++;
             _homeUpdateCancellation?.Cancel();
+            BeginBrowseLoad(true);
             NotifyHomeState();
         }
 
@@ -176,6 +187,7 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             _homeVersion++;
+            BeginBrowseLoad(true);
             NotifyHomeState();
             QueueHomeUpdate(IsSearching);
         }
@@ -185,6 +197,7 @@ namespace MajMusic.Presentation.ViewModels
         private async Task ExecuteSearchAsync()
         {
             _homeUpdateCancellation?.Cancel();
+            BeginBrowseLoad(true);
             if (!string.IsNullOrWhiteSpace(SearchText))
             {
                 _isSearchExpanded = true;
@@ -218,6 +231,7 @@ namespace MajMusic.Presentation.ViewModels
 
             var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             _homeUpdateCancellation = cancellation;
+            var loadingOwner = BeginBrowseLoad(false);
             _homeUpdate = RunTrackedAsync(async () =>
             {
                 try
@@ -227,7 +241,7 @@ namespace MajMusic.Presentation.ViewModels
                         await Task.Delay(180, cancellation.Token);
                     }
 
-                    await ReloadLibraryCoreAsync(cancellation.Token);
+                    await ReloadLibraryCoreAsync(cancellation.Token, manageLoading: false);
                     if (IsRecommendationsMode)
                     {
                         await EnsureHomeRecommendationsAsync();
@@ -243,6 +257,7 @@ namespace MajMusic.Presentation.ViewModels
                 }
                 finally
                 {
+                    FinishBrowseLoad(loadingOwner);
                     if (ReferenceEquals(_homeUpdateCancellation, cancellation))
                     {
                         _homeUpdateCancellation = null;
@@ -251,6 +266,38 @@ namespace MajMusic.Presentation.ViewModels
                     cancellation.Dispose();
                 }
             });
+        }
+
+        /// <summary>Starts a target presentation before storage, metadata or network work can delay its first frame.</summary>
+        /// <param name="transition">Whether the visible surface should begin a new transition.</param>
+        /// <returns>The owner allowed to finish this loading presentation.</returns>
+        private long BeginBrowseLoad(bool transition)
+        {
+            var owner = ++_browseLoadOwner;
+            if (transition)
+            {
+                _browseTransitionVersion++;
+                OnPropertyChanged(nameof(BrowseTransitionVersion));
+            }
+
+            if (!_isBrowseLoading)
+            {
+                _isBrowseLoading = true;
+                OnPropertyChanged(nameof(IsBrowseLoading));
+            }
+
+            return owner;
+        }
+
+        /// <summary>Finishes loading only when this operation still owns the latest presentation.</summary>
+        /// <param name="owner">The owner returned when the load started.</param>
+        private void FinishBrowseLoad(long owner)
+        {
+            if (owner == _browseLoadOwner && _isBrowseLoading)
+            {
+                _isBrowseLoading = false;
+                OnPropertyChanged(nameof(IsBrowseLoading));
+            }
         }
 
         /// <summary>Updates the attached feed after the selected source account changes.</summary>
@@ -269,6 +316,7 @@ namespace MajMusic.Presentation.ViewModels
                 _homeVersion++;
                 if (IsRecommendationsMode)
                 {
+                    BeginBrowseLoad(true);
                     QueueHomeUpdate(false);
                 }
             }

@@ -14,10 +14,10 @@ namespace MajMusic.Presentation.ViewModels
         /// <param name="progress">The audio-only transfer notification marshaled to the presentation thread.</param>
         private void ApplyCardDownloadProgress(AudioDownloadProgress progress)
         {
-            var matching = CardTracks.Where(card => MatchesCardDownload(card.Track, progress)).ToArray();
+            var matching = _cards.Values.Where(card => MatchesCardDownload(card.Track, progress)).ToArray();
             var owner = progress.SourceId is { } source
                 ? new CardDownloadOwner(progress.TrackId, source, progress.EndpointId, progress.Revision)
-                : matching.FirstOrDefault() is { } first ? DownloadOwner(first.Track) : null;
+                : Tracks.FirstOrDefault(track => MatchesCardDownload(track, progress)) is { } first ? DownloadOwner(first) : null;
             if (owner is null)
             {
                 return;
@@ -78,7 +78,7 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             var checks = new List<Task>();
-            foreach (var card in CardTracks)
+            foreach (var card in _cards.Values.ToArray())
             {
                 card.NotifyDownloadState();
                 checks.Add(card.RecheckDownloadAvailabilityAsync());
