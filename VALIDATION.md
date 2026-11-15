@@ -17,6 +17,14 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- playback account-ui
 
 界面测试使用真实 Avalonia 控件验证均分按钮、居中播放控制、封面卡片、虚拟化滚动和键盘选择，并生成深色、浅色、紧凑窗口和缩放渲染，结果位于 `.work/`。
 
+下载与播放准备的专项回归：
+
+```sh
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- media-cache-concurrency transport-responsiveness audio-download-progress card-download-ui card-download-layout
+```
+
+覆盖慢速传输期间切歌与取消、真实字节进度、缓存命中，以及卡片由下向上的填充、完成状态和独立选中描边。
+
 ## 原生检查
 
 ```sh

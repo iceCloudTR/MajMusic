@@ -342,9 +342,8 @@ namespace MajMusic.Tests
             var next = service.NextAsync(cancellation.Token);
             await resolving.Task.WaitAsync(TimeSpan.FromSeconds(3));
             using var queuedCancellation = new CancellationTokenSource();
-            var queuedNext = service.NextAsync(queuedCancellation.Token);
             queuedCancellation.Cancel();
-            await TestAssert.ThrowsAsync<OperationCanceledException>(() => queuedNext);
+            await TestAssert.ThrowsAsync<OperationCanceledException>(() => service.NextAsync(queuedCancellation.Token));
             cancellation.Cancel();
             await TestAssert.ThrowsAsync<OperationCanceledException>(() => next);
             TestAssert.Equal("active", service.Queue.Current?.Id, "Canceled preparation must restore the original queue position.");

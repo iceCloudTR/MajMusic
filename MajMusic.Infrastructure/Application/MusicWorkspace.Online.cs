@@ -239,13 +239,15 @@ namespace MajMusic.Infrastructure.Application
         /// <param name="cover">Whether to resolve the cover.</param>
         /// <param name="keepOffline">Whether to pin the downloaded file.</param>
         /// <param name="cancellationToken">Cancels resolution.</param>
+        /// <param name="progress">Optional actual audio transfer observations; cover operations omit this reporter.</param>
         /// <returns>The complete local media path.</returns>
-        private async Task<string> GetMediaAsync(MusicTrack track, bool cover, bool keepOffline, CancellationToken cancellationToken)
+        private async Task<string> GetMediaAsync(MusicTrack track, bool cover, bool keepOffline, CancellationToken cancellationToken,
+            IProgress<MediaTransferProgress>? progress = null)
         {
             var resource = (cover ? track.Cover : track.Audio)!;
             if (track.RemoteId is null || !IsOnline)
             {
-                return await _cache.GetAsync(resource, keepOffline, cancellationToken).ConfigureAwait(false);
+                return await _cache.GetAsync(resource, keepOffline, cancellationToken, progress: progress).ConfigureAwait(false);
             }
 
             var connection = GetConnection(GetEndpointForTrack(track));
@@ -253,10 +255,10 @@ namespace MajMusic.Infrastructure.Application
             var server = await connection.Provider.GetServerAsync(lifetime.Token).ConfigureAwait(false);
             if (server.Id != track.SourceId)
             {
-                return await _cache.GetAsync(resource with { RemoteUri = null }, keepOffline, lifetime.Token).ConfigureAwait(false);
+                return await _cache.GetAsync(resource with { RemoteUri = null }, keepOffline, lifetime.Token, progress: progress).ConfigureAwait(false);
             }
 
-            return await _cache.GetAsync(resource, keepOffline, lifetime.Token, connection.MediaClient).ConfigureAwait(false);
+            return await _cache.GetAsync(resource, keepOffline, lifetime.Token, connection.MediaClient, progress).ConfigureAwait(false);
         }
 
         /// <summary>Persists a recommendation page while retaining already parsed or downloaded data for its revision.</summary>

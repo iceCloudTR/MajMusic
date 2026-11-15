@@ -6,7 +6,7 @@ namespace MajMusic.Core.Playback
 {
     /// <summary>Serializes queue and platform-audio commands without depending on a user-interface lifecycle.</summary>
     /// <remarks>The host owns this service and disposes it when its desktop process or mobile media service ends.</remarks>
-    public sealed class PlaybackService : IAsyncDisposable
+    public sealed partial class PlaybackService : IAsyncDisposable
     {
         /// <summary>Owns the actual audio resource and media clock.</summary>
         private readonly IPlaybackBackend _backend;
@@ -57,6 +57,7 @@ namespace MajMusic.Core.Playback
             ArgumentNullException.ThrowIfNull(backend);
             _backend = backend;
             Queue = queue ?? new PlaybackQueue();
+            _committedQueue = Queue.CaptureState();
             _resolveAudioPath = resolveAudioPath ?? ResolveLocalPathAsync;
             _backend.StateChanged += OnBackendStateChanged;
             _notificationWorker = Task.Run(ProcessBackendNotificationsAsync);
@@ -75,7 +76,7 @@ namespace MajMusic.Core.Playback
         public PlaybackCapabilities Capabilities => _backend.Capabilities;
 
         /// <summary>Gets the authoritative media state, enriched with the loaded library entry.</summary>
-        public PlaybackSnapshot Snapshot => Volatile.Read(ref _stateOverride) ?? _backend.Snapshot with { Track = _loadedTrack };
+        public PlaybackSnapshot Snapshot => Volatile.Read(ref _stateOverride) ?? _backend.Snapshot with { Track = Volatile.Read(ref _loadedTrack) };
 
         /// <summary>Occurs when playback state changes, potentially on a backend thread.</summary>
         public event EventHandler? StateChanged;
@@ -102,11 +103,11 @@ namespace MajMusic.Core.Playback
         public Task SetQueueAsync(IEnumerable<MusicTrack> tracks, int startIndex = 0, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(tracks);
-            return ExecuteAsync(token => ChangeTrackAsync(() =>
+            return ChangeTrackAsync(() =>
             {
                 Queue.SetTracks(tracks, startIndex);
                 return Queue.Current;
-            }, true, token), cancellationToken);
+            }, true, cancellationToken);
         }
 
         /// <summary>Advances manually, independently of single-track repeat.</summary>
@@ -114,7 +115,7 @@ namespace MajMusic.Core.Playback
         /// <returns>A task representing the completed transition.</returns>
         public Task NextAsync(CancellationToken cancellationToken = default)
         {
-            return ExecuteAsync(token => ChangeTrackAsync(() => Queue.MoveNext(), true, token), cancellationToken);
+            return ChangeTrackAsync(() => Queue.MoveNext(), true, cancellationToken);
         }
 
         /// <summary>Returns to an earlier entry without stopping when no previous entry exists.</summary>
@@ -122,7 +123,7 @@ namespace MajMusic.Core.Playback
         /// <returns>A task representing the completed transition.</returns>
         public Task PreviousAsync(CancellationToken cancellationToken = default)
         {
-            return ExecuteAsync(token => ChangeTrackAsync(Queue.MovePrevious, false, token), cancellationToken);
+            return ChangeTrackAsync(Queue.MovePrevious, false, cancellationToken);
         }
 
         /// <summary>Pauses the loaded audio.</summary>
@@ -130,11 +131,30 @@ namespace MajMusic.Core.Playback
         /// <returns>A task representing the completed pause.</returns>
         public Task PauseAsync(CancellationToken cancellationToken = default)
         {
+            var generation = CancelPreparation(cancellationToken);
             return ExecuteAsync(async token =>
             {
+                if (!IsCurrentIntent(generation))
+                {
+                    return;
+                }
+
                 EnsureAvailable();
-                await _backend.PauseAsync(token).ConfigureAwait(false);
-                _stateOverride = null;
+                var previousSnapshot = Snapshot;
+                if (_loadedTrack is not null && _backend.Snapshot.State == PlaybackState.Playing)
+                {
+                    await _backend.PauseAsync(token).ConfigureAwait(false);
+                }
+
+                lock (_transitionGate)
+                {
+                    if (IsCurrentIntent(generation))
+                    {
+                        _stateOverride = _loadedTrack is null || _backend.Snapshot.State is not (PlaybackState.Playing or PlaybackState.Paused)
+                            ? previousSnapshot with { State = PlaybackState.Stopped, Track = _loadedTrack, Error = null }
+                            : null;
+                    }
+                }
             }, cancellationToken);
         }
 
@@ -143,8 +163,22 @@ namespace MajMusic.Core.Playback
         /// <returns>A task representing resumed playback.</returns>
         public Task ResumeAsync(CancellationToken cancellationToken = default)
         {
+            var generation = CancelPreparation(cancellationToken);
+            lock (_transitionGate)
+            {
+                if (IsCurrentIntent(generation) && _loadedTrack is null && Queue.Current is not null)
+                {
+                    return ChangeTrackAsync(() => Queue.Current, true, cancellationToken);
+                }
+            }
+
             return ExecuteAsync(async token =>
             {
+                if (!IsCurrentIntent(generation))
+                {
+                    return;
+                }
+
                 EnsureAvailable();
                 if (_loadedTrack is null)
                 {
@@ -152,7 +186,13 @@ namespace MajMusic.Core.Playback
                 }
 
                 await _backend.PlayAsync(token).ConfigureAwait(false);
-                _stateOverride = null;
+                lock (_transitionGate)
+                {
+                    if (IsCurrentIntent(generation))
+                    {
+                        _stateOverride = null;
+                    }
+                }
             }, cancellationToken);
         }
 
@@ -161,22 +201,33 @@ namespace MajMusic.Core.Playback
         /// <returns>A task representing the completed stop.</returns>
         public Task StopAsync(CancellationToken cancellationToken = default)
         {
+            var generation = CancelPreparation(cancellationToken);
             return ExecuteAsync(async token =>
             {
+                if (!IsCurrentIntent(generation))
+                {
+                    return;
+                }
+
                 var previousSnapshot = Snapshot;
-                Interlocked.Increment(ref _generation);
                 if (_loadedTrack is not null)
                 {
                     await _backend.StopAsync(token).ConfigureAwait(false);
                 }
 
-                _stateOverride = previousSnapshot with
+                lock (_transitionGate)
                 {
-                    State = PlaybackState.Stopped,
-                    Track = _loadedTrack,
-                    Position = TimeSpan.Zero,
-                    Error = null
-                };
+                    if (IsCurrentIntent(generation))
+                    {
+                        _stateOverride = previousSnapshot with
+                        {
+                            State = PlaybackState.Stopped,
+                            Track = _loadedTrack,
+                            Position = TimeSpan.Zero,
+                            Error = null
+                        };
+                    }
+                }
             }, cancellationToken);
         }
 
@@ -221,6 +272,14 @@ namespace MajMusic.Core.Playback
 
             return ExecuteAsync(async token =>
             {
+                lock (_transitionGate)
+                {
+                    if (_preparation is not null)
+                    {
+                        return;
+                    }
+                }
+
                 if (expectedTrackId is not null && _loadedTrack?.Id != expectedTrackId)
                 {
                     return;
@@ -250,7 +309,14 @@ namespace MajMusic.Core.Playback
         {
             return ExecuteAsync(_ =>
             {
-                Queue.Shuffle = enabled;
+                lock (_transitionGate)
+                {
+                    Queue.Shuffle = enabled;
+                    if (_preparation is null)
+                    {
+                        _committedQueue = Queue.CaptureState();
+                    }
+                }
                 return Task.CompletedTask;
             }, cancellationToken);
         }
@@ -269,7 +335,14 @@ namespace MajMusic.Core.Playback
 
             return ExecuteAsync(_ =>
             {
-                Queue.RepeatMode = mode;
+                lock (_transitionGate)
+                {
+                    Queue.RepeatMode = mode;
+                    if (_preparation is null)
+                    {
+                        _committedQueue = Queue.CaptureState();
+                    }
+                }
                 return Task.CompletedTask;
             }, cancellationToken);
         }
@@ -286,6 +359,13 @@ namespace MajMusic.Core.Playback
             _backend.StateChanged -= OnBackendStateChanged;
             await _lifetime.CancelAsync().ConfigureAwait(false);
             await _notificationWorker.ConfigureAwait(false);
+            Task[] preparations;
+            lock (_transitionGate)
+            {
+                preparations = _preparations.ToArray();
+            }
+
+            await Task.WhenAll(preparations).ConfigureAwait(false);
             await _commands.WaitAsync().ConfigureAwait(false);
             try
             {
@@ -321,77 +401,6 @@ namespace MajMusic.Core.Playback
                 _commands.Release();
                 RaiseStateChanged();
                 SignalBackendNotification();
-            }
-        }
-
-        /// <summary>Transitions one queue entry and rolls back navigation if preparation fails.</summary>
-        /// <param name="select">Selects the next requested queue entry.</param>
-        /// <param name="stopAtBoundary">Whether a null selection stops playback.</param>
-        /// <param name="cancellationToken">Cancels resolution, preparation or playback.</param>
-        /// <returns>A task representing the completed transition.</returns>
-        private async Task ChangeTrackAsync(Func<MusicTrack?> select, bool stopAtBoundary, CancellationToken cancellationToken)
-        {
-            EnsureAvailable();
-            var previousQueue = Queue.CaptureState();
-            var previousOverride = Volatile.Read(ref _stateOverride);
-            var previousSnapshot = Snapshot;
-            var openingStarted = false;
-            var resolutionStarted = false;
-            Interlocked.Increment(ref _generation);
-            try
-            {
-                var selected = select();
-                if (selected is null)
-                {
-                    if (stopAtBoundary)
-                    {
-                        if (_loadedTrack is not null)
-                        {
-                            await _backend.StopAsync(cancellationToken).ConfigureAwait(false);
-                        }
-
-                        _stateOverride = previousSnapshot with
-                        {
-                            State = PlaybackState.Stopped,
-                            Track = _loadedTrack,
-                            Position = TimeSpan.Zero,
-                            Error = null
-                        };
-                    }
-
-                    return;
-                }
-
-                _stateOverride = previousSnapshot with { State = PlaybackState.Loading, Track = _loadedTrack, Error = null };
-                RaiseStateChanged();
-                resolutionStarted = true;
-                var path = await _resolveAudioPath(selected, cancellationToken).ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                openingStarted = true;
-                await _backend.OpenAsync(path, cancellationToken).ConfigureAwait(false);
-                await _backend.PlayAsync(cancellationToken).ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                _loadedTrack = selected;
-                _stateOverride = null;
-            }
-            catch (Exception exception)
-            {
-                Queue.RestoreState(previousQueue);
-                if (openingStarted || (resolutionStarted && exception is not OperationCanceledException))
-                {
-                    await TryStopAfterFailureAsync().ConfigureAwait(false);
-                }
-
-                _stateOverride = exception is OperationCanceledException && !openingStarted
-                    ? previousOverride
-                    : previousSnapshot with
-                    {
-                        State = exception is OperationCanceledException ? PlaybackState.Stopped : PlaybackState.Failed,
-                        Track = _loadedTrack,
-                        Position = TimeSpan.Zero,
-                        Error = exception is OperationCanceledException ? null : "The audio resource could not be prepared."
-                    };
-                throw;
             }
         }
 
@@ -464,15 +473,9 @@ namespace MajMusic.Core.Playback
 
                         var generation = Interlocked.Read(ref _generation);
                         if (_backend.Snapshot.State == PlaybackState.Completed
-                            && Volatile.Read(ref _stateOverride)?.State is not (PlaybackState.Failed or PlaybackState.Stopped))
+                            && Volatile.Read(ref _stateOverride)?.State is not (PlaybackState.Failed or PlaybackState.Stopped or PlaybackState.Loading))
                         {
-                            await ExecuteAsync(async token =>
-                            {
-                                if (generation == Interlocked.Read(ref _generation) && _backend.Snapshot.State == PlaybackState.Completed)
-                                {
-                                    await ChangeTrackAsync(() => Queue.MoveNext(true), true, token).ConfigureAwait(false);
-                                }
-                            }, _lifetime.Token).ConfigureAwait(false);
+                            await ChangeTrackAsync(() => Queue.MoveNext(true), true, _lifetime.Token, generation).ConfigureAwait(false);
                         }
                         else
                         {
@@ -480,9 +483,12 @@ namespace MajMusic.Core.Playback
                             RaiseStateChanged();
                         }
                     }
-                    catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+                    catch (OperationCanceledException)
                     {
-                        break;
+                        if (_lifetime.IsCancellationRequested)
+                        {
+                            break;
+                        }
                     }
                     catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
                     {
@@ -490,13 +496,7 @@ namespace MajMusic.Core.Playback
                     }
                     catch (Exception)
                     {
-                        _stateOverride = Snapshot with
-                        {
-                            State = PlaybackState.Failed,
-                            Track = _loadedTrack,
-                            Error = "The next audio resource could not be prepared."
-                        };
-                        RaiseStateChanged();
+                        // The transition publishes its own failure without overwriting a newer user intent.
                     }
                 }
             }

@@ -13,6 +13,7 @@
                     <SolidColorBrush x:Key="MusicAccentBrush" Color="#7AD8C1" />
                     <SolidColorBrush x:Key="MusicAccentTextBrush" Color="#102820" />
                     <SolidColorBrush x:Key="MusicSelectionBrush" Color="#243E44" />
+                    <SolidColorBrush x:Key="MusicDownloadBrush" Color="#2C465F" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Light">
                     <SolidColorBrush x:Key="MusicCanvasBrush" Color="#F4F6F9" />
@@ -24,6 +25,7 @@
                     <SolidColorBrush x:Key="MusicAccentBrush" Color="#177F71" />
                     <SolidColorBrush x:Key="MusicAccentTextBrush" Color="#FFFFFF" />
                     <SolidColorBrush x:Key="MusicSelectionBrush" Color="#E0F0EE" />
+                    <SolidColorBrush x:Key="MusicDownloadBrush" Color="#D8E8F4" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>

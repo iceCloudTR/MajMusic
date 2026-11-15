@@ -108,13 +108,13 @@ namespace MajMusic.Presentation.ViewModels
                 QueueAudioSettingsUpdate();
                 await AudioSettingsUpdate;
             }, () => CanConfigureAudio);
-            TogglePlayPauseCommand = CreateCommand(async () =>
+            TogglePlayPauseCommand = CreateTransportCommand(async () =>
             {
-                if (_playback.Snapshot.State == PlaybackState.Playing)
+                if (_playback.Snapshot.State is PlaybackState.Playing or PlaybackState.Loading)
                 {
                     await _playback.PauseAsync(_lifetime.Token);
                 }
-                else if (_playback.Snapshot.Track is not null
+                else if ((_playback.Snapshot.Track is not null || _playback.Queue.Current is not null)
                     && _playback.Snapshot.State is PlaybackState.Paused or PlaybackState.Stopped or PlaybackState.Completed)
                 {
                     await _playback.ResumeAsync(_lifetime.Token);

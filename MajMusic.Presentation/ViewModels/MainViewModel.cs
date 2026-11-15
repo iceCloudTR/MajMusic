@@ -120,10 +120,10 @@ namespace MajMusic.Presentation.ViewModels
             SynchronizeCommand = CreateCommand(SynchronizeAsync, () => OnlineEnabled);
             DownloadCommand = CreateCommand(DownloadAsync, () => OnlineEnabled && SelectedTrack is not null);
             ClearCacheCommand = CreateCommand(ClearCacheAsync);
-            PlayCommand = CreateCommand(PlayAsync, () => CanPlay && (SelectedTrack is not null || CanResume));
-            PauseCommand = CreateCommand(() => _playback.PauseAsync(_lifetime.Token), () => CanPlay && _playbackSnapshot.State == PlaybackState.Playing);
-            NextCommand = CreateCommand(() => _playback.NextAsync(_lifetime.Token), () => CanPlay && _playback.Queue.Tracks.Count > 0);
-            PreviousCommand = CreateCommand(() => _playback.PreviousAsync(_lifetime.Token), () => CanPlay && _playback.Queue.Tracks.Count > 0);
+            PlayCommand = CreateTransportCommand(PlayAsync, () => CanPlay && (SelectedTrack is not null || CanResume));
+            PauseCommand = CreateTransportCommand(() => _playback.PauseAsync(_lifetime.Token), () => CanPlay && _playbackSnapshot.State is PlaybackState.Playing or PlaybackState.Loading);
+            NextCommand = CreateTransportCommand(() => _playback.NextAsync(_lifetime.Token), () => CanPlay && _playback.Queue.Tracks.Count > 0);
+            PreviousCommand = CreateTransportCommand(() => _playback.PreviousAsync(_lifetime.Token), () => CanPlay && _playback.Queue.Tracks.Count > 0);
             ToggleFavoriteCommand = CreateCommand(ToggleFavoriteAsync, () => SelectedTrack is not null);
             OpenFavoritesCommand = CreateCommand(OpenFavoritesAsync);
             RescanCommand = CreateCommand(RescanAsync, () => _settings.LocalDirectorySources.Count > 0);
@@ -133,6 +133,7 @@ namespace MajMusic.Presentation.ViewModels
             InitializeEndpointCardCommands();
             InitializeDirectoryCommands();
             InitializeSettingsCommands();
+            InitializeAudioDownloadProgress();
             InitializeHomeCommands();
             InitializePanelPagingCommands();
             InitializePlaybackModeCommands();
@@ -220,7 +221,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Gets a truthful playback availability hint.</summary>
         public string PlaybackHint => _playbackSnapshot.Error ?? (CanPlay ? string.Empty : "音频播放组件不可用");
         /// <summary>Gets whether the current known media timeline supports user seeking.</summary>
-        public bool CanSeek => IsIdle && HasSeekableMedia;
+        public bool CanSeek => !Volatile.Read(ref _isDisposing) && HasSeekableMedia;
         /// <summary>Gets whether the user currently owns a timeline preview.</summary>
         public bool IsSeeking => _isSeeking;
         /// <summary>Gets a nonzero slider maximum while unknown durations remain disabled.</summary>
@@ -448,7 +449,8 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A task representing the playback command.</returns>
         public Task PlaySelectedAsync()
         {
-            return RunBusyAsync(StartSelectedTrackAsync);
+            CancelSeek();
+            return RunTransportAsync(StartSelectedTrackAsync);
         }
 
         /// <summary>Captures the current media and starts a user-owned timeline preview.</summary>
@@ -468,6 +470,8 @@ namespace MajMusic.Presentation.ViewModels
                 }
 
                 _seekVersion++;
+                _pendingSeek = null;
+                _seekCancellation?.Cancel();
                 _seekTrackId = _playbackSnapshot.Track!.Id;
                 _seekPreviewSeconds = ClampPosition(_playbackSnapshot.Position.TotalSeconds);
                 _seekInvalidated = false;
@@ -487,6 +491,7 @@ namespace MajMusic.Presentation.ViewModels
                 _isSeeking = false;
                 _seekInvalidated = false;
                 _seekTrackId = null;
+                _pendingSeek = null;
                 _seekCancellation?.Cancel();
             }
 
@@ -497,9 +502,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A task representing the observed seek, or no action for a canceled gesture.</returns>
         public Task CommitSeekAsync()
         {
-            string? trackId;
-            double seconds;
-            long version;
+            Task operation;
             lock (_seekGate)
             {
                 if (!_isSeeking)
@@ -508,43 +511,20 @@ namespace MajMusic.Presentation.ViewModels
                 }
 
                 _isSeeking = false;
-                trackId = _seekTrackId;
-                seconds = _seekPreviewSeconds;
-                version = _seekVersion;
+                _pendingSeek = new SeekRequest(_seekTrackId, _seekPreviewSeconds, _seekVersion);
+                _seekCancellation?.Cancel();
+                if (!_seekWorkerRunning)
+                {
+                    _seekWorkerRunning = true;
+                    var workerId = ++_seekWorkerId;
+                    _seekWorker = RunTransportAsync(() => RunSeekWorkerAsync(workerId));
+                }
+
+                operation = _seekWorker;
             }
 
             NotifyTimeline();
-            return RunBusyAsync(async () =>
-            {
-                using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-                lock (_seekGate)
-                {
-                    if (_seekInvalidated || version != _seekVersion || trackId is null
-                        || _playback.Snapshot.Track?.Id != trackId || !HasSeekableMedia)
-                    {
-                        return;
-                    }
-
-                    _seekCancellation = cancellation;
-                }
-
-                try
-                {
-                    await _playback.SeekAsync(TimeSpan.FromSeconds(seconds), trackId, cancellation.Token);
-                }
-                finally
-                {
-                    lock (_seekGate)
-                    {
-                        if (ReferenceEquals(_seekCancellation, cancellation))
-                        {
-                            _seekCancellation = null;
-                        }
-                    }
-
-                    NotifyTimeline();
-                }
-            });
+            return operation;
         }
 
         /// <summary>Loads only the selected cover and cancels stale selection requests.</summary>
@@ -737,13 +717,18 @@ namespace MajMusic.Presentation.ViewModels
         {
             if (!Volatile.Read(ref _isDisposing))
             {
-                Status = exception is HttpRequestException request ? request.StatusCode switch
+                Status = exception switch
                 {
-                    System.Net.HttpStatusCode.Unauthorized => "请重新登录",
-                    System.Net.HttpStatusCode.Forbidden => "当前账号无法访问",
-                    System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.NotImplemented => "此接入点未提供这项功能",
-                    _ => $"连接未完成：{request.Message}"
-                } : $"操作未完成：{exception.Message}";
+                    TimeoutException => "下载超时",
+                    HttpRequestException request => request.StatusCode switch
+                    {
+                        System.Net.HttpStatusCode.Unauthorized => "请重新登录",
+                        System.Net.HttpStatusCode.Forbidden => "当前账号无法访问",
+                        System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.NotImplemented => "此接入点未提供这项功能",
+                        _ => $"连接未完成：{request.Message}"
+                    },
+                    _ => $"操作未完成：{exception.Message}"
+                };
             }
         }
 
@@ -772,6 +757,7 @@ namespace MajMusic.Presentation.ViewModels
         private async Task DisposeCoreAsync(Task[] operations)
         {
             _lifetime.Cancel();
+            DisposeAudioDownloadProgress();
             foreach (var card in EndpointCards)
             {
                 card.Dispose();
@@ -1271,6 +1257,7 @@ namespace MajMusic.Presentation.ViewModels
         private async Task ClearCacheAsync()
         {
             await _workspace.ClearCacheAsync(_lifetime.Token);
+            await ResetCardDownloadProgress();
             Status = "缓存已清理";
         }
 

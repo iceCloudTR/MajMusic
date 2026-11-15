@@ -11,6 +11,8 @@ namespace MajMusic.Presentation.ViewModels
         private CoverThumbnailCache? _cardCovers;
         /// <summary>Preserves one card for each currently browsed source-scoped music identity.</summary>
         private Dictionary<(string Id, string Source, string? Endpoint), SongCardViewModel> _cards = new();
+        /// <summary>Retains canceled checks belonging to cards removed from the query until they finish.</summary>
+        private readonly List<Task> _retiredCardResources = new();
 
         /// <summary>Gets current music cards in the same order as the browsed music collection.</summary>
         public IReadOnlyList<SongCardViewModel> CardTracks { get; private set; } = Array.Empty<SongCardViewModel>();
@@ -18,6 +20,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Reconciles the browsed entries in one binding update while reusing unchanged card instances.</summary>
         private void RefreshCardTracks()
         {
+            _retiredCardResources.RemoveAll(task => task.IsCompletedSuccessfully);
             var next = new Dictionary<(string, string, string?), SongCardViewModel>();
             var ordered = new List<SongCardViewModel>(Tracks.Count);
             foreach (var track in Tracks)
@@ -35,6 +38,7 @@ namespace MajMusic.Presentation.ViewModels
 
                 next[key] = card;
                 ordered.Add(card);
+                RestoreCardDownloadProgress(card);
             }
 
             foreach (var (key, card) in _cards)
@@ -42,6 +46,10 @@ namespace MajMusic.Presentation.ViewModels
                 if (!next.ContainsKey(key))
                 {
                     card.Dispose();
+                    if (!card.ResourceCompletion.IsCompletedSuccessfully)
+                    {
+                        _retiredCardResources.Add(card.ResourceCompletion);
+                    }
                 }
             }
 
@@ -83,13 +91,17 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A task representing completed thumbnail cleanup.</returns>
         private async Task DisposeCardsAsync()
         {
+            var resources = new List<Task>(_retiredCardResources);
             foreach (var card in CardTracks)
             {
                 card.Dispose();
+                resources.Add(card.ResourceCompletion);
             }
 
             _cards.Clear();
             CardTracks = Array.Empty<SongCardViewModel>();
+            await Task.WhenAll(resources);
+            _retiredCardResources.Clear();
             if (_cardCovers is not null)
             {
                 await _cardCovers.DisposeAsync();

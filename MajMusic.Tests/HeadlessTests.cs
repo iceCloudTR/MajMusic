@@ -99,16 +99,18 @@ namespace MajMusic.Tests
                     viewModel.ShowLibraryModeCommand.Execute(null);
                     await viewModel.HomeUpdate;
                     await viewModel.MetadataRefresh;
-                    SaveFrame(window, Path.Combine(output, "ui-library-dense-dark.png"));
-                    var trackList = view.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "DenseTracksList");
-                    var visibleRows = trackList.GetVisualDescendants().OfType<ListBoxItem>().Where(item =>
+                    SaveFrame(window, Path.Combine(output, "ui-library-cards-dark.png"));
+                    var trackList = view.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "CardRowsList");
+                    var visibleCards = trackList.GetVisualDescendants().OfType<SongCard>().Where(item =>
                     {
                         var position = item.TranslatePoint(default, trackList);
                         return position is { } point && point.Y >= 0 && point.Y + item.Bounds.Height <= trackList.Bounds.Height;
                     }).ToArray();
-                    SaveFrame(window, Path.Combine(output, "ui-browse-debug.png"));
-                    TestAssert.True(visibleRows.Length >= 6 && visibleRows.All(item => item.Bounds.Height <= 76),
-                        "A normal desktop viewport must show at least six compact music rows.");
+                    TestAssert.True(visibleCards.Length >= viewModel.BrowseColumns && visibleCards.All(card => !card.IsCompact
+                        && Math.Abs(card.Bounds.Width - 2 * card.Bounds.Height) < 2),
+                        "The indexed library must use the same complete artwork cards as recommendations.");
+                    TestAssert.True(trackList.GetVisualDescendants().OfType<SongCard>().Count() < viewModel.CardTracks.Count,
+                        "The complete library must retain row virtualization rather than realizing every song.");
                     TestAssert.True(view.FindControl<Border>("PlaybackBar")!.Bounds.Height <= 115,
                         "The shared playback bar must leave room for the library.");
                     var timeline = view.FindControl<Slider>("PlaybackTimeline")!;
@@ -377,9 +379,12 @@ namespace MajMusic.Tests
                 "Entering a search must display matching indexed music rather than the feed.");
             SaveFrame(window, Path.Combine(output, "ui-search.png"));
             AssertChromeGeometry(view);
-            var dense = view.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "DenseTracksList");
+            TestAssert.True(cardsList.IsVisible && !cardsList.GetVisualDescendants().OfType<SongCard>().Any(card => card.IsCompact),
+                "Search results must reuse the recommendation card container without switching to compact rows.");
             var precedingCover = viewModel.Cover;
-            dense.SelectedIndex = 0;
+            TestAssert.True(cardsList.Focus(), "The shared artwork browser must accept keyboard focus.");
+            window.KeyPressQwerty(PhysicalKey.Home, RawInputModifiers.None);
+            window.KeyReleaseQwerty(PhysicalKey.Home, RawInputModifiers.None);
             using (var keyboard = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
             {
                 while (viewModel.Cover is null || ReferenceEquals(viewModel.Cover, precedingCover))
@@ -389,11 +394,13 @@ namespace MajMusic.Tests
                 }
 
                 precedingCover = viewModel.Cover;
-                TestAssert.True(dense.ContainerFromIndex(0)!.Focus(), "The selected compact row must accept keyboard focus.");
-                window.KeyPressQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
-                window.KeyReleaseQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
+                TestAssert.Equal(viewModel.CardTracks[0].Track.Id, viewModel.SelectedBrowseTrack!.Id,
+                    "Home navigation must select the first artwork card.");
+                window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
                 Dispatcher.UIThread.RunJobs();
-                TestAssert.Equal(1, dense.SelectedIndex, "Down-arrow navigation must select the following compact song.");
+                TestAssert.Equal(viewModel.CardTracks[1].Track.Id, viewModel.SelectedBrowseTrack!.Id,
+                    "Right-arrow navigation must select the next artwork card within a row.");
                 while (viewModel.Cover is null || ReferenceEquals(viewModel.Cover, precedingCover))
                 {
                     Dispatcher.UIThread.RunJobs();
@@ -401,11 +408,59 @@ namespace MajMusic.Tests
                 }
             }
 
-            TestAssert.Equal(((SongCardViewModel)dense.SelectedItem!).Track.Id, viewModel.SelectedBrowseTrack!.Id,
+            TestAssert.Equal(viewModel.SelectedBrowseCard!.Track.Id, viewModel.SelectedBrowseTrack!.Id,
                 "Keyboard selection must update both inspector metadata and its cover.");
+            window.KeyPressQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
+            window.KeyReleaseQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
+            Dispatcher.UIThread.RunJobs();
+            TestAssert.Equal(viewModel.CardTracks[Math.Min(viewModel.CardTracks.Count - 1, 1 + viewModel.BrowseColumns)].Track.Id,
+                viewModel.SelectedBrowseTrack!.Id, "Down-arrow navigation must preserve the artwork column in the following row.");
+            window.KeyPressQwerty(PhysicalKey.End, RawInputModifiers.None);
+            window.KeyReleaseQwerty(PhysicalKey.End, RawInputModifiers.None);
+            Dispatcher.UIThread.RunJobs();
+            TestAssert.Equal(viewModel.CardTracks[^1].Track.Id, viewModel.SelectedBrowseTrack!.Id,
+                "End navigation must reach the last search card and realize its virtualized row.");
+            var browseScroll = cardsList.GetVisualDescendants().OfType<ScrollViewer>()
+                .Single(item => ReferenceEquals(item.TemplatedParent, cardsList));
+            TestAssert.True(browseScroll.Offset.Y > 0, "End navigation must actually scroll the shared card viewport.");
+            viewModel.SearchText = "world";
+            await viewModel.HomeUpdate;
+            Dispatcher.UIThread.RunJobs();
+            TestAssert.True(browseScroll.Offset.Y <= 1, "A new search must begin at the top of the artwork results.");
+            cardsList.ScrollIntoView(viewModel.BrowseRows[^1]);
+            Dispatcher.UIThread.RunJobs();
+            TestAssert.True(browseScroll.Offset.Y > 0, "The search fixture must be scrolled before returning to recommendations.");
             viewModel.CancelSearchCommand.Execute(null);
             await viewModel.HomeUpdate;
+            Dispatcher.UIThread.RunJobs();
             TestAssert.True(!viewModel.IsSearchExpanded && viewModel.IsRecommendationsMode, "Canceling search must restore recommendations.");
+            TestAssert.True(browseScroll.Offset.Y <= 1, "Returning from a scrolled search must show recommendations from the beginning.");
+            cardsList.ScrollIntoView(viewModel.BrowseRows[5]);
+            Dispatcher.UIThread.RunJobs();
+            var beforeResize = browseScroll.Offset.Y;
+            window.Width = 1120;
+            Dispatcher.UIThread.RunJobs();
+            TestAssert.True(beforeResize > 0 && browseScroll.Offset.Y > 0,
+                "Resizing the shared card container must not reset the current browsing position.");
+            window.Width = 1100;
+            Dispatcher.UIThread.RunJobs();
+            if (viewModel.HasMoreRecommendations)
+            {
+                var beforeAppend = browseScroll.Offset.Y;
+                viewModel.MoreRecommendationsCommand.Execute(null);
+                using var append = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                while (viewModel.IsBusy)
+                {
+                    await Task.Delay(10, append.Token);
+                }
+
+                Dispatcher.UIThread.RunJobs();
+                TestAssert.True(Math.Abs(browseScroll.Offset.Y - beforeAppend) <= 1,
+                    "Appending more recommendations must preserve the existing scroll position.");
+            }
+
+            cardsList.ScrollIntoView(viewModel.BrowseRows[0]);
+            Dispatcher.UIThread.RunJobs();
             window.Width = 720;
             window.Height = 540;
             SaveFrame(window, Path.Combine(output, "ui-home-small.png"));
@@ -477,6 +532,7 @@ namespace MajMusic.Tests
             var proposed = slider.Value;
             window.KeyReleaseQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
             Dispatcher.UIThread.RunJobs();
+            await viewModel.TransportUpdate.WaitAsync(TimeSpan.FromSeconds(3));
             TestAssert.Equal(1, backend.SeekCount, "Keyboard release must commit exactly one native seek.");
             TestAssert.Equal(TimeSpan.FromSeconds(proposed), backend.Snapshot.Position, "Keyboard navigation must commit its preview value.");
 
@@ -489,6 +545,7 @@ namespace MajMusic.Tests
             proposed = slider.Value;
             window.MouseUp(end, MouseButton.Left);
             Dispatcher.UIThread.RunJobs();
+            await viewModel.TransportUpdate.WaitAsync(TimeSpan.FromSeconds(3));
             TestAssert.Equal(2, backend.SeekCount, "Pointer release must commit exactly once.");
             TestAssert.Equal(TimeSpan.FromSeconds(proposed), backend.Snapshot.Position, "The pointer preview must reach the backend clock.");
 
@@ -574,7 +631,7 @@ namespace MajMusic.Tests
 
             foreach (var list in view.GetVisualDescendants().OfType<ListBox>().Where(item => item.IsEffectivelyVisible))
             {
-                if (list.Name is "CardRowsList" or "DenseTracksList")
+                if (list.Name == "CardRowsList")
                 {
                     continue;
                 }

@@ -23,17 +23,19 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Lets another visible control retry after the current request owner's viewport interest ends.</summary>
         private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _browseMetadataPending = new(StringComparer.Ordinal);
 
-        /// <summary>Gets whether the normal home content uses artwork cards.</summary>
-        public bool IsCardBrowse => !IsSearching && (IsRecommendationsMode || IsPlaylistsMode);
+        /// <summary>Gets whether browsing uses the shared artwork-card presentation in every mode.</summary>
+        public bool IsCardBrowse => true;
         /// <summary>Gets the rows rendered by the virtualized artwork list.</summary>
         public ObservableCollection<SongCardRow> BrowseRows { get; } = new();
         /// <summary>Gets the responsive number of card columns.</summary>
         public int BrowseColumns => _browseColumns;
+        /// <summary>Gets the committed mode or search generation used to reset only a new browsing query.</summary>
+        public long BrowseNavigationVersion => _homeVersion;
         /// <summary>Gets the number of songs in the current browsing snapshot.</summary>
         public string BrowseSummary => $"{Tracks.Count} 首";
         /// <summary>Gets the inspected song when it belongs to the current browsing snapshot.</summary>
         public MusicTrack? SelectedBrowseTrack => Tracks.FirstOrDefault(track => track.Id == SelectedTrack?.Id);
-        /// <summary>Gets or selects the compact-list presentation for the inspected song.</summary>
+        /// <summary>Gets or selects the artwork-card presentation for the inspected song.</summary>
         public SongCardViewModel? SelectedBrowseCard
         {
             get => CardTracks.FirstOrDefault(card => card.Track.Id == SelectedTrack?.Id);
@@ -95,6 +97,7 @@ namespace MajMusic.Presentation.ViewModels
             OnPropertyChanged(nameof(BrowseSummary));
             OnPropertyChanged(nameof(SelectedBrowseTrack));
             OnPropertyChanged(nameof(SelectedBrowseCard));
+            OnPropertyChanged(nameof(BrowseNavigationVersion));
         }
 
         /// <summary>Enriches a visible song without opening or changing the playback backend.</summary>

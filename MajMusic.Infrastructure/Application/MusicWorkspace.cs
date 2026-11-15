@@ -317,16 +317,32 @@ namespace MajMusic.Infrastructure.Application
         /// <inheritdoc />
         public async Task<string> ResolveAudioAsync(MusicTrack track, bool keepOffline, CancellationToken cancellationToken = default)
         {
-            var resolved = await ResolveMetadataAsync(track, false, cancellationToken).ConfigureAwait(false);
-            if (!IsOnline && resolved.RemoteId is not null && resolved.Audio.Sha256 is null
-                && !File.Exists(resolved.Audio.LocalPath))
+            ArgumentNullException.ThrowIfNull(track);
+            var operation = BeginAudioDownload(track);
+            try
             {
-                throw new InvalidOperationException("This source revision has not been downloaded for offline playback.");
-            }
+                var resolved = await ResolveMetadataAsync(track, false, cancellationToken).ConfigureAwait(false);
+                if (!IsOnline && resolved.RemoteId is not null && resolved.Audio.Sha256 is null
+                    && !File.Exists(resolved.Audio.LocalPath))
+                {
+                    throw new InvalidOperationException("This source revision has not been downloaded for offline playback.");
+                }
 
-            var path = await GetMediaAsync(resolved, false, keepOffline, cancellationToken).ConfigureAwait(false);
-            await RememberLocalResourceAsync(resolved, path, false, cancellationToken).ConfigureAwait(false);
-            return path;
+                var path = await GetMediaAsync(resolved, false, keepOffline, cancellationToken, operation).ConfigureAwait(false);
+                await RememberLocalResourceAsync(resolved, path, false, cancellationToken).ConfigureAwait(false);
+                operation.Finish(AudioDownloadState.Completed, path);
+                return path;
+            }
+            catch (OperationCanceledException)
+            {
+                operation.Finish(AudioDownloadState.Cancelled);
+                throw;
+            }
+            catch (Exception)
+            {
+                operation.Finish(AudioDownloadState.Failed);
+                throw;
+            }
         }
 
         /// <inheritdoc />

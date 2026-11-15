@@ -2,6 +2,8 @@
 
 using MajMusic.Core.Models;
 using MajMusic.Infrastructure.Network;
+using System.Buffers;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -20,8 +22,20 @@ namespace MajMusic.Infrastructure.Downloads
         /// <summary>Gates cache misses without preventing offline cache hits.</summary>
         private readonly NetworkAccessPolicy _policy;
 
-        /// <summary>Serializes publication and cleanup, including requests for the same object.</summary>
+        /// <summary>Serializes index access, atomic publication and cleanup without covering network transfers.</summary>
         private readonly SemaphoreSlim _gate = new(1, 1);
+
+        /// <summary>Protects short reservations for per-resource transfer gates.</summary>
+        private readonly object _resourceGate = new();
+
+        /// <summary>Coalesces only requests for the same resource identity.</summary>
+        private readonly Dictionary<string, ResourceTransfer> _transfers = new(StringComparer.Ordinal);
+
+        /// <summary>Protects completed objects from cleanup while their integrity is checked outside the index gate.</summary>
+        private readonly Dictionary<string, int> _validationReaders = new(StringComparer.Ordinal);
+
+        /// <summary>Limits a stalled response read without limiting a continuously advancing transfer.</summary>
+        private readonly TimeSpan _bodyIdleTimeout;
 
         /// <summary>Contains persisted lookup aliases and their retention decisions.</summary>
         private Dictionary<string, CacheEntry>? _index;
@@ -33,8 +47,10 @@ namespace MajMusic.Infrastructure.Downloads
         /// <param name="root">The application's managed cache directory.</param>
         /// <param name="client">An anonymous or endpoint-isolated media client; the caller owns it.</param>
         /// <param name="policy">The shared online/offline gate.</param>
+        /// <param name="bodyIdleTimeout">The maximum response-read idle interval, or null for thirty seconds.</param>
         /// <exception cref="ArgumentException">The directory is empty.</exception>
-        public MediaCache(string root, HttpClient client, NetworkAccessPolicy policy)
+        /// <exception cref="ArgumentOutOfRangeException">The idle interval is not positive.</exception>
+        public MediaCache(string root, HttpClient client, NetworkAccessPolicy policy, TimeSpan? bodyIdleTimeout = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(root);
             ArgumentNullException.ThrowIfNull(client);
@@ -42,6 +58,11 @@ namespace MajMusic.Infrastructure.Downloads
             _root = Path.GetFullPath(root);
             _client = client;
             _policy = policy;
+            _bodyIdleTimeout = bodyIdleTimeout ?? TimeSpan.FromSeconds(30);
+            if (_bodyIdleTimeout <= TimeSpan.Zero || _bodyIdleTimeout.TotalMilliseconds > uint.MaxValue - 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(bodyIdleTimeout));
+            }
         }
 
         /// <summary>Resolves an imported file or a validated completed object, downloading only on an online cache miss.</summary>
@@ -49,30 +70,39 @@ namespace MajMusic.Infrastructure.Downloads
         /// <param name="keepOffline">Whether to pin this object against automatic cache cleanup.</param>
         /// <param name="cancellationToken">Cancels waiting, transfer, validation and publication.</param>
         /// <param name="downloadClient">An optional endpoint-isolated transport for this cache miss; its caller retains ownership.</param>
+        /// <param name="progress">An optional observer of actual response bytes, including an already running transfer for this resource.</param>
         /// <returns>The fully validated local file path.</returns>
         /// <exception cref="InvalidOperationException">An uncached resource is requested in offline mode.</exception>
         /// <exception cref="InvalidDataException">A length, digest or cache index is invalid.</exception>
         /// <exception cref="HttpRequestException">The download fails.</exception>
+        /// <exception cref="TimeoutException">The response body stops supplying bytes for the configured idle interval.</exception>
         /// <exception cref="FileNotFoundException">Neither a readable local file nor a remote address is available.</exception>
-        public async Task<string> GetAsync(MediaResource resource, bool keepOffline = false, CancellationToken cancellationToken = default, HttpClient? downloadClient = null)
+        public async Task<string> GetAsync(MediaResource resource, bool keepOffline = false, CancellationToken cancellationToken = default, HttpClient? downloadClient = null,
+            IProgress<MediaTransferProgress>? progress = null)
         {
             ArgumentNullException.ThrowIfNull(resource);
             var expectedHash = NormalizeHash(resource.Sha256);
             if (resource.LocalPath is { Length: > 0 } localPath && File.Exists(localPath))
             {
-                await ValidateFileAsync(localPath, expectedHash, resource.Length, cancellationToken).ConfigureAwait(false);
                 var absolutePath = Path.GetFullPath(localPath);
                 var objectRoot = Path.Combine(_root, "objects") + Path.DirectorySeparatorChar;
                 if (!absolutePath.StartsWith(objectRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
                 {
+                    await ValidateFileAsync(absolutePath, expectedHash, resource.Length, cancellationToken).ConfigureAwait(false);
                     return absolutePath;
                 }
 
-                expectedHash ??= await HashFileAsync(absolutePath, cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(absolutePath, GetObjectPath(expectedHash), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                var fileName = Path.GetFileName(absolutePath);
+                var objectHash = expectedHash ?? (fileName.Length == 64 && fileName.All(Uri.IsHexDigit) ? fileName.ToLowerInvariant() : null);
+                if (objectHash is null || !string.Equals(absolutePath, GetObjectPath(objectHash),
+                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
                 {
+                    await ValidateFileAsync(absolutePath, expectedHash, resource.Length, cancellationToken).ConfigureAwait(false);
                     return absolutePath;
                 }
+
+                // Canonical objects are validated once under a short cleanup lease in the normal cache-hit path.
+                expectedHash = objectHash;
             }
 
             var address = resource.RemoteUri;
@@ -88,29 +118,17 @@ namespace MajMusic.Infrastructure.Downloads
             var key = expectedHash is not null ? $"sha256:{expectedHash}" : uriKey
                 ?? throw new FileNotFoundException("The resource has no readable local file or remote address.");
 
-            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var reservation = ReserveTransfer(key, progress);
+            var transfer = reservation.Transfer;
+            var entered = false;
             try
             {
-                var index = await LoadIndexAsync(cancellationToken).ConfigureAwait(false);
-                var existing = index.GetValueOrDefault(key);
-                // An explicit digest is authoritative; a newer revision must never fall back to an older URI alias.
-                var objectHash = expectedHash ?? existing?.ContentHash;
-                if (objectHash is not null)
+                await transfer.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                entered = true;
+                var cached = await TryGetCachedPathAsync(key, uriKey, expectedHash, resource.Length, keepOffline, cancellationToken).ConfigureAwait(false);
+                if (cached is not null)
                 {
-                    var objectPath = GetObjectPath(objectHash);
-                    if (File.Exists(objectPath))
-                    {
-                        try
-                        {
-                            var length = await ValidateFileAsync(objectPath, objectHash, resource.Length, cancellationToken).ConfigureAwait(false);
-                            await PublishAliasesAsync(index, uriKey, objectHash, length, keepOffline, cancellationToken).ConfigureAwait(false);
-                            return objectPath;
-                        }
-                        catch (InvalidDataException)
-                        {
-                            // A damaged object is never returned as a completed download.
-                        }
-                    }
+                    return cached;
                 }
 
                 if (address is null)
@@ -129,33 +147,45 @@ namespace MajMusic.Infrastructure.Downloads
                         throw new HttpRequestException($"The media source returned HTTP {(int)response.StatusCode}.", null, response.StatusCode);
                     }
 
+                    MediaTransferProgress completed;
                     await using (var source = await response.Content.ReadAsStreamAsync(lifetime.Token).ConfigureAwait(false))
                     await using (var destination = new FileStream(partialPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous))
                     {
-                        await source.CopyToAsync(destination, lifetime.Token).ConfigureAwait(false);
+                        completed = await CopyResponseAsync(source, destination, response.Content.Headers.ContentLength ?? resource.Length,
+                            transfer, lifetime.Token).ConfigureAwait(false);
                     }
 
                     var length = await ValidateFileAsync(partialPath, expectedHash, resource.Length, lifetime.Token).ConfigureAwait(false);
                     var contentHash = expectedHash ?? await HashFileAsync(partialPath, lifetime.Token).ConfigureAwait(false);
                     var finalPath = GetObjectPath(contentHash);
-                    lifetime.Token.ThrowIfCancellationRequested();
-                    Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
-                    var objectAlreadyExisted = File.Exists(finalPath);
-                    File.Move(partialPath, finalPath, true);
+                    await _gate.WaitAsync(lifetime.Token).ConfigureAwait(false);
                     try
                     {
-                        await PublishAliasesAsync(index, uriKey, contentHash, length, keepOffline, lifetime.Token).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        if (!objectAlreadyExisted && !index.Values.Any(entry => entry.ContentHash == contentHash))
+                        var index = await LoadIndexAsync(lifetime.Token).ConfigureAwait(false);
+                        lifetime.Token.ThrowIfCancellationRequested();
+                        Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
+                        var objectAlreadyExisted = File.Exists(finalPath);
+                        File.Move(partialPath, finalPath, true);
+                        try
                         {
-                            File.Delete(finalPath);
+                            await PublishAliasesAsync(index, uriKey, contentHash, length, keepOffline, lifetime.Token).ConfigureAwait(false);
                         }
+                        catch
+                        {
+                            if (!objectAlreadyExisted && !index.Values.Any(entry => entry.ContentHash == contentHash))
+                            {
+                                File.Delete(finalPath);
+                            }
 
-                        throw;
+                            throw;
+                        }
+                    }
+                    finally
+                    {
+                        _gate.Release();
                     }
 
+                    ReportProgress(transfer, completed with { IsCompleted = true });
                     return finalPath;
                 }
                 finally
@@ -165,7 +195,301 @@ namespace MajMusic.Infrastructure.Downloads
             }
             finally
             {
+                ReleaseTransfer(key, transfer, reservation.Subscription, entered);
+            }
+        }
+
+        /// <summary>Validates a completed object without keeping unrelated requests behind its disk read.</summary>
+        /// <param name="key">The authoritative digest or revision-scoped lookup alias.</param>
+        /// <param name="uriKey">The optional address alias to publish after validation.</param>
+        /// <param name="expectedHash">The authoritative expected digest, when supplied.</param>
+        /// <param name="expectedLength">The expected byte count, when supplied.</param>
+        /// <param name="keepOffline">Whether to retain the completed object against cleanup.</param>
+        /// <param name="cancellationToken">Cancels validation and publication.</param>
+        /// <returns>The validated object path, or null for an unavailable or damaged object.</returns>
+        private async Task<string?> TryGetCachedPathAsync(string key, string? uriKey, string? expectedHash, long? expectedLength,
+            bool keepOffline, CancellationToken cancellationToken)
+        {
+            string? objectHash;
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var index = await LoadIndexAsync(cancellationToken).ConfigureAwait(false);
+                objectHash = expectedHash ?? index.GetValueOrDefault(key)?.ContentHash;
+                if (objectHash is null || !File.Exists(GetObjectPath(objectHash)))
+                {
+                    return null;
+                }
+
+                _validationReaders[objectHash] = _validationReaders.GetValueOrDefault(objectHash) + 1;
+            }
+            finally
+            {
                 _gate.Release();
+            }
+
+            try
+            {
+                var path = GetObjectPath(objectHash);
+                long length;
+                try
+                {
+                    length = await ValidateFileAsync(path, objectHash, expectedLength, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is InvalidDataException or FileNotFoundException or DirectoryNotFoundException)
+                {
+                    return null;
+                }
+
+                await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    var latest = await LoadIndexAsync(cancellationToken).ConfigureAwait(false);
+                    await PublishAliasesAsync(latest, uriKey, objectHash, length, keepOffline, cancellationToken).ConfigureAwait(false);
+                    return path;
+                }
+                finally
+                {
+                    _gate.Release();
+                }
+            }
+            finally
+            {
+                await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    var readers = _validationReaders[objectHash] - 1;
+                    if (readers == 0)
+                    {
+                        _validationReaders.Remove(objectHash);
+                    }
+                    else
+                    {
+                        _validationReaders[objectHash] = readers;
+                    }
+                }
+                finally
+                {
+                    _gate.Release();
+                }
+            }
+        }
+
+        /// <summary>Receives response bytes with a per-read idle deadline and throttled progress.</summary>
+        /// <param name="source">The response body owned by the current request.</param>
+        /// <param name="destination">The private, unpublished temporary file.</param>
+        /// <param name="totalBytes">The expected body length, when known.</param>
+        /// <param name="transfer">The resource-specific progress subscribers.</param>
+        /// <param name="cancellationToken">Cancels the current online request.</param>
+        /// <returns>The final received-byte snapshot, ready for a successful publication report.</returns>
+        private async Task<MediaTransferProgress> CopyResponseAsync(Stream source, Stream destination, long? totalBytes,
+            ResourceTransfer transfer, CancellationToken cancellationToken)
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(81920);
+            var clock = Stopwatch.StartNew();
+            var lastReport = TimeSpan.Zero;
+            long received = 0;
+            ReportProgress(transfer, new MediaTransferProgress { TotalBytes = totalBytes });
+            try
+            {
+                while (true)
+                {
+                    using var idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    idle.CancelAfter(_bodyIdleTimeout);
+                    int count;
+                    try
+                    {
+                        count = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), idle.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && idle.IsCancellationRequested)
+                    {
+                        throw new TimeoutException("The media source stopped sending response bytes.");
+                    }
+
+                    if (count == 0)
+                    {
+                        break;
+                    }
+
+                    await destination.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
+                    received += count;
+                    if (clock.Elapsed - lastReport >= TimeSpan.FromMilliseconds(100))
+                    {
+                        lastReport = clock.Elapsed;
+                        ReportProgress(transfer, TransferSnapshot(received, totalBytes, clock.Elapsed));
+                    }
+                }
+
+                if (totalBytes is { } expected && received != expected)
+                {
+                    throw new InvalidDataException("The response body length does not match its descriptor.");
+                }
+
+                return TransferSnapshot(received, totalBytes, clock.Elapsed);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        /// <summary>Creates an immutable measured transfer snapshot.</summary>
+        /// <param name="received">The number of bytes written successfully.</param>
+        /// <param name="total">The expected response length, when known.</param>
+        /// <param name="elapsed">The elapsed receive time.</param>
+        /// <returns>The current byte count and average transfer rate.</returns>
+        private static MediaTransferProgress TransferSnapshot(long received, long? total, TimeSpan elapsed)
+        {
+            return new MediaTransferProgress
+            {
+                ReceivedBytes = received,
+                TotalBytes = total,
+                BytesPerSecond = elapsed.TotalSeconds > 0 ? received / elapsed.TotalSeconds : null
+            };
+        }
+
+        /// <summary>Reserves a resource gate and subscribes to its current and subsequent transfer snapshots.</summary>
+        /// <param name="key">The authoritative resource lookup identity.</param>
+        /// <param name="progress">The optional observer joining this request.</param>
+        /// <returns>The reserved gate and optional subscription retained until this caller completes or cancels.</returns>
+        private (ResourceTransfer Transfer, ProgressSubscription? Subscription) ReserveTransfer(string key, IProgress<MediaTransferProgress>? progress)
+        {
+            ResourceTransfer transfer;
+            lock (_resourceGate)
+            {
+                if (!_transfers.TryGetValue(key, out transfer!))
+                {
+                    transfer = new ResourceTransfer();
+                    _transfers.Add(key, transfer);
+                }
+
+                transfer.Users++;
+            }
+
+            ProgressSubscription? subscription = null;
+            if (progress is not null)
+            {
+                subscription = new ProgressSubscription(progress);
+                MediaTransferProgress? latest;
+                long version;
+                lock (transfer.ProgressGate)
+                {
+                    transfer.Observers.Add(subscription);
+                    latest = transfer.Latest;
+                    version = transfer.ProgressVersion;
+                }
+
+                if (latest is not null)
+                {
+                    NotifyProgress(subscription, latest, version);
+                }
+            }
+
+            return (transfer, subscription);
+        }
+
+        /// <summary>Releases one subscription and removes unused resource gates without retaining an unbounded map.</summary>
+        /// <param name="key">The resource identity originally reserved.</param>
+        /// <param name="transfer">The exact reserved gate.</param>
+        /// <param name="subscription">The optional observer leaving this request.</param>
+        /// <param name="entered">Whether this caller acquired the resource semaphore.</param>
+        private void ReleaseTransfer(string key, ResourceTransfer transfer, ProgressSubscription? subscription, bool entered)
+        {
+            if (subscription is not null)
+            {
+                lock (transfer.ProgressGate)
+                {
+                    transfer.Observers.Remove(subscription);
+                }
+
+                lock (subscription.Gate)
+                {
+                    subscription.IsDisposed = true;
+                    subscription.Pending = null;
+                }
+            }
+
+            if (entered)
+            {
+                transfer.Gate.Release();
+            }
+
+            lock (_resourceGate)
+            {
+                transfer.Users--;
+                if (transfer.Users == 0)
+                {
+                    _transfers.Remove(key);
+                    transfer.Gate.Dispose();
+                }
+            }
+        }
+
+        /// <summary>Serializes snapshots so a joining observer never receives an older snapshot after a newer one.</summary>
+        /// <param name="transfer">The resource-specific subscribers.</param>
+        /// <param name="snapshot">The measured transfer state.</param>
+        private static void ReportProgress(ResourceTransfer transfer, MediaTransferProgress snapshot)
+        {
+            ProgressSubscription[] observers;
+            long version;
+            lock (transfer.ProgressGate)
+            {
+                transfer.Latest = snapshot;
+                version = ++transfer.ProgressVersion;
+                observers = transfer.Observers.ToArray();
+            }
+
+            foreach (var observer in observers)
+            {
+                NotifyProgress(observer, snapshot, version);
+            }
+        }
+
+        /// <summary>Keeps an observer failure from aborting a validated media transfer shared by other callers.</summary>
+        /// <param name="subscription">The progress receiver and its ordered pending state.</param>
+        /// <param name="snapshot">The measured state to deliver.</param>
+        /// <param name="version">The snapshot's monotonic transfer version.</param>
+        private static void NotifyProgress(ProgressSubscription subscription, MediaTransferProgress snapshot, long version)
+        {
+            lock (subscription.Gate)
+            {
+                if (subscription.IsDisposed || version <= subscription.LatestVersion)
+                {
+                    return;
+                }
+
+                subscription.LatestVersion = version;
+                subscription.Pending = snapshot;
+                if (subscription.IsReporting)
+                {
+                    return;
+                }
+
+                subscription.IsReporting = true;
+            }
+
+            while (true)
+            {
+                MediaTransferProgress? pending;
+                lock (subscription.Gate)
+                {
+                    pending = subscription.IsDisposed ? null : subscription.Pending;
+                    subscription.Pending = null;
+                    if (pending is null)
+                    {
+                        subscription.IsReporting = false;
+                        return;
+                    }
+                }
+
+                try
+                {
+                    subscription.Observer.Report(pending);
+                }
+                catch (Exception)
+                {
+                    // Progress observers do not own the transfer or its cache publication.
+                }
             }
         }
 
@@ -204,6 +528,11 @@ namespace MajMusic.Infrastructure.Downloads
                     }
 
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (_validationReaders.ContainsKey(item.Hash))
+                    {
+                        continue;
+                    }
+
                     removedObjects.Add(item.Hash);
                     foreach (var key in candidates.Where(pair => pair.Value.ContentHash == item.Hash).Select(pair => pair.Key).ToArray())
                     {
@@ -404,8 +733,49 @@ namespace MajMusic.Infrastructure.Downloads
         /// <returns>The lowercase content digest.</returns>
         private static async Task<string> HashFileAsync(string path, CancellationToken cancellationToken)
         {
-            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
             return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false)).ToLowerInvariant();
+        }
+
+        /// <summary>Tracks only callers currently resolving the same resource identity.</summary>
+        private sealed class ResourceTransfer
+        {
+            /// <summary>Serializes transfer preparation for this resource alone.</summary>
+            public SemaphoreSlim Gate { get; } = new(1, 1);
+            /// <summary>Serializes observer registration and snapshot delivery.</summary>
+            public object ProgressGate { get; } = new();
+            /// <summary>Stores live observers retained by their own request lifetimes.</summary>
+            public List<ProgressSubscription> Observers { get; } = new();
+            /// <summary>Stores the latest actual transfer snapshot for a joining caller.</summary>
+            public MediaTransferProgress? Latest { get; set; }
+            /// <summary>Orders snapshots against subscription replay without holding locks during observer callbacks.</summary>
+            public long ProgressVersion { get; set; }
+            /// <summary>Counts owners and waiters under the cache's resource-map lock.</summary>
+            public int Users { get; set; }
+        }
+
+        /// <summary>Delivers ordered, coalesced progress to one caller without invoking its code under cache locks.</summary>
+        private sealed class ProgressSubscription
+        {
+            /// <summary>Creates one request-scoped progress receiver.</summary>
+            /// <param name="observer">The caller's non-owning progress receiver.</param>
+            public ProgressSubscription(IProgress<MediaTransferProgress> observer)
+            {
+                Observer = observer;
+            }
+
+            /// <summary>Protects only pending notification state.</summary>
+            public object Gate { get; } = new();
+            /// <summary>Gets the receiver owned by the requesting caller.</summary>
+            public IProgress<MediaTransferProgress> Observer { get; }
+            /// <summary>Stores the newest pending snapshot while another callback is reporting.</summary>
+            public MediaTransferProgress? Pending { get; set; }
+            /// <summary>Rejects an older replay that arrives after a newer snapshot.</summary>
+            public long LatestVersion { get; set; } = -1;
+            /// <summary>Allows only one callback drainer per subscriber.</summary>
+            public bool IsReporting { get; set; }
+            /// <summary>Rejects pending delivery after the caller has left the resource gate.</summary>
+            public bool IsDisposed { get; set; }
         }
 
         /// <summary>Stores one local lookup alias and its offline-retention decision.</summary>

@@ -23,8 +23,13 @@
         </Style>
     </UserControl.Styles>
     <Grid SizeChanged="OnBrowseSizeChanged">
-        <ListBox x:Name="CardRowsList" Classes="browseList" ItemsSource="{Binding BrowseRows}" IsVisible="{Binding IsCardBrowse}"
+        <ListBox x:Name="CardRowsList" Classes="browseList" ItemsSource="{Binding BrowseRows}" Focusable="True" AutoScrollToSelectedItem="False"
                  ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
             <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:SongCardRow">
                     <ItemsControl ItemsSource="{Binding Tracks}" Focusable="False">
@@ -39,14 +44,6 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
-        <ListBox x:Name="DenseTracksList" Classes="browseList" ItemsSource="{Binding CardTracks}" SelectedItem="{Binding SelectedBrowseCard}"
-                 IsVisible="{Binding !IsCardBrowse}" SelectionChanged="OnDenseSelectionChanged" AutoScrollToSelectedItem="False" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-            <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:SongCardViewModel">
-                    <views:SongCard IsCompact="True" Margin="4,3" IsBrowsingActive="{Binding $parent[ListBox].IsVisible}" />
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>

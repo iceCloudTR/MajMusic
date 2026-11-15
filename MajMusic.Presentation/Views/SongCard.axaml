@@ -29,7 +29,7 @@
             <Setter Property="Background" Value="{DynamicResource MusicRaisedBrush}" />
         </Style>
         <Style Selector="Button.songTile.selected /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
+            <Setter Property="Background" Value="{DynamicResource MusicPanelBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource MusicAccentBrush}" />
         </Style>
         <Style Selector="Button.songTile TextBlock">
@@ -52,13 +52,24 @@
                             <Image Source="{Binding Cover}" Stretch="UniformToFill" />
                         </Grid>
                     </Border>
-                    <Grid Grid.Column="1" Margin="8" RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="3">
-                        <TextBlock Text="{Binding Track.Title}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" Height="32" LineHeight="16" MaxLines="2" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Grid.Row="1" Text="{Binding Track.Artist}" FontSize="11" Classes="secondary" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Track.Artist}" />
-                        <TextBlock Grid.Row="3" Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=audio}" FontSize="10" Classes="secondary" TextTrimming="CharacterEllipsis" />
-                        <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                            <TextBlock Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=source}" FontSize="10" Classes="secondary" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Grid.Column="1" Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=duration}" FontSize="10" Classes="secondary" />
+                    <Grid x:Name="CardInformationPane" Grid.Column="1" Background="{DynamicResource MusicPanelBrush}">
+                        <Grid IsHitTestVisible="False">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="{Binding DownloadEmptyHeight}" />
+                                <RowDefinition Height="{Binding DownloadFillHeight}" />
+                            </Grid.RowDefinitions>
+                            <Border x:Name="CardDownloadFill" Grid.Row="1" Background="{DynamicResource MusicDownloadBrush}" />
+                        </Grid>
+                        <Grid Margin="6" RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="2">
+                            <TextBlock Text="{Binding Track.Title}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" MaxHeight="32" LineHeight="16" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Row="1" Text="{Binding Track.Artist}" FontSize="11" Classes="secondary" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Track.Artist}" />
+                            <TextBlock x:Name="CardDownloadStatus" Grid.Row="2" Text="{Binding DownloadStatus}" IsVisible="{Binding HasDownloadStatus}" FontSize="10" MinHeight="12" VerticalAlignment="Bottom" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Row="3" Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=audio}" IsVisible="{Binding !IsDownloading}" FontSize="10" Classes="secondary" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="CardDownloadDetails" Grid.Row="3" Text="{Binding DownloadDetails}" IsVisible="{Binding IsDownloading}" FontSize="10" Classes="secondary" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DownloadDetails}" />
+                            <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <TextBlock Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=source}" FontSize="10" Classes="secondary" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="1" Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=duration}" FontSize="10" Classes="secondary" />
+                            </Grid>
                         </Grid>
                     </Grid>
                 </Grid>
@@ -73,6 +84,7 @@
                     <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
                         <TextBlock Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=audio}" Classes="secondary" FontSize="11" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=source}" Classes="secondary" FontSize="11" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding DownloadStatus}" IsVisible="{Binding HasDownloadStatus}" Classes="secondary" FontSize="9" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                     <TextBlock Grid.Column="3" Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=duration}" Classes="secondary" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center" />
                 </Grid>

@@ -257,6 +257,7 @@ namespace MajMusic.Tests
                 await Task.Delay(1, timeout.Token);
             }
 
+            await viewModel.TransportUpdate.WaitAsync(timeout.Token);
             await viewModel.MetadataRefresh.WaitAsync(TimeSpan.FromSeconds(3));
         }
 

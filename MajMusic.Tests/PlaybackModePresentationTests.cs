@@ -129,6 +129,7 @@ namespace MajMusic.Tests
                 await Task.Delay(1, cancellation.Token);
             }
 
+            await view.TransportUpdate.WaitAsync(cancellation.Token);
             TestAssert.True(string.IsNullOrEmpty(view.Status), "Playback mode operations must complete without an operation error.");
         }
     }

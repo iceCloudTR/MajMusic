@@ -543,6 +543,21 @@ namespace MajMusic.Tests
                 await base.CopyToAsync(destination, bufferSize, cancellationToken);
                 _cancellation.Cancel();
             }
+
+            /// <summary>Cancels at the same end-of-body boundary when the consumer reads measured chunks.</summary>
+            /// <param name="buffer">The next response buffer.</param>
+            /// <param name="cancellationToken">Cancels the response read.</param>
+            /// <returns>The number of bytes read before the end-of-body cancellation.</returns>
+            public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            {
+                var count = await base.ReadAsync(buffer, cancellationToken);
+                if (count == 0)
+                {
+                    _cancellation.Cancel();
+                }
+
+                return count;
+            }
         }
     }
 }

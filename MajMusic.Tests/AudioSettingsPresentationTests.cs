@@ -234,6 +234,7 @@ namespace MajMusic.Tests
                 await Task.Delay(5);
             }
 
+            await view.TransportUpdate.WaitAsync(TimeSpan.FromSeconds(3));
             await view.AudioSettingsUpdate.WaitAsync(TimeSpan.FromSeconds(3));
             await Task.Yield();
         }

@@ -7,7 +7,7 @@ using MajMusic.Core.Models;
 namespace MajMusic.Presentation.ViewModels
 {
     /// <summary>Retains one music card and a shared thumbnail lease while its control is attached.</summary>
-    public sealed class SongCardViewModel : INotifyPropertyChanged, IDisposable
+    public sealed partial class SongCardViewModel : INotifyPropertyChanged, IDisposable
     {
         /// <summary>Owns shared bounded thumbnail requests.</summary>
         private readonly CoverThumbnailCache _cache;
@@ -19,6 +19,8 @@ namespace MajMusic.Presentation.ViewModels
         private CancellationTokenSource? _activation;
         /// <summary>Tracks the currently observed activation.</summary>
         private Task _activationTask = Task.CompletedTask;
+        /// <summary>Retains all pending activation work until the owning view drains card resources.</summary>
+        private Task _resourceCompletion = Task.CompletedTask;
         /// <summary>Counts controls currently displaying this stable card instance.</summary>
         private int _attachments;
         /// <summary>Rejects a result belonging to an older descriptor or attachment.</summary>
@@ -43,6 +45,8 @@ namespace MajMusic.Presentation.ViewModels
         public MusicTrack Track => _track;
         /// <summary>Gets the shared decoded thumbnail, or null for an empty placeholder.</summary>
         public Bitmap? Cover => _lease?.Bitmap;
+        /// <summary>Gets completion of current and superseded visible-resource reads.</summary>
+        internal Task ResourceCompletion => _resourceCompletion;
         /// <summary>Gets whether this card represents the selected music entry.</summary>
         public bool IsSelected
         {
@@ -88,10 +92,12 @@ namespace MajMusic.Presentation.ViewModels
         /// <param name="track">The current entry with matching card ownership.</param>
         internal void UpdateTrack(MusicTrack track)
         {
+            var previous = _track;
             var changedCover = CoverThumbnailCache.Identity(_track) != CoverThumbnailCache.Identity(track);
             _track = track;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Track)));
-            if (changedCover && _attachments > 0)
+            var changedDownload = UpdateDownloadTrack(previous, track);
+            if ((changedCover || changedDownload) && _attachments > 0)
             {
                 StartThumbnail();
             }
@@ -112,21 +118,50 @@ namespace MajMusic.Presentation.ViewModels
             var cancellation = new CancellationTokenSource();
             _activation = cancellation;
             var generation = ++_generation;
-            _activationTask = LoadThumbnailAsync(_track, generation, cancellation);
+            var token = cancellation.Token;
+            _activationTask = LoadCardResourcesAsync(_track, generation, cancellation, token);
+            _resourceCompletion = _resourceCompletion.IsCompleted ? _activationTask : Task.WhenAll(_resourceCompletion, _activationTask);
+        }
+
+        /// <summary>Owns cancellation for artwork and audio availability until both visible-resource reads finish.</summary>
+        /// <param name="track">The captured music descriptor.</param>
+        /// <param name="generation">The captured attachment generation.</param>
+        /// <param name="cancellation">The cancellation owner released after both operations.</param>
+        /// <param name="token">The token captured before either operation can release its source.</param>
+        /// <returns>A task representing all resources owned by this activation.</returns>
+        private async Task LoadCardResourcesAsync(MusicTrack track, int generation, CancellationTokenSource cancellation, CancellationToken token)
+        {
+            try
+            {
+                await Task.WhenAll(LoadThumbnailAsync(track, generation, token), CheckDownloadAvailabilityAsync(track, generation, token));
+            }
+            catch (OperationCanceledException)
+            {
+                // Detached or replaced card resources no longer own the visible presentation.
+            }
+            finally
+            {
+                if (ReferenceEquals(_activation, cancellation))
+                {
+                    _activation = null;
+                }
+
+                cancellation.Dispose();
+            }
         }
 
         /// <summary>Publishes a requested bitmap only while the same attached card still owns the result.</summary>
         /// <param name="track">The captured cover descriptor.</param>
         /// <param name="generation">The captured activation generation.</param>
-        /// <param name="cancellation">The interest owned by this activation.</param>
+        /// <param name="token">The interest owned by this activation.</param>
         /// <returns>A task representing the observed shared request.</returns>
-        private async Task LoadThumbnailAsync(MusicTrack track, int generation, CancellationTokenSource cancellation)
+        private async Task LoadThumbnailAsync(MusicTrack track, int generation, CancellationToken token)
         {
             CoverThumbnailCache.Lease? candidate = null;
             try
             {
-                candidate = await _cache.AcquireAsync(track, cancellation.Token);
-                if (!_disposed && _attachments > 0 && generation == _generation && !cancellation.IsCancellationRequested)
+                candidate = await _cache.AcquireAsync(track, token);
+                if (!_disposed && _attachments > 0 && generation == _generation && !token.IsCancellationRequested)
                 {
                     var previous = _lease;
                     _lease = candidate;
@@ -142,12 +177,6 @@ namespace MajMusic.Presentation.ViewModels
             finally
             {
                 candidate?.Dispose();
-                if (ReferenceEquals(_activation, cancellation))
-                {
-                    _activation = null;
-                }
-
-                cancellation.Dispose();
             }
         }
 
