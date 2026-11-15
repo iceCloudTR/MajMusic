@@ -6,7 +6,6 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
-using MajMusic.Core.Models;
 using MajMusic.Presentation.ViewModels;
 
 namespace MajMusic.Presentation.Views
@@ -14,8 +13,6 @@ namespace MajMusic.Presentation.Views
     /// <summary>Provides a shared music view with platform file selection at its boundary.</summary>
     public partial class MainView : UserControl
     {
-        /// <summary>Retains the selected cover owner independently of row audio-metadata replacements.</summary>
-        private (string Id, string? Revision, MediaResource? Cover)? _loadedCoverOwner;
         /// <summary>Initializes the shared view.</summary>
         public MainView()
         {
@@ -53,14 +50,8 @@ namespace MajMusic.Presentation.Views
                 return;
             }
 
-            var musicHeight = this.FindControl<ListBox>("LibraryTracks")!.Bounds.Height;
             var playlistHeight = this.FindControl<ListBox>("PlaylistList")!.Bounds.Height;
             var directoryHeight = this.FindControl<ListBox>("DirectoryList")!.Bounds.Height;
-            if (musicHeight > 0)
-            {
-                viewModel.SetLibraryViewportHeight(musicHeight);
-            }
-
             if (playlistHeight > 0)
             {
                 viewModel.SetPlaylistViewportHeight(playlistHeight);
@@ -69,17 +60,6 @@ namespace MajMusic.Presentation.Views
             if (directoryHeight > 0)
             {
                 viewModel.SetDirectoryViewportHeight(directoryHeight);
-            }
-        }
-
-        /// <summary>Fits the current music page to the available list area.</summary>
-        /// <param name="sender">The music list.</param>
-        /// <param name="e">The updated available size.</param>
-        private void OnLibraryViewportSizeChanged(object? sender, SizeChangedEventArgs e)
-        {
-            if (e.NewSize.Height > 0 && DataContext is MainViewModel viewModel)
-            {
-                viewModel.SetLibraryViewportHeight(e.NewSize.Height);
             }
         }
 
@@ -226,35 +206,6 @@ namespace MajMusic.Presentation.Views
             catch (Exception exception)
             {
                 viewModel.ReportError(exception);
-            }
-        }
-
-        /// <summary>Loads the newly selected music cover.</summary>
-        /// <param name="sender">The music list.</param>
-        /// <param name="e">The selection event arguments.</param>
-        private async void OnTrackSelectionChanged(object? sender, SelectionChangedEventArgs e)
-        {
-            if (DataContext is MainViewModel viewModel && e.AddedItems.OfType<MusicTrack>().LastOrDefault() is { } selected)
-            {
-                var owner = (selected.Id, selected.Revision, selected.Cover);
-                if (viewModel.Cover is not null && _loadedCoverOwner == owner)
-                {
-                    return;
-                }
-
-                _loadedCoverOwner = owner;
-                await viewModel.LoadCoverAsync();
-            }
-        }
-
-        /// <summary>Starts the selected music from the actual displayed list.</summary>
-        /// <param name="sender">The music list.</param>
-        /// <param name="e">The double-tap event.</param>
-        private async void OnTrackDoubleTapped(object? sender, TappedEventArgs e)
-        {
-            if (DataContext is MainViewModel viewModel && viewModel.PlayCommand.CanExecute(null))
-            {
-                await viewModel.PlaySelectedAsync();
             }
         }
 

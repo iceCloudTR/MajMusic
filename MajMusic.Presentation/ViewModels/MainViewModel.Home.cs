@@ -401,6 +401,7 @@ namespace MajMusic.Presentation.ViewModels
             OnPropertyChanged(nameof(IsRecommendationsMode));
             OnPropertyChanged(nameof(IsPlaylistsMode));
             OnPropertyChanged(nameof(IsLibraryMode));
+            OnPropertyChanged(nameof(IsCardBrowse));
             OnPropertyChanged(nameof(IsRecommendationsView));
             OnPropertyChanged(nameof(HasMoreRecommendations));
             OnPropertyChanged(nameof(SelectedHomePlaylist));

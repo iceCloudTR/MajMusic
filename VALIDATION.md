@@ -15,7 +15,7 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- playback account-ui directory-ui audio-settings-ui headless
 ```
 
-界面测试使用真实 Avalonia 控件生成深色、浅色、紧凑窗口和缩放渲染，结果位于 `.work/`。
+界面测试使用真实 Avalonia 控件验证均分按钮、居中播放控制、封面卡片、虚拟化滚动和键盘选择，并生成深色、浅色、紧凑窗口和缩放渲染，结果位于 `.work/`。
 
 ## 原生检查
 

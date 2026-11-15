@@ -345,6 +345,9 @@ namespace MajMusic.Presentation.ViewModels
                     OnPropertyChanged(nameof(SelectedTitle));
                     OnPropertyChanged(nameof(SelectedArtist));
                     OnPropertyChanged(nameof(SelectedVisibleTrack));
+                    OnPropertyChanged(nameof(SelectedBrowseTrack));
+                    OnPropertyChanged(nameof(SelectedBrowseCard));
+                    RefreshCardSelection();
                     OnPropertyChanged(nameof(PlayButtonText));
                     OnPropertyChanged(nameof(FavoriteButtonText));
                     OnPropertyChanged(nameof(IsSelectedFavorite));
@@ -768,6 +771,7 @@ namespace MajMusic.Presentation.ViewModels
             CancelMetadataRefresh();
             CancelSeek();
             CancelCoverLoad();
+            await DisposeCardsAsync();
 
             await Task.WhenAll(operations);
             var previous = Cover;
@@ -929,6 +933,7 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             SelectedTrack = Tracks.FirstOrDefault(item => item.Id == inspected?.Id) ?? inspected;
+            RefreshCardTracks();
             _libraryPageIndex = preservePage ? Math.Clamp(_libraryPageIndex, 0, Math.Max(0, (Tracks.Count - 1) / LibraryPageSize)) : 0;
             RefreshVisibleTracks();
             OnPropertyChanged(nameof(LibrarySummary));

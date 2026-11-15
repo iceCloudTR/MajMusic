@@ -264,6 +264,8 @@ namespace MajMusic.Presentation.ViewModels
             {
                 SelectedTrack = selected;
             }
+
+            RefreshCardTrackMetadata(updated);
         }
 
         /// <summary>Checks that a metadata result still belongs to the same indexed source revision.</summary>

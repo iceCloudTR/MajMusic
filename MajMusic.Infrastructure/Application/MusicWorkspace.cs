@@ -290,12 +290,6 @@ namespace MajMusic.Infrastructure.Application
                 return null;
             }
 
-            if (!IsOnline && resolved.RemoteId is not null && resolved.Cover.Sha256 is null
-                && !File.Exists(resolved.Cover.LocalPath))
-            {
-                return null;
-            }
-
             try
             {
                 var path = await GetMediaAsync(resolved, true, false, cancellationToken).ConfigureAwait(false);
@@ -435,7 +429,7 @@ namespace MajMusic.Infrastructure.Application
 
         /// <summary>Reads current descriptors instead of trusting stale view or queue objects.</summary>
         /// <param name="requested">The entry retained by a view or queue.</param>
-        /// <param name="cover">Whether cover metadata is required.</param>
+        /// <param name="cover">Whether only stored cover metadata is required, without resolving audio details.</param>
         /// <param name="cancellationToken">Cancels lookup and optional explicitly enabled resolution.</param>
         /// <returns>The current metadata or a retained offline version.</returns>
         private async Task<MusicTrack> ResolveMetadataAsync(MusicTrack requested, bool cover, CancellationToken cancellationToken)
@@ -450,8 +444,7 @@ namespace MajMusic.Infrastructure.Application
                     resolved = await _library.FindTrackAsync(GetOfflineCopyId(requested), cancellationToken).ConfigureAwait(false) ?? resolved;
                 }
 
-                var resource = cover ? resolved.Cover : resolved.Audio;
-                if (IsOnline && resolved.RemoteId is not null && resource is { Sha256: null })
+                if (!cover && IsOnline && resolved.RemoteId is not null && resolved.Audio.Sha256 is null)
                 {
                     var endpoint = GetEndpointForTrack(resolved);
                     var connection = GetConnection(endpoint);

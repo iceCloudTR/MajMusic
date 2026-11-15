@@ -4,6 +4,7 @@
              xmlns:models="using:MajMusic.Core.Models"
              xmlns:converters="using:MajMusic.Presentation.Converters"
              xmlns:ac="using:Avalonia.Data.Converters"
+             xmlns:views="using:MajMusic.Presentation.Views"
              x:Class="MajMusic.Presentation.Views.MainView"
              x:DataType="vm:MainViewModel"
              Background="{DynamicResource MusicCanvasBrush}">
@@ -58,7 +59,7 @@
                     </Grid.ColumnDefinitions>
                     <Grid Grid.ColumnSpan="2" ColumnDefinitions="196,*,34" ColumnSpacing="8">
                         <Border CornerRadius="8" Background="{DynamicResource MusicRaisedBrush}" Padding="2">
-                            <Grid ColumnDefinitions="64,64,64">
+                            <Grid x:Name="HomeModeSegments" ColumnDefinitions="*,*,*">
                                 <ToggleButton x:Name="RecommendationsModeButton" Classes="mode" Content="推荐" IsChecked="{Binding IsRecommendationsMode, Mode=OneWay}" Command="{Binding ShowRecommendationsModeCommand}" />
                                 <ToggleButton x:Name="PlaylistsModeButton" Grid.Column="1" Classes="mode" Content="歌单" IsChecked="{Binding IsPlaylistsMode, Mode=OneWay}" Command="{Binding ShowPlaylistsModeCommand}" />
                                 <ToggleButton x:Name="LibraryModeButton" Grid.Column="2" Classes="mode" Content="曲库" IsChecked="{Binding IsLibraryMode, Mode=OneWay}" Command="{Binding ShowLibraryModeCommand}" />
@@ -79,26 +80,10 @@
                         </Grid>
                     </Grid>
                     <Border x:Name="LibraryListPanel" Grid.Row="1" Classes="card" Padding="6">
-                        <ListBox x:Name="LibraryTracks" ItemsSource="{Binding VisibleTracks}" SelectedItem="{Binding SelectedVisibleTrack}"
-                                 SizeChanged="OnLibraryViewportSizeChanged" ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 SelectionChanged="OnTrackSelectionChanged" DoubleTapped="OnTrackDoubleTapped">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate x:DataType="models:MusicTrack">
-                                    <Grid Margin="10,6" ColumnDefinitions="*,128,76,42" ColumnSpacing="8">
-                                        <StackPanel Spacing="2" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{Binding Artist}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="{Binding ., Converter={StaticResource MusicDisplay}, ConverterParameter=audio}" Classes="muted" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Grid.Column="2" Text="{Binding ., Converter={StaticResource MusicDisplay}, ConverterParameter=source}" Classes="muted" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Grid.Column="3" Text="{Binding ., Converter={StaticResource MusicDisplay}, ConverterParameter=duration}" Classes="muted" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                        <views:BrowseTracksView x:Name="SongBrowser" />
                     </Border>
                     <Border x:Name="LibraryDetails" Grid.Row="1" Grid.Column="1" Classes="card" Padding="10">
-                        <Grid RowSpacing="6" IsVisible="{Binding SelectedVisibleTrack, Converter={x:Static ac:ObjectConverters.IsNotNull}}">
+                        <Grid RowSpacing="6" IsVisible="{Binding SelectedBrowseTrack, Converter={x:Static ac:ObjectConverters.IsNotNull}}">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*" MaxHeight="120" />
                                 <RowDefinition Height="36" />
@@ -124,11 +109,9 @@
                             </Grid>
                         </Grid>
                     </Border>
-                    <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,32,32,32" ColumnSpacing="6">
-                        <TextBlock Text="{Binding LibrarySummary}" Classes="muted" FontSize="11" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Classes="page" Content="‹" FontSize="20" Command="{Binding PreviousLibraryPageCommand}" ToolTip.Tip="上一页" />
-                        <Button Grid.Column="2" Classes="page" Content="›" FontSize="20" Command="{Binding NextLibraryPageCommand}" ToolTip.Tip="下一页" />
-                        <Button Grid.Column="3" Classes="page" Content="···" Command="{Binding MoreRecommendationsCommand}" IsVisible="{Binding HasMoreRecommendations}" ToolTip.Tip="更多推荐" />
+                    <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                        <TextBlock Text="{Binding BrowseSummary}" Classes="muted" FontSize="11" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="更多推荐" Command="{Binding MoreRecommendationsCommand}" IsVisible="{Binding HasMoreRecommendations}" Padding="10,2" MinHeight="28" />
                     </Grid>
                 </Grid>
             </TabItem>
@@ -262,38 +245,40 @@
             <TextBlock Grid.Column="1" Text="{Binding Status}" IsVisible="{Binding HasStatus}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Status}" />
         </Grid>
         <Border x:Name="PlaybackBar" Grid.Row="3" Background="{DynamicResource MusicPanelBrush}" BorderBrush="{DynamicResource MusicLineBrush}" BorderThickness="1" CornerRadius="12" Padding="14,10">
-            <Grid RowDefinitions="38,48" RowSpacing="5">
-                <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="14">
-                    <StackPanel Spacing="3" VerticalAlignment="Center" ToolTip.Tip="{Binding AudioDetails}">
-                        <TextBlock Text="{Binding PlaybackTitle}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Text="{Binding PlaybackArtist}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                        <Button Classes="transport modeTransport" Command="{Binding ToggleShuffleCommand}" ToolTip.Tip="{Binding ShuffleModeText}" AutomationProperties.Name="{Binding ShuffleModeText}">
+            <Grid RowDefinitions="40,48" RowSpacing="3">
+                <Grid>
+                    <Grid ColumnDefinitions="*,224,*">
+                        <StackPanel x:Name="PlaybackMetadata" Spacing="3" VerticalAlignment="Center" ToolTip.Tip="{Binding AudioDetails}">
+                            <TextBlock Text="{Binding PlaybackTitle}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding PlaybackArtist}" FontSize="11" Classes="muted" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <Grid x:Name="PlaybackVolume" Grid.Column="2" ColumnDefinitions="*,Auto,100" ColumnSpacing="8" VerticalAlignment="Center">
+                            <CheckBox Grid.Column="1" Content="静音" IsChecked="{Binding IsMuted}" IsEnabled="{Binding CanConfigureAudio}" FontSize="11" />
+                            <Slider Grid.Column="2" Value="{Binding Volume}" Minimum="0" Maximum="100" IsEnabled="{Binding CanConfigureAudio}" ToolTip.Tip="{Binding VolumeText}" />
+                        </Grid>
+                    </Grid>
+                    <Grid x:Name="TransportGroup" Width="200" Height="40" ColumnDefinitions="40,40,40,40,40" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Button x:Name="ShuffleButton" Classes="transport modeTransport" Command="{Binding ToggleShuffleCommand}" ToolTip.Tip="{Binding ShuffleModeText}" AutomationProperties.Name="{Binding ShuffleModeText}">
                             <Path Classes="modeGlyph" Classes.active="{Binding IsShuffle}" Data="{StaticResource ShuffleGlyph}" />
                         </Button>
-                        <Button Classes="transport" Command="{Binding PreviousCommand}" ToolTip.Tip="上一首" AutomationProperties.Name="上一首">
-                            <Path Data="M 3,3 L 5,3 L 5,17 L 3,17 Z M 16,3 L 6,10 L 16,17 Z" Fill="{DynamicResource MusicTextBrush}" Width="15" Height="16" Stretch="Uniform" />
+                        <Button x:Name="PreviousTrackButton" Grid.Column="1" Classes="transport" Command="{Binding PreviousCommand}" ToolTip.Tip="上一首" AutomationProperties.Name="上一首">
+                            <Path Data="M 3,3 L 5,3 L 5,17 L 3,17 Z M 16,3 L 6,10 L 16,17 Z" Fill="{DynamicResource MusicTextBrush}" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Button>
-                        <Button Classes="primary" Command="{Binding TogglePlayPauseCommand}" Width="36" Height="36" MinHeight="0" Padding="0" CornerRadius="18" ToolTip.Tip="{Binding TransportButtonText}" AutomationProperties.Name="{Binding TransportButtonText}">
-                            <Grid Width="14" Height="14">
-                                <Path Data="M 3,1 L 13,7 L 3,13 Z" Fill="{DynamicResource MusicAccentTextBrush}" Stretch="Uniform" IsVisible="{Binding !IsPlaying}" />
-                                <Path Data="M 2,1 L 6,1 L 6,13 L 2,13 Z M 9,1 L 13,1 L 13,13 L 9,13 Z" Fill="{DynamicResource MusicAccentTextBrush}" Stretch="Uniform" IsVisible="{Binding IsPlaying}" />
+                        <Button x:Name="TransportButton" Grid.Column="2" Classes="primary transportPrimary" Command="{Binding TogglePlayPauseCommand}" Width="36" Height="36" MinHeight="0" Padding="0" CornerRadius="18" ToolTip.Tip="{Binding TransportButtonText}" AutomationProperties.Name="{Binding TransportButtonText}">
+                            <Grid Width="16" Height="16">
+                                <Path x:Name="TransportPlayIcon" Data="M 3,1 L 13,7 L 3,13 Z" Fill="{DynamicResource MusicAccentTextBrush}" Stretch="Uniform" IsVisible="{Binding !IsPlaying}" />
+                                <Path x:Name="TransportPauseIcon" Data="M 2,1 L 6,1 L 6,13 L 2,13 Z M 9,1 L 13,1 L 13,13 L 9,13 Z" Fill="{DynamicResource MusicAccentTextBrush}" Stretch="Uniform" IsVisible="{Binding IsPlaying}" />
                             </Grid>
                         </Button>
-                        <Button Classes="transport" Command="{Binding NextCommand}" ToolTip.Tip="下一首" AutomationProperties.Name="下一首">
-                            <Path Data="M 15,3 L 17,3 L 17,17 L 15,17 Z M 4,3 L 14,10 L 4,17 Z" Fill="{DynamicResource MusicTextBrush}" Width="15" Height="16" Stretch="Uniform" />
+                        <Button x:Name="NextTrackButton" Grid.Column="3" Classes="transport" Command="{Binding NextCommand}" ToolTip.Tip="下一首" AutomationProperties.Name="下一首">
+                            <Path Data="M 15,3 L 17,3 L 17,17 L 15,17 Z M 4,3 L 14,10 L 4,17 Z" Fill="{DynamicResource MusicTextBrush}" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Button>
-                        <Button Classes="transport modeTransport" Command="{Binding CycleRepeatModeCommand}" ToolTip.Tip="{Binding RepeatModeText}" AutomationProperties.Name="{Binding RepeatModeText}">
-                            <Grid Width="18" Height="18">
+                        <Button x:Name="RepeatButton" Grid.Column="4" Classes="transport modeTransport" Command="{Binding CycleRepeatModeCommand}" ToolTip.Tip="{Binding RepeatModeText}" AutomationProperties.Name="{Binding RepeatModeText}">
+                            <Grid Width="16" Height="16">
                                 <Path Classes="modeGlyph" Classes.active="{Binding IsRepeating}" Data="{StaticResource RepeatGlyph}" />
                                 <TextBlock Text="1" IsVisible="{Binding IsRepeatOne}" FontSize="8" FontWeight="SemiBold" Foreground="{DynamicResource MusicAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
                         </Button>
-                    </StackPanel>
-                    <Grid Grid.Column="2" ColumnDefinitions="*,Auto,100" ColumnSpacing="8" VerticalAlignment="Center">
-                        <CheckBox Grid.Column="1" Content="静音" IsChecked="{Binding IsMuted}" IsEnabled="{Binding CanConfigureAudio}" FontSize="11" />
-                        <Slider Grid.Column="2" Value="{Binding Volume}" Minimum="0" Maximum="100" IsEnabled="{Binding CanConfigureAudio}" ToolTip.Tip="{Binding VolumeText}" />
                     </Grid>
                 </Grid>
                 <Grid Grid.Row="1" ColumnDefinitions="42,*,42" ColumnSpacing="10">

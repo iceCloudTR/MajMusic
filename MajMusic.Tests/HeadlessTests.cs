@@ -16,6 +16,7 @@ using MajMusic.Infrastructure.Storage;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
 using SkiaSharp;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -98,12 +99,13 @@ namespace MajMusic.Tests
                     await viewModel.HomeUpdate;
                     await viewModel.MetadataRefresh;
                     SaveFrame(window, Path.Combine(output, "ui-library-dense-dark.png"));
-                    var trackList = view.FindControl<ListBox>("LibraryTracks")!;
+                    var trackList = view.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "DenseTracksList");
                     var visibleRows = trackList.GetVisualDescendants().OfType<ListBoxItem>().Where(item =>
                     {
                         var position = item.TranslatePoint(default, trackList);
                         return position is { } point && point.Y >= 0 && point.Y + item.Bounds.Height <= trackList.Bounds.Height;
                     }).ToArray();
+                    SaveFrame(window, Path.Combine(output, "ui-browse-debug.png"));
                     TestAssert.True(visibleRows.Length >= 6 && visibleRows.All(item => item.Bounds.Height <= 76),
                         "A normal desktop viewport must show at least six compact music rows.");
                     TestAssert.True(view.FindControl<Border>("PlaybackBar")!.Bounds.Height <= 115,
@@ -243,7 +245,58 @@ namespace MajMusic.Tests
             TestAssert.True(viewModel.IsRecommendationsMode && viewModel.Tracks.Count > 0,
                 "An authenticated home must display its real source feed before searching.");
             SaveFrame(window, Path.Combine(output, "ui-home.png"));
+            await WaitForBrowseCoversAsync(view);
+            TestAssert.True(viewModel.SelectedTrack is null && viewModel.CardTracks.Any(card => card.Cover is not null),
+                "Visible artwork must load before a song is selected or played.");
+            var cardsList = view.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "CardRowsList");
+            var initialCards = cardsList.GetVisualDescendants().OfType<SongCard>().ToArray();
+            TestAssert.True(initialCards.Length < viewModel.CardTracks.Count,
+                "A long artwork feed must realize only the viewport and its nearby rows.");
+            TestAssert.Equal(2, viewModel.BrowseColumns, "A normal desktop must show two artwork columns.");
+            TestAssert.True(initialCards.All(card => Math.Abs(card.Bounds.Width - 2 * card.Bounds.Height) < 2),
+                "Artwork cards must retain a two-to-one aspect ratio.");
+            SaveFrame(window, Path.Combine(output, "ui-home.png"));
             AssertChromeGeometry(view);
+            var initiallyHidden = new SongCard { DataContext = viewModel.CardTracks[0], Width = 320, IsVisible = false };
+            window.Content = initiallyHidden;
+            Dispatcher.UIThread.RunJobs();
+            initiallyHidden.IsVisible = true;
+            SaveFrame(window, Path.Combine(output, "ui-card-revealed.png"));
+            using (var revealed = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+            {
+                while (viewModel.CardTracks[0].Cover is null)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    await Task.Delay(10, revealed.Token);
+                }
+            }
+
+            window.Content = view;
+            Dispatcher.UIThread.RunJobs();
+            await WaitForBrowseCoversAsync(view);
+            cardsList.ScrollIntoView(viewModel.BrowseRows[^1]);
+            Dispatcher.UIThread.RunJobs();
+            await WaitForBrowseCoversAsync(view);
+            var last = viewModel.CardTracks[^1];
+            var lastControl = cardsList.GetVisualDescendants().OfType<SongCard>().Single(card => ReferenceEquals(card.DataContext, last));
+            var lastPoint = lastControl.TranslatePoint(new Point(lastControl.Bounds.Width / 2, lastControl.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(lastPoint, MouseButton.Left);
+            window.MouseUp(lastPoint, MouseButton.Left);
+            Dispatcher.UIThread.RunJobs();
+            TestAssert.Equal(last.Track.Id, viewModel.SelectedBrowseTrack!.Id,
+                "A scrolled song must update the inspector even when it is outside the old first result page.");
+            TestAssert.True(backend.Snapshot.Track is null, "Selecting an artwork card must not begin playback.");
+            SaveFrame(window, Path.Combine(output, "ui-home-scrolled.png"));
+            cardsList.ScrollIntoView(viewModel.BrowseRows[0]);
+            window.Width = 1540;
+            window.Height = 900;
+            Dispatcher.UIThread.RunJobs();
+            await WaitForBrowseCoversAsync(view);
+            TestAssert.Equal(3, viewModel.BrowseColumns, "A wide desktop must show three artwork columns.");
+            SaveFrame(window, Path.Combine(output, "ui-home-wide.png"));
+            window.Width = 1100;
+            window.Height = 760;
+            Dispatcher.UIThread.RunJobs();
             var searchButton = view.FindControl<Button>("BeginSearchButton")!;
             var searchPoint = searchButton.TranslatePoint(new Point(searchButton.Bounds.Width / 2, searchButton.Bounds.Height / 2), window)!.Value;
             window.MouseDown(searchPoint, MouseButton.Left);
@@ -258,12 +311,39 @@ namespace MajMusic.Tests
                 "Entering a search must display matching indexed music rather than the feed.");
             SaveFrame(window, Path.Combine(output, "ui-search.png"));
             AssertChromeGeometry(view);
+            var dense = view.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "DenseTracksList");
+            var precedingCover = viewModel.Cover;
+            dense.SelectedIndex = 0;
+            using (var keyboard = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+            {
+                while (viewModel.Cover is null || ReferenceEquals(viewModel.Cover, precedingCover))
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    await Task.Delay(10, keyboard.Token);
+                }
+
+                precedingCover = viewModel.Cover;
+                TestAssert.True(dense.ContainerFromIndex(0)!.Focus(), "The selected compact row must accept keyboard focus.");
+                window.KeyPressQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
+                Dispatcher.UIThread.RunJobs();
+                TestAssert.Equal(1, dense.SelectedIndex, "Down-arrow navigation must select the following compact song.");
+                while (viewModel.Cover is null || ReferenceEquals(viewModel.Cover, precedingCover))
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    await Task.Delay(10, keyboard.Token);
+                }
+            }
+
+            TestAssert.Equal(((SongCardViewModel)dense.SelectedItem!).Track.Id, viewModel.SelectedBrowseTrack!.Id,
+                "Keyboard selection must update both inspector metadata and its cover.");
             viewModel.CancelSearchCommand.Execute(null);
             await viewModel.HomeUpdate;
             TestAssert.True(!viewModel.IsSearchExpanded && viewModel.IsRecommendationsMode, "Canceling search must restore recommendations.");
             window.Width = 720;
             window.Height = 540;
             SaveFrame(window, Path.Combine(output, "ui-home-small.png"));
+            TestAssert.Equal(2, viewModel.BrowseColumns, "The compact desktop must keep two complete artwork columns.");
             AssertChromeGeometry(view);
             viewModel.SelectedTrack = viewModel.VisibleTracks[0];
             Dispatcher.UIThread.RunJobs();
@@ -345,6 +425,27 @@ namespace MajMusic.Tests
             SaveFrame(window, Path.Combine(output, "ui-playback.png"));
         }
 
+        /// <summary>Waits for attached virtualized cards to publish their generated cover fixtures.</summary>
+        /// <param name="view">The rendered browsing view.</param>
+        /// <returns>A task completing after current visible artwork is available.</returns>
+        private static async Task WaitForBrowseCoversAsync(MainView view)
+        {
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            while (true)
+            {
+                Dispatcher.UIThread.RunJobs();
+                var cards = view.GetVisualDescendants().OfType<SongCard>()
+                    .Where(card => card.IsEffectivelyVisible && card.IsBrowsingActive && card.Bounds.Width > 0)
+                    .Select(card => (SongCardViewModel)card.DataContext!).ToArray();
+                if (cards.Length > 0 && cards.All(card => card.Cover is not null))
+                {
+                    return;
+                }
+
+                await Task.Delay(10, cancellation.Token);
+            }
+        }
+
         /// <summary>Captures an actual rendered headless frame.</summary>
         /// <param name="window">The window to capture.</param>
         /// <param name="path">The ignored validation image destination.</param>
@@ -384,7 +485,8 @@ namespace MajMusic.Tests
             var player = view.FindControl<Border>("PlaybackBar")!;
             var contentBottom = player.TranslatePoint(default, view)!.Value.Y;
             foreach (var control in view.GetVisualDescendants().OfType<Control>()
-                .Where(item => item.IsEffectivelyVisible && item is Button or ComboBox or CheckBox or TextBox))
+                .Where(item => item.IsEffectivelyVisible && item is Button or ComboBox or CheckBox or TextBox)
+                .Where(item => !item.GetVisualAncestors().OfType<SongCard>().Any()))
             {
                 var position = control.TranslatePoint(default, view)!.Value;
                 var maximum = control.GetVisualAncestors().Contains(player) ? view.Bounds.Height : contentBottom;
@@ -395,6 +497,11 @@ namespace MajMusic.Tests
 
             foreach (var list in view.GetVisualDescendants().OfType<ListBox>().Where(item => item.IsEffectivelyVisible))
             {
+                if (list.Name is "CardRowsList" or "DenseTracksList")
+                {
+                    continue;
+                }
+
                 var scroll = list.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
                 TestAssert.True(scroll is null || scroll.Extent.Height <= scroll.Viewport.Height + 2,
                     $"A visible list page must contain complete rows without scrolling: {list.Name}.");
@@ -404,6 +511,8 @@ namespace MajMusic.Tests
         /// <summary>Serves deterministic visual fixtures without external network access.</summary>
         private sealed class VisualSourceTransport : HttpMessageHandler
         {
+            /// <summary>Caches generated artwork by source image route.</summary>
+            private readonly ConcurrentDictionary<string, byte[]> _images = new(StringComparer.Ordinal);
             /// <summary>Gets the number of simulated source requests.</summary>
             public int RequestCount { get; private set; }
 
@@ -413,10 +522,18 @@ namespace MajMusic.Tests
                 cancellationToken.ThrowIfCancellationRequested();
                 RequestCount++;
                 var path = request.RequestUri!.AbsolutePath;
+                if (path.EndsWith("/image", StringComparison.Ordinal))
+                {
+                    var bytes = _images.GetOrAdd(path, CreateCover);
+                    var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
+                    response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+                    return Task.FromResult(response);
+                }
+
                 var titles = new[] { "Bio-Engineering", "new world", "Walk Away (Disphing Remix)", "星の旅", "After the rain" };
                 var json = path.EndsWith("account/login", StringComparison.Ordinal) ? "{}"
                     : path.EndsWith("recommend/feed", StringComparison.Ordinal) || path.EndsWith("maichart/list", StringComparison.Ordinal)
-                        ? JsonSerializer.Serialize(Enumerable.Range(1, 18).Select(index => new
+                        ? JsonSerializer.Serialize(Enumerable.Range(1, 50).Select(index => new
                         {
                             id = "visual-" + index,
                             title = titles[index % titles.Length] + " · " + index.ToString("00"),
@@ -432,6 +549,35 @@ namespace MajMusic.Tests
                 {
                     Content = new StringContent(json ?? "{}", Encoding.UTF8, "application/json")
                 });
+            }
+
+            /// <summary>Creates distinct deterministic artwork without external media resources.</summary>
+            /// <param name="path">The source route identifying this generated image.</param>
+            /// <returns>The encoded PNG cover.</returns>
+            private static byte[] CreateCover(string path)
+            {
+                var index = int.Parse(path.Split('/')[^2].Split('-')[^1], System.Globalization.CultureInfo.InvariantCulture);
+                var colors = new[] { new SKColor(68, 113, 156), new SKColor(170, 88, 111), new SKColor(53, 142, 130), new SKColor(139, 102, 179), new SKColor(179, 131, 62) };
+                using var bitmap = new SKBitmap(256, 256);
+                using var canvas = new SKCanvas(bitmap);
+                using var shader = SKShader.CreateLinearGradient(new SKPoint(0, 0), new SKPoint(256, 256),
+                    new[] { colors[index % colors.Length], new SKColor(20, 30, 50) }, null, SKShaderTileMode.Clamp);
+                using var background = new SKPaint { Shader = shader, IsAntialias = true };
+                canvas.DrawRect(0, 0, 256, 256, background);
+                using var ring = new SKPaint { Color = new SKColor(255, 255, 255, 80), Style = SKPaintStyle.Stroke, StrokeWidth = 2, IsAntialias = true };
+                for (var circle = 0; circle < 5; circle++)
+                {
+                    canvas.DrawCircle(128, 128, 45 + circle * 26, ring);
+                }
+
+                using var note = new SKPaint { Color = new SKColor(240, 248, 255, 220), StrokeWidth = 9, StrokeCap = SKStrokeCap.Round, IsAntialias = true };
+                canvas.DrawLine(110, 145, 110, 82, note);
+                canvas.DrawLine(110, 82, 160, 70, note);
+                canvas.DrawLine(160, 70, 160, 132, note);
+                canvas.DrawOval(97, 148, 17, 12, note);
+                canvas.DrawOval(147, 135, 17, 12, note);
+                using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+                return encoded.ToArray();
             }
         }
 

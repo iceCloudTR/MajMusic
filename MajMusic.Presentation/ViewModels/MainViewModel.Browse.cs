@@ -1,0 +1,219 @@
+#nullable enable
+
+using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
+using MajMusic.Core.Models;
+
+namespace MajMusic.Presentation.ViewModels
+{
+    /// <summary>Groups a fixed number of songs into one virtualized card row.</summary>
+    /// <param name="Tracks">The stable song presentations in this row.</param>
+    /// <param name="Columns">The number of equal-width card columns.</param>
+    public sealed record SongCardRow(IReadOnlyList<SongCardViewModel> Tracks, int Columns);
+
+    /// <summary>Exposes scrollable artwork browsing independently of the playback queue.</summary>
+    public sealed partial class MainViewModel
+    {
+        /// <summary>Stores the responsive card-column count.</summary>
+        private int _browseColumns = 2;
+        /// <summary>Limits concurrent visible-song metadata reads.</summary>
+        private readonly SemaphoreSlim _browseMetadataGate = new(4);
+        /// <summary>Avoids repeating unavailable metadata reads during this view lifetime.</summary>
+        private readonly ConcurrentDictionary<string, byte> _browseMetadataRead = new(StringComparer.Ordinal);
+        /// <summary>Lets another visible control retry after the current request owner's viewport interest ends.</summary>
+        private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _browseMetadataPending = new(StringComparer.Ordinal);
+
+        /// <summary>Gets whether the normal home content uses artwork cards.</summary>
+        public bool IsCardBrowse => !IsSearching && (IsRecommendationsMode || IsPlaylistsMode);
+        /// <summary>Gets the rows rendered by the virtualized artwork list.</summary>
+        public ObservableCollection<SongCardRow> BrowseRows { get; } = new();
+        /// <summary>Gets the responsive number of card columns.</summary>
+        public int BrowseColumns => _browseColumns;
+        /// <summary>Gets the number of songs in the current browsing snapshot.</summary>
+        public string BrowseSummary => $"{Tracks.Count} 首";
+        /// <summary>Gets the inspected song when it belongs to the current browsing snapshot.</summary>
+        public MusicTrack? SelectedBrowseTrack => Tracks.FirstOrDefault(track => track.Id == SelectedTrack?.Id);
+        /// <summary>Gets or selects the compact-list presentation for the inspected song.</summary>
+        public SongCardViewModel? SelectedBrowseCard
+        {
+            get => CardTracks.FirstOrDefault(card => card.Track.Id == SelectedTrack?.Id);
+            set
+            {
+                if (value is not null)
+                {
+                    SelectedTrack = value.Track;
+                }
+            }
+        }
+
+        /// <summary>Fits complete artwork cards into one, two or three equal-width columns.</summary>
+        /// <param name="width">The actual scroll viewport width in logical pixels.</param>
+        public void SetBrowseViewportWidth(double width)
+        {
+            if (!double.IsFinite(width) || width <= 0 || Volatile.Read(ref _isDisposing))
+            {
+                return;
+            }
+
+            var columns = width < 420 ? 1 : Math.Clamp((int)Math.Floor(width / 300), 2, 3);
+            if (columns != _browseColumns)
+            {
+                _browseColumns = columns;
+                RefreshBrowseRows();
+            }
+        }
+
+        /// <summary>Replaces row grouping while preserving song presentations and their loaded covers.</summary>
+        private void RefreshBrowseRows()
+        {
+            var next = CardTracks.Chunk(_browseColumns).ToArray();
+            for (var index = 0; index < next.Length; index++)
+            {
+                if (index < BrowseRows.Count && BrowseRows[index].Columns == _browseColumns
+                    && BrowseRows[index].Tracks.SequenceEqual(next[index]))
+                {
+                    continue;
+                }
+
+                var row = new SongCardRow(next[index], _browseColumns);
+                if (index < BrowseRows.Count)
+                {
+                    BrowseRows[index] = row;
+                }
+                else
+                {
+                    BrowseRows.Add(row);
+                }
+            }
+
+            while (BrowseRows.Count > next.Length)
+            {
+                BrowseRows.RemoveAt(BrowseRows.Count - 1);
+            }
+
+            OnPropertyChanged(nameof(BrowseColumns));
+            OnPropertyChanged(nameof(BrowseSummary));
+            OnPropertyChanged(nameof(SelectedBrowseTrack));
+            OnPropertyChanged(nameof(SelectedBrowseCard));
+        }
+
+        /// <summary>Enriches a visible song without opening or changing the playback backend.</summary>
+        /// <param name="card">The attached song presentation.</param>
+        /// <param name="cancellationToken">Cancels work after this presentation leaves the viewport.</param>
+        /// <returns>A task representing the bounded optional metadata read.</returns>
+        public Task EnsureBrowseMetadataAsync(SongCardViewModel card, CancellationToken cancellationToken)
+        {
+            return RunTrackedAsync(async () =>
+            {
+                using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, cancellationToken);
+                while (!cancellation.IsCancellationRequested)
+                {
+                    var track = card.Track;
+                    if (track.Duration is not null && track.AudioInfo is not null)
+                    {
+                        return;
+                    }
+
+                    var key = track.Id + "\n" + track.SourceId + "\n" + track.Revision + "\n" + track.EndpointId + "\n" + OnlineEnabled;
+                    if (_browseMetadataRead.ContainsKey(key))
+                    {
+                        return;
+                    }
+
+                    var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    if (!_browseMetadataPending.TryAdd(key, completion))
+                    {
+                        if (_browseMetadataPending.TryGetValue(key, out var pending))
+                        {
+                            try
+                            {
+                                if (await pending.Task.WaitAsync(cancellation.Token))
+                                {
+                                    return;
+                                }
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                return;
+                            }
+                        }
+
+                        continue;
+                    }
+
+                    var entered = false;
+                    var completed = false;
+                    try
+                    {
+                        await _browseMetadataGate.WaitAsync(cancellation.Token);
+                        entered = true;
+                        var updated = _metadata is null ? track : await _metadata.EnrichAsync(track, cancellation.Token);
+                        cancellation.Token.ThrowIfCancellationRequested();
+                        if (updated != track)
+                        {
+                            _dispatch(() => ApplyTrackMetadata(updated));
+                            if (_onlineWorkspace is not null)
+                            {
+                                try
+                                {
+                                    await _onlineWorkspace.UpdateTrackMetadataAsync(updated, cancellation.Token);
+                                }
+                                catch (Exception exception) when (exception is not OperationCanceledException)
+                                {
+                                    // Parsed local properties remain useful when optional persistence is unavailable.
+                                }
+                            }
+                        }
+
+                        if (OnlineEnabled && track.RemoteId is not null && _onlineWorkspace is not null
+                            && (updated.Duration is null || updated.AudioInfo is null))
+                        {
+                            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
+                            timeout.CancelAfter(TimeSpan.FromSeconds(8));
+                            var remote = await _onlineWorkspace.EnrichTrackMetadataAsync(updated, timeout.Token);
+                            var merged = updated with
+                            {
+                                Duration = updated.Duration ?? remote.Duration,
+                                AudioInfo = updated.AudioInfo ?? remote.AudioInfo
+                            };
+                            cancellation.Token.ThrowIfCancellationRequested();
+                            if (merged != updated)
+                            {
+                                _dispatch(() => ApplyTrackMetadata(merged));
+                                await _onlineWorkspace.UpdateTrackMetadataAsync(merged, cancellation.Token);
+                            }
+                        }
+
+                        completed = true;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // A still-visible consumer can acquire the next request after this owner detaches.
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        completed = true;
+                        // Retain already published local properties when optional source metadata fails.
+                    }
+                    finally
+                    {
+                        if (entered)
+                        {
+                            _browseMetadataGate.Release();
+                        }
+
+                        if (completed)
+                        {
+                            _browseMetadataRead.TryAdd(key, 0);
+                        }
+
+                        _browseMetadataPending.TryRemove(key, out _);
+                        completion.TrySetResult(completed);
+                    }
+
+                    return;
+                }
+            });
+        }
+    }
+}

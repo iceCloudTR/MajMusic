@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajMusic.Presentation.ViewModels"
+             xmlns:views="using:MajMusic.Presentation.Views"
+             x:Class="MajMusic.Presentation.Views.BrowseTracksView"
+             x:DataType="vm:MainViewModel">
+    <UserControl.Styles>
+        <Style Selector="ListBox.browseList ListBoxItem">
+            <Setter Property="Height" Value="NaN" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="ListBox.browseList ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="ListBox.browseList ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBox.browseList ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+    </UserControl.Styles>
+    <Grid SizeChanged="OnBrowseSizeChanged">
+        <ListBox x:Name="CardRowsList" Classes="browseList" ItemsSource="{Binding BrowseRows}" IsVisible="{Binding IsCardBrowse}"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:SongCardRow">
+                    <ItemsControl ItemsSource="{Binding Tracks}" Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="{Binding Columns}" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SongCardViewModel">
+                                <views:SongCard Margin="6" IsBrowsingActive="{Binding $parent[ListBox].IsVisible}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <ListBox x:Name="DenseTracksList" Classes="browseList" ItemsSource="{Binding CardTracks}" SelectedItem="{Binding SelectedBrowseCard}"
+                 IsVisible="{Binding !IsCardBrowse}" SelectionChanged="OnDenseSelectionChanged" AutoScrollToSelectedItem="False" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:SongCardViewModel">
+                    <views:SongCard IsCompact="True" Margin="4,3" IsBrowsingActive="{Binding $parent[ListBox].IsVisible}" />
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </Grid>
+</UserControl>

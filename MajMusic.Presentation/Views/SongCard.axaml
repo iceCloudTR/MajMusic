@@ -1,0 +1,82 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajMusic.Presentation.ViewModels"
+             xmlns:converters="using:MajMusic.Presentation.Converters"
+             xmlns:ac="using:Avalonia.Data.Converters"
+             x:Class="MajMusic.Presentation.Views.SongCard"
+             x:Name="CardRoot"
+             x:DataType="vm:SongCardViewModel">
+    <UserControl.Resources>
+        <converters:MusicDisplayConverter x:Key="CardDisplay" />
+    </UserControl.Resources>
+    <UserControl.Styles>
+        <Style Selector="Button.songTile">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Button.songTile /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource MusicPanelBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource MusicLineBrush}" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+        <Style Selector="Button.songTile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource MusicRaisedBrush}" />
+        </Style>
+        <Style Selector="Button.songTile.selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource MusicAccentBrush}" />
+        </Style>
+        <Style Selector="Button.songTile TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
+        </Style>
+        <Style Selector="Button.songTile TextBlock.secondary">
+            <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
+        </Style>
+    </UserControl.Styles>
+    <Button Classes="songTile" Classes.selected="{Binding IsSelected}" Click="OnSelectClicked"
+            DoubleTapped="OnPlayDoubleTapped" ToolTip.Tip="{Binding Track.Title}" AutomationProperties.Name="{Binding Track.Title}">
+        <Border CornerRadius="11" ClipToBounds="True">
+            <Grid ClipToBounds="True">
+                <Grid ColumnDefinitions="*,*" IsVisible="{Binding !IsCompact, ElementName=CardRoot}">
+                    <Border Background="{DynamicResource MusicRaisedBrush}" ClipToBounds="True">
+                        <Grid>
+                            <Path Data="M 7,6 L 7,17 C 7,21 2,21 2,18 C 2,16 4,15 6,16 L 6,7 L 15,5 L 15,14 C 15,18 10,18 10,15 C 10,13 12,12 14,13 L 14,8 Z"
+                                  Fill="{DynamicResource MusicMutedBrush}" Width="28" Height="30" Stretch="Uniform"
+                                  IsVisible="{Binding Cover, Converter={x:Static ac:ObjectConverters.IsNull}}" />
+                            <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                        </Grid>
+                    </Border>
+                    <Grid Grid.Column="1" Margin="8" RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="3">
+                        <TextBlock Text="{Binding Track.Title}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" Height="32" LineHeight="16" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Row="1" Text="{Binding Track.Artist}" FontSize="11" Classes="secondary" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Track.Artist}" />
+                        <TextBlock Grid.Row="3" Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=audio}" FontSize="10" Classes="secondary" TextTrimming="CharacterEllipsis" />
+                        <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <TextBlock Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=source}" FontSize="10" Classes="secondary" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1" Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=duration}" FontSize="10" Classes="secondary" />
+                        </Grid>
+                    </Grid>
+                </Grid>
+                <Grid IsVisible="{Binding IsCompact, ElementName=CardRoot}" ColumnDefinitions="44,*,128,42" ColumnSpacing="12" Margin="8">
+                    <Border CornerRadius="6" Background="{DynamicResource MusicRaisedBrush}" ClipToBounds="True">
+                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Track.Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Track.Artist}" FontSize="11" Classes="secondary" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=audio}" Classes="secondary" FontSize="11" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=source}" Classes="secondary" FontSize="11" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="3" Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=duration}" Classes="secondary" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                </Grid>
+            </Grid>
+        </Border>
+    </Button>
+</UserControl>
