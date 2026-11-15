@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="../MajMusic.Core/MajMusic.Core.csproj" />
+        <PackageReference Include="Avalonia" Version="12.1.0" />
+    </ItemGroup>
+</Project>

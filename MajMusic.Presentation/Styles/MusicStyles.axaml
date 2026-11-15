@@ -1,0 +1,196 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Styles.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="MusicCanvasBrush" Color="#11161C" />
+                    <SolidColorBrush x:Key="MusicPanelBrush" Color="#19212A" />
+                    <SolidColorBrush x:Key="MusicRaisedBrush" Color="#222D38" />
+                    <SolidColorBrush x:Key="MusicLineBrush" Color="#2B3743" />
+                    <SolidColorBrush x:Key="MusicTextBrush" Color="#E8EDF2" />
+                    <SolidColorBrush x:Key="MusicMutedBrush" Color="#97A7B7" />
+                    <SolidColorBrush x:Key="MusicAccentBrush" Color="#7AD8C1" />
+                    <SolidColorBrush x:Key="MusicAccentTextBrush" Color="#102820" />
+                    <SolidColorBrush x:Key="MusicSelectionBrush" Color="#243E44" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="MusicCanvasBrush" Color="#F4F6F9" />
+                    <SolidColorBrush x:Key="MusicPanelBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="MusicRaisedBrush" Color="#E9EEF4" />
+                    <SolidColorBrush x:Key="MusicLineBrush" Color="#DDE4EC" />
+                    <SolidColorBrush x:Key="MusicTextBrush" Color="#243344" />
+                    <SolidColorBrush x:Key="MusicMutedBrush" Color="#687C90" />
+                    <SolidColorBrush x:Key="MusicAccentBrush" Color="#177F71" />
+                    <SolidColorBrush x:Key="MusicAccentTextBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="MusicSelectionBrush" Color="#E0F0EE" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Styles.Resources>
+    <Style Selector="UserControl">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
+    </Style>
+    <Style Selector="TextBlock.muted">
+        <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
+    </Style>
+    <Style Selector="TextBlock.sectionTitle">
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.fieldLabel">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
+    </Style>
+    <Style Selector="Button">
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="12,5" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Background" Value="{DynamicResource MusicRaisedBrush}" />
+    </Style>
+    <Style Selector="Button.primary">
+        <Setter Property="Background" Value="{DynamicResource MusicAccentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource MusicAccentTextBrush}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.quiet">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
+    </Style>
+    <Style Selector="Button.icon">
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Padding" Value="5" />
+    </Style>
+    <Style Selector="Button.iconSmall">
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Padding" Value="3" />
+    </Style>
+    <Style Selector="Button.page">
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Padding" Value="3" />
+    </Style>
+    <Style Selector="ToggleButton.mode">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="Padding" Value="8,3" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.mode:checked">
+        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource MusicAccentBrush}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="ToggleButton.mode:checked /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource MusicAccentBrush}" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="ToggleButton.mode:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource MusicAccentBrush}" />
+    </Style>
+    <Style Selector="Button.transport">
+        <Setter Property="Width" Value="34" />
+        <Setter Property="Height" Value="34" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Padding" Value="8" />
+        <Setter Property="CornerRadius" Value="17" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.modeTransport">
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="Padding" Value="7" />
+        <Setter Property="CornerRadius" Value="16" />
+    </Style>
+    <Style Selector="Path.modeGlyph">
+        <Setter Property="Width" Value="16" />
+        <Setter Property="Height" Value="16" />
+        <Setter Property="Stretch" Value="Uniform" />
+        <Setter Property="StrokeThickness" Value="1.5" />
+        <Setter Property="Stroke" Value="{DynamicResource MusicMutedBrush}" />
+    </Style>
+    <Style Selector="Path.modeGlyph.active">
+        <Setter Property="Stroke" Value="{DynamicResource MusicAccentBrush}" />
+    </Style>
+    <Style Selector="TextBox">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="ComboBox">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="Padding" Value="9,5" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="TabControl">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="TabControl /template/ ContentPresenter#PART_SelectedContentHost">
+        <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style Selector="TabItem">
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="MinHeight" Value="36" />
+        <Setter Property="Padding" Value="12,6" />
+        <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
+    </Style>
+    <Style Selector="TabItem:selected">
+        <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{DynamicResource MusicPanelBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource MusicLineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Padding" Value="16" />
+    </Style>
+    <Style Selector="ListBox">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBoxItem">
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Height" Value="52" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="ListBoxItem:selected">
+        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
+    </Style>
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
+    </Style>
+    <Style Selector="ListBox#PlaylistList ListBoxItem">
+        <Setter Property="Padding" Value="10,0" />
+    </Style>
+</Styles>

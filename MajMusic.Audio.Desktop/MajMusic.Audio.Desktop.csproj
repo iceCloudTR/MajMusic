@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <ItemGroup>
+        <ProjectReference Include="../MajMusic.Core/MajMusic.Core.csproj" />
+        <PackageReference Include="LibVLCSharp" Version="3.10.2" />
+    </ItemGroup>
+</Project>
