@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.ComponentModel;
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -10,6 +11,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using MajMusic.Core.Models;
 using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
 using TKCode.Arc.Mobile;
@@ -37,6 +39,18 @@ namespace MajMusic.Presentation.Views
         private IPointer? _miniPlayerPointer;
         /// <summary>Retains the player gesture origin in stable mobile-root coordinates.</summary>
         private Point _miniPlayerGestureStart;
+        /// <summary>Retains the exact workspace that owned the player at pointer contact.</summary>
+        private MainViewModel? _miniPlayerOwner;
+        /// <summary>Retains the actual playing song rather than an unrelated inspector selection.</summary>
+        private MusicTrack? _miniPlayerTrack;
+        /// <summary>Indicates that the sheet is following this player's upward pull.</summary>
+        private bool _miniPlayerDragging;
+        /// <summary>Retains the latest actual pointer movement for release velocity.</summary>
+        private Point _miniPlayerLastPosition;
+        /// <summary>Times the latest actual movement independently of rendering or media I/O.</summary>
+        private long _miniPlayerLastMovement;
+        /// <summary>Retains vertical pointer velocity in logical pixels per second.</summary>
+        private double _miniPlayerVelocityY;
 
         /// <summary>Initializes the mobile shell and its existing seek gesture boundary.</summary>
         public MobileMusicView()
@@ -52,6 +66,7 @@ namespace MajMusic.Presentation.Views
             timeline.LostFocus += OnSeekLostFocus;
             var player = this.FindControl<Border>("MobileMiniPlayer")!;
             player.AddHandler(PointerPressedEvent, OnMiniPlayerPressed, RoutingStrategies.Tunnel, true);
+            player.AddHandler(PointerMovedEvent, OnMiniPlayerMoved, RoutingStrategies.Bubble, true);
             player.AddHandler(PointerReleasedEvent, OnMiniPlayerReleased, RoutingStrategies.Bubble, true);
             player.PointerCaptureLost += OnMiniPlayerCaptureLost;
         }
@@ -120,6 +135,7 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The data-context change.</param>
         private void OnOwnerChanged(object? sender, EventArgs e)
         {
+            ReleaseMiniPlayerGesture();
             ObserveOwner();
             if (_attached)
             {
@@ -200,7 +216,7 @@ namespace MajMusic.Presentation.Views
         private void OnMiniPlayerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (sender is not Border player || !_attached || _miniPlayerPointer is not null
-                || DataContext is not MainViewModel { PlaybackTrack: not null }
+                || DataContext is not MainViewModel { PlaybackTrack: { } playing } owner
                 || e.Pointer.Type == PointerType.Mouse && !e.GetCurrentPoint(player).Properties.IsLeftButtonPressed)
             {
                 return;
@@ -215,11 +231,71 @@ namespace MajMusic.Presentation.Views
             }
 
             _miniPlayerGestureStart = e.GetPosition(this);
+            _miniPlayerLastPosition = _miniPlayerGestureStart;
+            _miniPlayerLastMovement = Stopwatch.GetTimestamp();
+            _miniPlayerVelocityY = 0;
+            _miniPlayerOwner = owner;
+            _miniPlayerTrack = playing;
             _miniPlayerPointer = e.Pointer;
             e.Pointer.Capture(player);
         }
 
-        /// <summary>Opens the loaded song after an information-area tap or upward drag without affecting transport or timeline controls.</summary>
+        /// <summary>Lets an upward player pull reveal the current song at the finger's actual position.</summary>
+        /// <param name="sender">The persistent bottom player.</param>
+        /// <param name="e">The captured pointer movement.</param>
+        private async void OnMiniPlayerMoved(object? sender, PointerEventArgs e)
+        {
+            if (!ReferenceEquals(_miniPlayerPointer, e.Pointer))
+            {
+                return;
+            }
+
+            if (!HasCurrentPlayerGestureOwner())
+            {
+                ReleaseMiniPlayerGesture();
+                return;
+            }
+
+            var position = e.GetPosition(this);
+            var movement = position - _miniPlayerGestureStart;
+            SampleMiniPlayerVelocity(position);
+            var started = false;
+            var owner = _miniPlayerOwner!;
+            var sheet = this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!;
+            if (!_miniPlayerDragging)
+            {
+                if (movement.Y > 8 || Math.Abs(movement.X) > 8 && Math.Abs(movement.X) > -movement.Y / 1.5)
+                {
+                    ReleaseMiniPlayerGesture();
+                    return;
+                }
+
+                if (movement.Y > -6 || -movement.Y < Math.Abs(movement.X) * 1.5)
+                {
+                    return;
+                }
+
+                owner.SelectedTrack = _miniPlayerTrack;
+                if (!sheet.BeginInteractiveOpen())
+                {
+                    ReleaseMiniPlayerGesture();
+                    return;
+                }
+
+                _miniPlayerDragging = true;
+                started = true;
+            }
+
+            e.Handled = true;
+            e.PreventGestureRecognition();
+            sheet.UpdateInteractiveOpen(-movement.Y);
+            if (started)
+            {
+                await LoadPlayerDetailCoverAsync(owner);
+            }
+        }
+
+        /// <summary>Settles a following sheet or opens the current song after a short information-area tap.</summary>
         /// <param name="sender">The persistent bottom player.</param>
         /// <param name="e">The pointer release completing the local player gesture.</param>
         private async void OnMiniPlayerReleased(object? sender, PointerReleasedEventArgs e)
@@ -230,11 +306,32 @@ namespace MajMusic.Presentation.Views
             }
 
             var movement = e.GetPosition(this) - _miniPlayerGestureStart;
-            ReleaseMiniPlayerGesture();
+            if (!HasCurrentPlayerGestureOwner())
+            {
+                ReleaseMiniPlayerGesture();
+                return;
+            }
+
+            var owner = _miniPlayerOwner!;
+            var playing = _miniPlayerTrack!;
+            if (_miniPlayerDragging)
+            {
+                SampleMiniPlayerVelocity(e.GetPosition(this));
+                var velocity = Stopwatch.GetElapsedTime(_miniPlayerLastMovement).TotalMilliseconds <= 120
+                    ? -_miniPlayerVelocityY : 0;
+                var sheet = this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!;
+                sheet.UpdateInteractiveOpen(-movement.Y);
+                sheet.EndInteractiveOpen(velocity);
+                _miniPlayerDragging = false;
+                ReleaseMiniPlayerGesture();
+                e.Handled = true;
+                e.PreventGestureRecognition();
+                return;
+            }
+
             var isTap = Math.Abs(movement.X) <= 8 && Math.Abs(movement.Y) <= 8;
-            var isUpwardSwipe = movement.Y <= -48 && -movement.Y >= Math.Abs(movement.X) * 1.5;
-            if ((!isTap && !isUpwardSwipe)
-                || DataContext is not MainViewModel { PlaybackTrack: { } playing } owner)
+            ReleaseMiniPlayerGesture();
+            if (!isTap)
             {
                 return;
             }
@@ -242,6 +339,14 @@ namespace MajMusic.Presentation.Views
             e.Handled = true;
             owner.SelectedTrack = playing;
             OpenTrackDetails();
+            await LoadPlayerDetailCoverAsync(owner);
+        }
+
+        /// <summary>Loads artwork once when a tap or recognized pull begins, without delaying pointer movement.</summary>
+        /// <param name="owner">The workspace whose playing song is being inspected.</param>
+        /// <returns>The observed cover request.</returns>
+        private static async Task LoadPlayerDetailCoverAsync(MainViewModel owner)
+        {
             try
             {
                 await owner.LoadCoverAsync();
@@ -261,7 +366,39 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The capture-loss notification.</param>
         private void OnMiniPlayerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
         {
-            _miniPlayerPointer = null;
+            if (ReferenceEquals(_miniPlayerPointer, e.Pointer))
+            {
+                ReleaseMiniPlayerGesture();
+            }
+        }
+
+        /// <summary>Rejects a pull whose playing song or workspace changed before release.</summary>
+        /// <returns>Whether the captured player still belongs to the same actual playback owner.</returns>
+        private bool HasCurrentPlayerGestureOwner()
+        {
+            return ReferenceEquals(DataContext, _miniPlayerOwner) && _miniPlayerTrack is { } captured &&
+                _miniPlayerOwner?.PlaybackTrack is { } current && current.Id == captured.Id &&
+                current.EndpointId == captured.EndpointId && current.SourceId == captured.SourceId &&
+                current.Revision == captured.Revision;
+        }
+
+        /// <summary>Samples only actual vertical movement so a stationary release does not erase a recent flick.</summary>
+        /// <param name="position">The pointer position in stable mobile-root coordinates.</param>
+        private void SampleMiniPlayerVelocity(Point position)
+        {
+            var distance = position.Y - _miniPlayerLastPosition.Y;
+            if (Math.Abs(distance) > 0.001)
+            {
+                var now = Stopwatch.GetTimestamp();
+                var elapsed = Stopwatch.GetElapsedTime(_miniPlayerLastMovement, now).TotalSeconds;
+                if (elapsed > 0)
+                {
+                    _miniPlayerVelocityY = distance / elapsed;
+                }
+
+                _miniPlayerLastPosition = position;
+                _miniPlayerLastMovement = now;
+            }
         }
 
         /// <summary>Releases the local player gesture without stealing a browser or slider pointer.</summary>
@@ -269,6 +406,15 @@ namespace MajMusic.Presentation.Views
         {
             var pointer = _miniPlayerPointer;
             _miniPlayerPointer = null;
+            var dragging = _miniPlayerDragging;
+            _miniPlayerDragging = false;
+            _miniPlayerOwner = null;
+            _miniPlayerTrack = null;
+            if (dragging)
+            {
+                this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")?.EndInteractiveOpen(0, true);
+            }
+
             if (pointer is not null && pointer.Captured == this.FindControl<Border>("MobileMiniPlayer"))
             {
                 pointer.Capture(null);
@@ -303,6 +449,12 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The changed property.</param>
         private void OnOwnerPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
+            if (_miniPlayerPointer is not null && e.PropertyName == nameof(MainViewModel.PlaybackTitle) &&
+                !HasCurrentPlayerGestureOwner())
+            {
+                ReleaseMiniPlayerGesture();
+            }
+
             if (e.PropertyName is nameof(MainViewModel.IsRecommendationsMode) or nameof(MainViewModel.IsPlaylistsMode)
                 or nameof(MainViewModel.IsLibraryMode) or nameof(MainViewModel.IsSearchExpanded))
             {

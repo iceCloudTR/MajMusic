@@ -41,14 +41,28 @@ namespace MajMusic.Presentation.Theme
         };
         /// <summary>Keeps the resting button's ambient shadow centered so its two edge clearances remain equal.</summary>
         private static readonly BoxShadows ButtonShadow = new(new BoxShadow { Blur = 8, Color = Color.FromArgb(42, 0, 0, 0) });
-        /// <summary>Defines the slower complete corner-to-center-to-exit animation.</summary>
-        private const double FullTravelMilliseconds = 820;
+        /// <summary>Caps the actual speed of both the moving center and growing button edges in logical pixels per second.</summary>
+        private const double MaximumEdgeSpeed = 420;
+        /// <summary>Prevents small cards from traversing the complete path too quickly.</summary>
+        private const double MaximumProgressSpeed = .9;
+        /// <summary>Accelerates gradually from rest without adding spring overshoot.</summary>
+        private const double ProgressAcceleration = 1.8;
         /// <summary>Defines the deliberate horizontal travel required before a release commits playback.</summary>
         private const double CommitProgress = .62;
         /// <summary>Defines the travel before a pending press becomes a horizontal or vertical gesture.</summary>
         private const double DirectionSlop = 8;
-        /// <summary>Owns the interruptible Arc paint value while this card is attached.</summary>
-        private MotionValue<double>? _motion;
+        /// <summary>Retains the latest finger or automatic destination independently of the displayed progress.</summary>
+        private double _targetProgress;
+        /// <summary>Retains the signed progress velocity through continuous forward target changes.</summary>
+        private double _progressVelocity;
+        /// <summary>Owns one versioned display-frame callback until the current target is reached.</summary>
+        private Action<TimeSpan>? _frameCallback;
+        /// <summary>Records the previous display timestamp without accumulating time while idle.</summary>
+        private TimeSpan? _lastFrameTime;
+        /// <summary>Prevents duplicate animation-frame registrations for a single control.</summary>
+        private bool _framePending;
+        /// <summary>Completes one release or automatic action when its visible trajectory finishes.</summary>
+        private TaskCompletionSource<bool>? _transitionCompletion;
         /// <summary>Retains the actual reversible progress along the complete trajectory.</summary>
         private double _progress;
         /// <summary>Tracks the pointer whose initial press hit the cover-corner circle.</summary>
@@ -149,8 +163,6 @@ namespace MajMusic.Presentation.Theme
             base.OnAttachedToVisualTree(e);
             _attached = true;
             _level = ArcMotion.GetEffectiveLevel(this);
-            _motion = new MotionValue<double>(this, 0, MotionVectors.Double);
-            _motion.Changed += ApplyProgress;
             ResetGesture();
         }
 
@@ -159,13 +171,6 @@ namespace MajMusic.Presentation.Theme
         {
             _attached = false;
             ResetGesture();
-            if (_motion is { } motion)
-            {
-                motion.Changed -= ApplyProgress;
-                motion.Dispose();
-                _motion = null;
-            }
-
             base.OnDetachedFromVisualTree(e);
         }
 
@@ -208,6 +213,11 @@ namespace MajMusic.Presentation.Theme
             }
 
             _version++;
+            _frameCallback = null;
+            _framePending = false;
+            _lastFrameTime = null;
+            _progressVelocity = 0;
+            _targetProgress = _progress;
             _pressPosition = e.GetPosition(this);
             _pointer = e.Pointer;
             _dragging = false;
@@ -245,7 +255,8 @@ namespace MajMusic.Presentation.Theme
             e.PreventGestureRecognition();
             var (center, _) = InitialButton();
             var travel = Math.Max(72, Bounds.Width - center.X);
-            _motion?.Jump(Math.Clamp(distance.X / travel, 0, 1));
+            _targetProgress = Math.Clamp(distance.X / travel, 0, 1);
+            RequestNextFrame();
         }
 
         /// <inheritdoc />
@@ -261,7 +272,9 @@ namespace MajMusic.Presentation.Theme
             e.PreventGestureRecognition();
             var delta = e.GetPosition(this) - _pressPosition;
             var click = !_dragging && Math.Abs(delta.X) < DirectionSlop && Math.Abs(delta.Y) < DirectionSlop;
-            var commit = click || _dragging && _progress >= CommitProgress;
+            var (start, _) = InitialButton();
+            var releasedTarget = Math.Clamp(delta.X / Math.Max(72, Bounds.Width - start.X), 0, 1);
+            var commit = click || _dragging && releasedTarget >= CommitProgress;
             ReleasePointer();
             _transitionUpdate = SettleAsync(commit);
             await _transitionUpdate;
@@ -324,13 +337,9 @@ namespace MajMusic.Presentation.Theme
             var opacity = IsEffectivelyEnabled ? 1 : .4;
             if (_level == ArcMotionLevel.Full)
             {
-                var growth = MusicMotion.InOut.Ease(Math.Clamp(_progress / .55, 0, 1));
-                var exit = MusicMotion.InOut.Ease(Math.Clamp((_progress - .55) / .45, 0, 1));
-                var enlarged = Math.Max(initialRadius, Bounds.Height * .42);
-                radius = initialRadius + (enlarged - initialRadius) * growth;
-                center = new Point(start.X + (Bounds.Width / 2 - start.X) * growth,
-                    start.Y + (Bounds.Height / 2 - start.Y) * growth);
-                center = new Point(center.X + (Bounds.Width + enlarged + 4 - Bounds.Width / 2) * exit, center.Y);
+                var pose = new CoverPlayTrajectory(Bounds.Size, start, initialRadius).GetPose(_progress);
+                center = pose.Center;
+                radius = pose.HalfSide;
             }
             else if (_level == ArcMotionLevel.Reduced)
             {
@@ -387,27 +396,168 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Completes or reverses the current path and emits playback only for the same committed card.</summary>
         /// <param name="commit">Whether this explicit gesture has crossed the playback threshold.</param>
         /// <returns>A task representing the finite animation and its safe return to the corner.</returns>
-        private async Task SettleAsync(bool commit)
+        private Task SettleAsync(bool commit)
         {
-            var version = ++_version;
-            var motion = _motion;
-            if (!_attached || !IsEffectivelyEnabled || motion is null)
+            if (!_attached || !IsEffectivelyEnabled)
+            {
+                ResetGesture();
+                return Task.CompletedTask;
+            }
+
+            _transitionCompletion?.TrySetResult(false);
+            var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _transitionCompletion = completion;
+            _settling = true;
+            _commitPending = commit;
+            _level = ArcMotion.GetEffectiveLevel(this);
+            _targetProgress = commit ? 1 : 0;
+            if (_level == ArcMotionLevel.Off)
+            {
+                ApplyProgress(_targetProgress);
+                FinishTransition();
+            }
+            else
+            {
+                RequestNextFrame();
+            }
+            return completion.Task;
+        }
+
+        /// <summary>Schedules one display-synchronized frame without a polling timer or a second easing animation.</summary>
+        private void RequestNextFrame()
+        {
+            if (_framePending)
+            {
+                return;
+            }
+            if (TopLevel.GetTopLevel(this) is not { } host || !_attached)
+            {
+                ResetGesture();
+                return;
+            }
+            if (_frameCallback is null)
+            {
+                var version = _version;
+                _lastFrameTime = null;
+                _frameCallback = timestamp => OnAnimationFrame(timestamp, version);
+            }
+            _framePending = true;
+            host.RequestAnimationFrame(_frameCallback);
+        }
+
+        /// <summary>Follows the current target with bounded acceleration and a physical speed ceiling.</summary>
+        /// <param name="timestamp">The current platform display-frame time.</param>
+        /// <param name="version">The attachment and gesture lifetime owning this callback chain.</param>
+        private void OnAnimationFrame(TimeSpan timestamp, long version)
+        {
+            if (version != _version)
+            {
+                return;
+            }
+            _framePending = false;
+            if (!_attached || !IsEffectivelyVisible || !IsEffectivelyEnabled)
             {
                 ResetGesture();
                 return;
             }
 
-            _settling = true;
-            _commitPending = commit;
-            _level = ArcMotion.GetEffectiveLevel(this);
-            var target = commit ? 1d : 0;
-            var duration = TimeSpan.FromMilliseconds(_level == ArcMotionLevel.Reduced ? 120 : Math.Max(180, FullTravelMilliseconds * Math.Abs(target - _progress)));
+            var elapsed = _lastFrameTime is { } previous ? (timestamp - previous).TotalSeconds : 0;
+            _lastFrameTime = timestamp;
+            if (elapsed > 0)
+            {
+                var seconds = Math.Min(elapsed, 1d / 30);
+                var error = _targetProgress - _progress;
+                var direction = Math.Sign(error);
+                if (direction != 0)
+                {
+                    if (Math.Sign(_progressVelocity) != direction)
+                    {
+                        _progressVelocity = 0;
+                    }
+                    var reduced = _level != ArcMotionLevel.Full;
+                    var acceleration = reduced ? 80 : ProgressAcceleration;
+                    var maximumRate = reduced ? 1d / .12 : MaximumProgressSpeed;
+                    _progressVelocity = Math.Clamp(_progressVelocity, -maximumRate, maximumRate);
+                    var forwardExit = _settling && _commitPending;
+                    var desiredSpeed = forwardExit ? maximumRate : Math.Min(maximumRate, Math.Sqrt(2 * acceleration * Math.Abs(error)));
+                    var velocityChange = Math.Clamp(direction * desiredSpeed - _progressVelocity, -acceleration * seconds, acceleration * seconds);
+                    _progressVelocity += velocityChange;
+                    var step = Math.Min(Math.Abs(error), Math.Abs(_progressVelocity) * seconds);
+                    if (!reduced)
+                    {
+                        var (start, halfSide) = InitialButton();
+                        var path = new CoverPlayTrajectory(Bounds.Size, start, halfSide);
+                        step = LimitStep(path, _progress, direction, step, MaximumEdgeSpeed * seconds);
+                    }
+                    _progressVelocity = direction * step / seconds;
+                    ApplyProgress(_progress + direction * step);
+                }
+            }
+
+            if (Math.Abs(_targetProgress - _progress) <= .000001)
+            {
+                ApplyProgress(_targetProgress);
+                _progressVelocity = 0;
+                _frameCallback = null;
+                _lastFrameTime = null;
+                if (_settling)
+                {
+                    FinishTransition();
+                }
+            }
+            else
+            {
+                RequestNextFrame();
+            }
+        }
+
+        /// <summary>Bounds center and size movement along any forward or reverse part of the same curve.</summary>
+        /// <param name="path">The current card's continuous trajectory.</param>
+        /// <param name="progress">The actual displayed position.</param>
+        /// <param name="direction">The requested travel direction.</param>
+        /// <param name="step">The acceleration-limited candidate progress distance.</param>
+        /// <param name="maximumDistance">The largest permitted movement of any visible button edge this frame.</param>
+        /// <returns>A safe progress step whose full curve interval respects the physical speed ceiling.</returns>
+        private static double LimitStep(CoverPlayTrajectory path, double progress, int direction, double step, double maximumDistance)
+        {
+            if (step * path.GetMaximumEdgeDerivative(progress, progress + direction * step) <= maximumDistance)
+            {
+                return step;
+            }
+            var lower = 0d;
+            var upper = step;
+            for (var index = 0; index < 10; index++)
+            {
+                var candidate = (lower + upper) / 2;
+                if (candidate * path.GetMaximumEdgeDerivative(progress, progress + direction * candidate) <= maximumDistance)
+                {
+                    lower = candidate;
+                }
+                else
+                {
+                    upper = candidate;
+                }
+            }
+            return lower;
+        }
+
+        /// <summary>Completes playback only after the visible exit, or restores the corner after a rollback.</summary>
+        private void FinishTransition()
+        {
+            var completion = _transitionCompletion;
+            var commit = _commitPending;
+            var version = _version;
+            _transitionCompletion = null;
+            _settling = false;
+            _commitPending = false;
+            _dragging = false;
+            _progressVelocity = 0;
+            _frameCallback = null;
+            _lastFrameTime = null;
             try
             {
-                if (await motion.AnimateTo(target, _level == ArcMotionLevel.Off ? MotionSpec.Instant : MotionSpec.Tween(duration, MusicMotion.InOut))
-                    && version == _version && _attached && IsEffectivelyEnabled && commit)
+                if (commit && _attached && IsEffectivelyEnabled)
                 {
-                    _commitPending = false;
                     PlayRequested?.Invoke(this, EventArgs.Empty);
                 }
             }
@@ -415,11 +565,10 @@ namespace MajMusic.Presentation.Theme
             {
                 if (version == _version)
                 {
-                    _settling = false;
-                    _commitPending = false;
-                    _dragging = false;
-                    motion.Jump(0);
+                    _targetProgress = 0;
+                    ApplyProgress(0);
                 }
+                completion?.TrySetResult(true);
             }
         }
 
@@ -438,12 +587,18 @@ namespace MajMusic.Presentation.Theme
         private void ResetGesture()
         {
             _version++;
+            _frameCallback = null;
+            _framePending = false;
+            _lastFrameTime = null;
+            _targetProgress = 0;
+            _progressVelocity = 0;
+            _transitionCompletion?.TrySetResult(false);
+            _transitionCompletion = null;
             ReleasePointer();
             _dragging = false;
             _settling = false;
             _commitPending = false;
             _keyHeld = false;
-            _motion?.Jump(0);
             ApplyProgress(0);
         }
 
@@ -485,8 +640,6 @@ namespace MajMusic.Presentation.Theme
             if (_settling)
             {
                 var commit = _commitPending;
-                _version++;
-                _motion?.Jump(_progress);
                 _transitionUpdate = SettleAsync(commit);
                 await _transitionUpdate;
             }

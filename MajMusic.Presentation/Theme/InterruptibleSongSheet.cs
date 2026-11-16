@@ -43,6 +43,12 @@ namespace MajMusic.Presentation.Theme
         private bool _present;
         /// <summary>Indicates that the finger currently owns the position.</summary>
         private bool _dragging;
+        /// <summary>Distinguishes a player-originated opening pull from a drag inside the sheet.</summary>
+        private bool _interactiveOpening;
+        /// <summary>Retains the displayed offset caught by an external opening pull.</summary>
+        private double _interactiveOriginOffset;
+        /// <summary>Retains the previous resting target for an interrupted external pull.</summary>
+        private bool _interactiveOriginOpen;
 
         /// <summary>Gets the displayed opening progress, from zero when closed to one when fully open.</summary>
         public double TransitionProgress => _progress;
@@ -52,6 +58,66 @@ namespace MajMusic.Presentation.Theme
         public Task<bool> SheetUpdate => _sheetUpdate;
         /// <summary>Gets the distance required to move the complete panel beyond the bottom edge.</summary>
         private double ClosedOffset => Math.Max(0, _panel?.Bounds.Height ?? 0) + ClosedGap;
+
+        /// <summary>Catches the current position for a direct upward pull beginning on the mini player.</summary>
+        /// <returns>Whether the attached sheet is ready to follow the pointer.</returns>
+        public bool BeginInteractiveOpen()
+        {
+            ApplyTemplate();
+            if (_motion is null || _panel is null)
+            {
+                return false;
+            }
+
+            _motion.Stop();
+            _interactiveOriginOpen = IsOpen;
+            _interactiveOpening = true;
+            _dragging = true;
+            _present = true;
+            _panel.IsVisible = true;
+            IsHitTestVisible = true;
+            UpdatePanelSize();
+            _panel.UpdateLayout();
+            ApplyProgress(_motion.Value);
+            _interactiveOriginOffset = Math.Max(0, PanelOffset - (_progress == 0 ? ClosedGap : 0));
+            return true;
+        }
+
+        /// <summary>Moves the panel by the finger's actual travel, without easing or a speed limit.</summary>
+        /// <param name="upwardDistance">Upward travel from the original player contact, in logical pixels.</param>
+        public void UpdateInteractiveOpen(double upwardDistance)
+        {
+            if (_interactiveOpening && _motion is not null && double.IsFinite(upwardDistance))
+            {
+                var offset = _interactiveOriginOffset - upwardDistance;
+                _motion.Jump(1 - Math.Clamp(offset / ClosedOffset, 0, 1));
+            }
+        }
+
+        /// <summary>Settles an external pull from its current position after release or cancellation.</summary>
+        /// <param name="upwardVelocity">The final upward pointer velocity, in logical pixels per second.</param>
+        /// <param name="cancelled">Whether capture, viewport or playback ownership invalidated the gesture.</param>
+        public void EndInteractiveOpen(double upwardVelocity, bool cancelled = false)
+        {
+            if (!_interactiveOpening)
+            {
+                return;
+            }
+
+            _interactiveOpening = false;
+            _dragging = false;
+            var distance = _interactiveOriginOffset - PanelOffset;
+            var open = cancelled ? _interactiveOriginOpen : upwardVelocity >= -500 &&
+                (_progress >= 0.5 || distance >= 48 || upwardVelocity > 500 && distance >= 8);
+            if (IsOpen == open)
+            {
+                TransitionToTarget();
+            }
+            else
+            {
+                SetCurrentValue(IsOpenProperty, open);
+            }
+        }
 
         /// <inheritdoc />
         protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
@@ -132,6 +198,7 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Stops all template work before detach or template replacement.</summary>
         private void DisconnectTemplate()
         {
+            _interactiveOpening = false;
             _dragging = false;
             _handleDrag?.Dispose();
             _handleDrag = null;
@@ -167,6 +234,7 @@ namespace MajMusic.Presentation.Theme
                 return;
             }
 
+            _interactiveOpening = false;
             _dragging = false;
             _motion.Stop();
             if (IsOpen)
