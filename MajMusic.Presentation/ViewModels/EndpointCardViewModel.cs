@@ -322,7 +322,9 @@ namespace MajMusic.Presentation.ViewModels
             {
                 Status = exception switch
                 {
+                    MajMusic.Core.Network.LoginRejectedException => "账号或密码错误",
                     MajMusic.Core.Network.BrowserVerificationRequiredException => "接入点需要浏览器验证",
+                    HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized } => "请重新登录",
                     HttpRequestException { StatusCode: System.Net.HttpStatusCode.Forbidden } => "接入点拒绝访问",
                     _ => "操作未完成"
                 };

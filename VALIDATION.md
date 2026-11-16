@@ -122,7 +122,7 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- native-vault
 - APK v1、v2、v3 签名验证通过；包含第三方声明，无桌面 VLC、运行数据或签名私钥。
 - 合并 Manifest 包含 Application、Launcher 和 `mediaPlayback` 前台服务，以及播放、网络和通知权限。
 
-共享逻辑的 65 组默认回归通过。`document-storage` 通过真实工作区和模拟文档提供者检查嵌套曲库、TXT 标题与 Maj 哈希、保留原音频 URI、不复制音乐、封面缓存、只读授权入口、Maj JSON 导入导出和桌面选择器回退。
+共享逻辑的 66 组默认回归通过。`document-storage` 通过真实工作区和模拟文档提供者检查嵌套曲库、TXT 标题与 Maj 哈希、保留原音频 URI、不复制音乐、封面缓存、只读授权入口、Maj JSON 导入导出和桌面选择器回退。
 
 ```powershell
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- document-storage
@@ -135,4 +135,8 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- document
 ./Tools/Test-AndroidStartup.ps1 -Serial <adb-device-serial>
 ```
 
-系统音频解码、播放时的后台与锁屏操作、耳机和音频焦点、实际目录提供者、Keystore 和联网登录尚未完成真机验证。
+同日完成 Android Keystore 独立真机回归：独立测试应用链接生产凭据存储，12 项断言覆盖写入、跨实例读取、第二账号隔离、更新和删除。旧实现首写后读取复现 `AEADBadTagException`；复用原生 `IKey` 后两轮均通过，测试应用随后卸载。该测试的源码对照、命令与日志位置见 [Android 原生凭据测试](MajMusic.Android.Tests/README.md)。
+
+手机实测确认 Guest 曲库可读取；用户名与电脑一致后，账号登录成功。更新后冷启动自动登录返回 200 并取得会话，空密码框弹出 QWERTY 密码键盘，没有中文候选。`auth-boundaries` 和 `endpoint-cards` 覆盖登录 401 的“账号或密码错误”、普通会话 401 的“请重新登录”，以及权限拒绝与浏览器验证的区分。`mobile-account-input` 检查真实手机模板的密码键盘选项、禁用联想与自动大写、用户名大小写和密码的双向绑定。
+
+系统音频解码、播放时的后台与锁屏操作、耳机和音频焦点、实际目录提供者尚未完成真机验证。

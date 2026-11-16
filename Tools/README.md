@@ -36,3 +36,13 @@ dotnet workload install android
 ```
 
 使用 `-ApkPath <apk文件>` 可先覆盖安装包名为 `com.icecloud.majmusic` 的 APK。脚本连续冷启动三次，每次等待五秒，核对进程仍存活、前台 Activity 属于本应用，以及对应 PID 的日志没有致命异常。每次启动的结果与日志保存在 `artifacts/android-startup-*`。
+
+# Android 原生凭据验证
+
+```powershell
+./Tools/Test-AndroidCredentials.ps1 -Serial <adb-device-serial>
+```
+
+脚本自动查找 .NET SDK、Android SDK 与兼容的 Android Studio、Unity 或独立 JDK，构建并安装独立测试包 `com.icecloud.majmusic.tests`。测试使用随机值检查写入、读取、跨实例保留、更新和删除，共 12 项原生 Keystore 断言；完成后卸载测试包。日志保存在 `artifacts/android-credentials-*`。
+
+`-CredentialStoreSource <旧版源码路径>` 可链接旧实现做失败对照，`-KeepInstalled` 保留测试包用于检查。工具位置可通过 `-DotNet`、`-AndroidSdkDirectory` 和 `-JavaSdkDirectory` 指定。

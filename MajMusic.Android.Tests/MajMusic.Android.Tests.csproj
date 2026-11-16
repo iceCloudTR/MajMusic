@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0-android</TargetFramework>
+        <OutputType>Exe</OutputType>
+        <RuntimeIdentifier>android-arm64</RuntimeIdentifier>
+        <SupportedOSPlatformVersion>23.0</SupportedOSPlatformVersion>
+        <ApplicationId>com.icecloud.majmusic.tests</ApplicationId>
+        <ApplicationTitle>MajMusic Native Tests</ApplicationTitle>
+        <ApplicationVersion>1</ApplicationVersion>
+        <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
+        <AndroidPackageFormats>apk</AndroidPackageFormats>
+        <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+        <PublishTrimmed>false</PublishTrimmed>
+        <RunAOTCompilation>false</RunAOTCompilation>
+        <CredentialStoreSource Condition="'$(CredentialStoreSource)' == ''">$(MSBuildProjectDirectory)/../MajMusic.Android/Security/AndroidCredentialStore.cs</CredentialStoreSource>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="../MajMusic.Core/MajMusic.Core.csproj" />
+        <Compile Include="$(CredentialStoreSource)" Link="Production/AndroidCredentialStore.cs" />
+    </ItemGroup>
+</Project>

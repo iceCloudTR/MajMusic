@@ -175,6 +175,7 @@ namespace MajMusic.Infrastructure.Network
         /// <param name="cancellationToken">Cancels login.</param>
         /// <returns>A task representing the completed login.</returns>
         /// <exception cref="ArgumentException">Credentials are empty.</exception>
+        /// <exception cref="LoginRejectedException">The login response rejects the account name or password with HTTP 401.</exception>
         /// <exception cref="HttpRequestException">The server refuses login.</exception>
         /// <exception cref="InvalidOperationException">Online activity is disabled.</exception>
         public async Task LoginAsync(string username, string password, CancellationToken cancellationToken = default)
@@ -200,6 +201,12 @@ namespace MajMusic.Infrastructure.Network
                 { new StringContent(digest), "password" }
             };
             using var response = await SendAsync(HttpMethod.Post, "account/login", content, cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                ClearSession();
+                throw new LoginRejectedException();
+            }
+
             var status = await ReadLoginStatusAsync(response, cancellationToken).ConfigureAwait(false);
             if (response.StatusCode == HttpStatusCode.Forbidden && status.Code is 0 or 60001)
             {

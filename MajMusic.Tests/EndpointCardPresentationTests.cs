@@ -226,7 +226,8 @@ namespace MajMusic.Tests
             {
                 TestAssert.True(first.SynchronizeCommand.CanExecute(null), "A logged-in source exposes synchronization before its session expires.");
                 first.SynchronizeCommand.Execute(null);
-                await WaitUntilAsync(() => first.IsIdle && first.Status == "操作未完成");
+                await WaitUntilAsync(() => first.IsIdle && first.Status == "请重新登录");
+                TestAssert.Equal("请重新登录", view.Status, "A card's expired session must request reauthentication in both status locations.");
                 TestAssert.True(!Session(harness.Workspace, first.Id).IsLoggedIn && view.SelectedEndpointProfile is { IsLoggedIn: false },
                     "A synchronization response with HTTP 401 must refresh the actual source and visible login state.");
                 TestAssert.True(view.Tracks.Count == 0 && view.Playlists.All(playlist => !playlist.IsCloud), "Session expiry during a card operation clears that owner's private feed and cloud snapshots.");
@@ -246,7 +247,8 @@ namespace MajMusic.Tests
             first.SelectedAccount = first.Accounts.Single(option => option.AccountId == failingAccount);
             TestAssert.True(first.SelectAccountCommand.CanExecute(null), "The alternate saved-account selection must be available.");
             first.SelectAccountCommand.Execute(null);
-            await WaitUntilAsync(() => first.IsIdle && first.Status == "操作未完成");
+            await WaitUntilAsync(() => first.IsIdle && first.Status == "账号或密码错误");
+            TestAssert.Equal("账号或密码错误", view.Status, "A real rejected saved-account login must explain its credentials failure in both status locations.");
             TestAssert.True(!Session(harness.Workspace, first.Id).IsLoggedIn && view.SelectedEndpointProfile is { IsLoggedIn: false }
                 && view.SelectedEndpointProfile.Configuration.SelectedAccountId == failingAccount, "A failed automatic selection cannot leave the old account marked logged in.");
             TestAssert.True(first.Configuration!.SelectedAccountId == failingAccount && first.Username == "Fixture failed selection" && first.Password.Length == 0,

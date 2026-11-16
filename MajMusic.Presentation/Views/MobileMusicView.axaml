@@ -7,6 +7,7 @@
              xmlns:views="using:MajMusic.Presentation.Views"
              xmlns:theme="using:MajMusic.Presentation.Theme"
              xmlns:converters="using:MajMusic.Presentation.Converters"
+             xmlns:input="using:Avalonia.Input.TextInput"
              x:Class="MajMusic.Presentation.Views.MobileMusicView"
              x:Name="MobileRoot"
              x:DataType="vm:MainViewModel"
@@ -177,8 +178,11 @@
                                                 <arcm:Button Grid.Column="1" Content="+" Variant="Tinted" Command="{Binding NewAccountCommand}" AutomationProperties.Name="新增账号" />
                                                 <arcm:Button Grid.Column="2" Content="−" Variant="Plain" Command="{Binding RemoveAccountCommand}" AutomationProperties.Name="移除账号" />
                                             </Grid>
-                                            <arcm:TextField Text="{Binding Username, Mode=TwoWay}" PlaceholderText="账号" IsEnabled="{Binding CanEditAccount}" />
-                                            <arcm:TextField Text="{Binding Password, Mode=TwoWay}" PlaceholderText="密码" PasswordChar="●" IsEnabled="{Binding CanEditAccount}" />
+                                            <arcm:TextField Text="{Binding Username, Mode=TwoWay}" PlaceholderText="账号" IsEnabled="{Binding CanEditAccount}"
+                                                            input:TextInputOptions.ShowSuggestions="False" input:TextInputOptions.AutoCapitalization="False" />
+                                            <arcm:TextField Text="{Binding Password, Mode=TwoWay}" PlaceholderText="密码" PasswordChar="●" IsEnabled="{Binding CanEditAccount}"
+                                                            input:TextInputOptions.ContentType="Password" input:TextInputOptions.IsSensitive="True"
+                                                            input:TextInputOptions.ShowSuggestions="False" input:TextInputOptions.AutoCapitalization="False" />
                                             <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                                 <arcm:Checkbox Content="记住密码" IsChecked="{Binding RememberPassword, Mode=TwoWay}" IsEnabled="{Binding CanEditAccount}" />
                                                 <arcm:Checkbox Grid.Column="1" Content="自动登录" IsChecked="{Binding AutoLogin, Mode=TwoWay}" IsEnabled="{Binding CanEditAccount}" />

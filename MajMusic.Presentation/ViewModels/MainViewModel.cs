@@ -723,6 +723,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 Status = exception switch
                 {
+                    LoginRejectedException => "账号或密码错误",
                     BrowserVerificationRequiredException => "接入点需要浏览器验证",
                     TimeoutException => "下载超时",
                     HttpRequestException request => request.StatusCode switch

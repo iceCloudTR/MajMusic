@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using MajMusic.Android.Audio;
+using MajMusic.Android.Network;
 using MajMusic.Android.Security;
 using MajMusic.Android.Services;
 using MajMusic.Core.Models;
@@ -140,7 +141,7 @@ namespace MajMusic.Android
                 AllowAutoRedirect = false,
                 AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
             };
-            var client = new HttpClient(handler) { Timeout = timeout };
+            var client = new HttpClient(new AndroidNetworkDiagnosticsHandler(handler)) { Timeout = timeout };
             client.DefaultRequestHeaders.UserAgent.ParseAdd(SourceHttpTransportFactory.UserAgent);
             return client;
         }

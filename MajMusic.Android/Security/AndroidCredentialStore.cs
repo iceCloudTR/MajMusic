@@ -31,36 +31,44 @@ namespace MajMusic.Android.Security
         }
 
         /// <inheritdoc />
-        public Task<string?> ReadAsync(string key, CancellationToken cancellationToken = default)
+        /// <exception cref="InvalidOperationException">The saved ciphertext no longer matches the protected key and the password must be entered again.</exception>
+        public async Task<string?> ReadAsync(string key, CancellationToken cancellationToken = default)
         {
-            return RunAsync(key, () =>
+            try
             {
-                var stored = _preferences.GetString(Target(key), null);
-                if (stored is null)
+                return await RunAsync(key, () =>
                 {
-                    return null;
-                }
+                    var stored = _preferences.GetString(Target(key), null);
+                    if (stored is null)
+                    {
+                        return null;
+                    }
 
-                var bytes = Convert.FromBase64String(stored);
-                if (bytes.Length < 29)
-                {
-                    throw new InvalidDataException("The encrypted Android credential is invalid.");
-                }
+                    var bytes = Convert.FromBase64String(stored);
+                    if (bytes.Length < 29)
+                    {
+                        throw new InvalidDataException("The encrypted Android credential is invalid.");
+                    }
 
-                using var cipher = Cipher.GetInstance("AES/GCM/NoPadding") ?? throw new CryptographicException("The Android cipher is unavailable.");
-                using var secretKey = GetKey();
-                using var parameters = new GCMParameterSpec(128, bytes[..12]);
-                cipher.Init(CipherMode.DecryptMode, secretKey, parameters);
-                var plaintext = cipher.DoFinal(bytes[12..]) ?? throw new CryptographicException("The Android credential could not be decrypted.");
-                try
-                {
-                    return Encoding.UTF8.GetString(plaintext);
-                }
-                finally
-                {
-                    CryptographicOperations.ZeroMemory(plaintext);
-                }
-            }, cancellationToken);
+                    using var cipher = Cipher.GetInstance("AES/GCM/NoPadding") ?? throw new CryptographicException("The Android cipher is unavailable.");
+                    using var secretKey = GetKey();
+                    using var parameters = new GCMParameterSpec(128, bytes[..12]);
+                    cipher.Init(CipherMode.DecryptMode, secretKey, parameters);
+                    var plaintext = cipher.DoFinal(bytes[12..]) ?? throw new CryptographicException("The Android credential could not be decrypted.");
+                    try
+                    {
+                        return Encoding.UTF8.GetString(plaintext);
+                    }
+                    finally
+                    {
+                        CryptographicOperations.ZeroMemory(plaintext);
+                    }
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            catch (AEADBadTagException exception)
+            {
+                throw new InvalidOperationException("已保存的密码不可用，请重新输入。", exception);
+            }
         }
 
         /// <inheritdoc />
@@ -132,21 +140,32 @@ namespace MajMusic.Android.Security
                     return action();
                 }, token).ConfigureAwait(false);
             }
+            catch (Exception exception)
+            {
+                global::Android.Util.Log.Warn("MajMusic.Credentials", $"Credential operation failed: {exception.GetType().Name}");
+                throw;
+            }
             finally
             {
                 _gate.Release();
             }
         }
 
-        /// <summary>Obtains the app's existing protected AES key or creates it in Android Keystore.</summary>
+        /// <summary>Reuses the existing protected key through its native IKey interface and creates an alias only when none exists.</summary>
         /// <returns>A scoped native key handle whose bytes cannot be exported.</returns>
-        private static ISecretKey GetKey()
+        /// <exception cref="CryptographicException">An existing alias cannot supply its key, or key creation is unavailable.</exception>
+        private static IKey GetKey()
         {
             using var store = KeyStore.GetInstance("AndroidKeyStore") ?? throw new CryptographicException("Android Keystore is unavailable.");
             store.Load(null);
-            if (store.GetKey(KeyAlias, null) is ISecretKey existing)
+            if (store.GetKey(KeyAlias, null) is { } existing)
             {
                 return existing;
+            }
+
+            if (store.ContainsAlias(KeyAlias))
+            {
+                throw new CryptographicException("The existing Android credential key is unavailable.");
             }
 
             using var generator = KeyGenerator.GetInstance(KeyProperties.KeyAlgorithmAes, "AndroidKeyStore")

@@ -19,6 +19,7 @@ namespace MajMusic.Tests
                 ("online-preferences", OnlinePreferencesTests.RunAsync, true),
                 ("portable-data", PortableDataDirectoryTests.RunAsync, true),
                 ("account-ui", AccountPresentationTests.RunAsync, true),
+                ("mobile-account-input", MobileAccountInputTests.RunAsync, true),
                 ("endpoint-cards", EndpointCardPresentationTests.RunAsync, true),
                 ("endpoint-cards-layout", EndpointCardsLayoutTests.RunAsync, true),
                 ("directory-sources", DirectorySourceTests.RunAsync, true),

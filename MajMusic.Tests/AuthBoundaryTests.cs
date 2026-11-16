@@ -20,6 +20,7 @@ namespace MajMusic.Tests
         /// <returns>A task representing status, cookie-boundary and mirror-read lifetime assertions.</returns>
         public static async Task RunAsync()
         {
+            await ValidateRejectedLoginAsync();
             await ValidateProfileDenialAsync();
             await ValidateSessionExpiryAsync();
             await ValidateMirrorProfileFailureAsync();
@@ -28,6 +29,52 @@ namespace MajMusic.Tests
             await ValidateLateCanonicalIdentityAsync();
             await ValidateUserMessagesAsync();
             await ValidateAutomaticLoginMessagesAsync();
+        }
+
+        /// <summary>Distinguishes rejected login credentials from a later expired session and middleware challenges.</summary>
+        /// <returns>A task representing the real provider-to-presentation error classification.</returns>
+        private static async Task ValidateRejectedLoginAsync()
+        {
+            using var policy = new NetworkAccessPolicy();
+            policy.SetEnabled(true);
+            using var transport = new AuthTransport { LoginStatus = HttpStatusCode.Unauthorized, LoginCode = 60002 };
+            using var http = new HttpClient(transport, false);
+            using var provider = new MajNetClient(Endpoint(), policy, http);
+            await using var view = new MainViewModel(new LibraryExperienceTests.ExperienceWorkspace(), new PlaybackService(new UnavailablePlaybackBackend()));
+            var rejected = await CaptureHttpFailureAsync(() => provider.LoginAsync("GeneratedUser", "Generated fixture password"));
+            TestAssert.True(rejected is LoginRejectedException && rejected.StatusCode == HttpStatusCode.Unauthorized && !provider.IsLoggedIn,
+                "An explicit login HTTP 401 must retain its actual status and identify rejected credentials without starting a session.");
+            TestAssert.True(transport.LastContent?.WasDisposed == true,
+                "Classifying a rejected login must still release its response body.");
+            view.ReportError(rejected);
+            TestAssert.Equal("账号或密码错误", view.Status, "The global status must explain a rejected login rather than ask an unauthenticated user to log in again.");
+
+            transport.LoginStatus = HttpStatusCode.Forbidden;
+            var forbidden = await CaptureHttpFailureAsync(() => provider.LoginAsync("GeneratedUser", "Generated fixture password"));
+            TestAssert.True(forbidden is not LoginRejectedException && forbidden.StatusCode == HttpStatusCode.Forbidden,
+                "An ordinary login permission denial cannot be relabeled as invalid credentials.");
+            view.ReportError(forbidden);
+            TestAssert.Equal("接入点拒绝访问", view.Status, "A source permission denial keeps its existing message.");
+            transport.ChallengePaths.Add("/api/account/login");
+            transport.ChallengeStatus = HttpStatusCode.Unauthorized;
+            var challenged = await CaptureHttpFailureAsync(() => provider.LoginAsync("GeneratedUser", "Generated fixture password"));
+            TestAssert.True(challenged is BrowserVerificationRequiredException && challenged is not LoginRejectedException,
+                "Even a challenge with HTTP 401 must be classified before rejected login credentials.");
+            view.ReportError(challenged);
+            TestAssert.Equal("接入点需要浏览器验证", view.Status, "A middleware login challenge cannot blame the account or password.");
+
+            transport.ChallengePaths.Clear();
+            transport.LoginStatus = HttpStatusCode.OK;
+            transport.LoginCode = 0;
+            await provider.LoginAsync("GeneratedUser", "Generated fixture password");
+            TestAssert.True(provider.IsLoggedIn && (await provider.GetCloudPlaylistsAsync()).Count == 1,
+                "A valid login still creates a working authenticated session after a previous rejection.");
+            transport.ProfileStatus = HttpStatusCode.Unauthorized;
+            var expired = await CaptureHttpFailureAsync(() => provider.GetCurrentUsernameAsync());
+            TestAssert.True(expired is not LoginRejectedException && expired.StatusCode == HttpStatusCode.Unauthorized && !provider.IsLoggedIn,
+                "A subsequent profile HTTP 401 must expire the session without claiming the entered credentials were rejected.");
+            view.ReportError(expired);
+            TestAssert.Equal("请重新登录", view.Status, "A later expired session must continue to request reauthentication.");
         }
 
         /// <summary>Checks that a forbidden profile does not clear a successful login or its same-origin media authorization.</summary>
@@ -229,6 +276,7 @@ namespace MajMusic.Tests
             {
                 foreach (var scenario in new[]
                 {
+                    (Challenge: false, Status: HttpStatusCode.Unauthorized, Result: "账号或密码错误", Presentation: "账号或密码错误"),
                     (Challenge: true, Status: HttpStatusCode.Forbidden, Result: "接入点需要浏览器验证", Presentation: "接入点需要浏览器验证"),
                     (Challenge: false, Status: HttpStatusCode.Forbidden, Result: "接入点拒绝访问", Presentation: "接入点拒绝访问"),
                     (Challenge: false, Status: HttpStatusCode.InternalServerError, Result: "自动登录未完成，请重新登录", Presentation: "1 个账号未能自动登录")
@@ -271,6 +319,24 @@ namespace MajMusic.Tests
                     Directory.Delete(root, true);
                 }
             }
+        }
+
+        /// <summary>Captures a synthetic provider failure without depending on response-body wording.</summary>
+        /// <param name="action">The request expected to fail.</param>
+        /// <returns>The observed HTTP failure with its specific runtime type and status intact.</returns>
+        /// <exception cref="InvalidOperationException">The request unexpectedly succeeds.</exception>
+        private static async Task<HttpRequestException> CaptureHttpFailureAsync(Func<Task> action)
+        {
+            try
+            {
+                await action();
+            }
+            catch (HttpRequestException exception)
+            {
+                return exception;
+            }
+
+            throw new InvalidOperationException("The generated authentication request unexpectedly succeeded.");
         }
 
         /// <summary>Checks one generated source exception's exact HTTP status.</summary>
