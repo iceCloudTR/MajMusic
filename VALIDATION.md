@@ -129,4 +129,10 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- document
 ./Tools/Publish-Android.ps1
 ```
 
-未运行 Android 真机测试：系统音频解码、后台与锁屏操作、耳机和音频焦点、实际目录提供者、Keystore 和联网登录，需要在安装后验证。
+2026-11-17，在 Android 16（API 36）ARM64 手机通过 USB 实测：修正入口主题继承 AppCompat 后，覆盖安装成功，连续三次冷启动均保持进程存活并进入本应用前台，对应进程无致命异常。主页、设置和目录可切换，退到系统桌面后可返回原 Activity。复测命令：
+
+```powershell
+./Tools/Test-AndroidStartup.ps1 -Serial <adb-device-serial>
+```
+
+系统音频解码、播放时的后台与锁屏操作、耳机和音频焦点、实际目录提供者、Keystore 和联网登录尚未完成真机验证。

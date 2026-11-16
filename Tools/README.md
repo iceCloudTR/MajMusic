@@ -26,3 +26,13 @@ dotnet workload install android
 ```
 
 脚本自动查找工具，也可通过 `-DotNet`、`-AndroidSdkDirectory` 和 `-JavaSdkDirectory` 指定位置。生成的 `artifacts/android-arm64-*/MajMusic-android-arm64.apk` 使用 Android SDK 标准开发密钥签名，仅包含 `arm64-v8a`。脚本检查签名与包对齐，不会自动安装到设备。
+
+# Android 冷启动验证
+
+显式指定已授权调试设备，测试其已安装版本：
+
+```powershell
+./Tools/Test-AndroidStartup.ps1 -Serial <adb-device-serial>
+```
+
+使用 `-ApkPath <apk文件>` 可先覆盖安装包名为 `com.icecloud.majmusic` 的 APK。脚本连续冷启动三次，每次等待五秒，核对进程仍存活、前台 Activity 属于本应用，以及对应 PID 的日志没有致命异常。每次启动的结果与日志保存在 `artifacts/android-startup-*`。
