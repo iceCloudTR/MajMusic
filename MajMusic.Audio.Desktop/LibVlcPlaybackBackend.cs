@@ -247,7 +247,7 @@ namespace MajMusic.Audio.Desktop
                 }
 
                 SetSnapshot(ReadNativeSnapshot(player));
-            }, cancellationToken);
+            }, cancellationToken, stopOnCancellation: false);
         }
 
         /// <inheritdoc />
@@ -269,9 +269,10 @@ namespace MajMusic.Audio.Desktop
         /// <summary>Runs a native command on the managed pool and serializes it with polling.</summary>
         /// <param name="action">The operation performed while native access is exclusive.</param>
         /// <param name="cancellationToken">Cancels the caller's operation.</param>
+        /// <param name="stopOnCancellation">Whether canceling this command must stop its partially changed native resource.</param>
         /// <returns>The observed command result.</returns>
         /// <exception cref="ObjectDisposedException">The backend is shutting down.</exception>
-        private Task ExecuteAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken)
+        private Task ExecuteAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken, bool stopOnCancellation = true)
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
@@ -287,8 +288,15 @@ namespace MajMusic.Audio.Desktop
                     }
                     catch (OperationCanceledException)
                     {
-                        _player?.Stop();
-                        SetSnapshot(Snapshot with { State = PlaybackState.Stopped, Position = TimeSpan.Zero, Error = null });
+                        if (stopOnCancellation)
+                        {
+                            _player?.Stop();
+                            SetSnapshot(Snapshot with { State = PlaybackState.Stopped, Position = TimeSpan.Zero, Error = null });
+                        }
+                        else if (_player is { } player)
+                        {
+                            SetSnapshot(ReadNativeSnapshot(player));
+                        }
                         throw;
                     }
                     catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or NotSupportedException)

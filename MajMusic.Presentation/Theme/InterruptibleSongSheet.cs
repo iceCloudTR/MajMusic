@@ -1,6 +1,7 @@
 #nullable enable
 
 using Avalonia;
+using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -20,6 +21,10 @@ namespace MajMusic.Presentation.Theme
             nameof(BottomInset), coerce: (_, value) => double.IsFinite(value) ? Math.Max(0, value) : 0);
         /// <summary>Keeps the closed panel's outline beyond the viewport.</summary>
         private const double ClosedGap = 24;
+        /// <summary>Finishes a tapped or released sheet promptly without changing direct pointer tracking.</summary>
+        private static readonly TimeSpan SettleDuration = TimeSpan.FromMilliseconds(230);
+        /// <summary>Starts each released transition quickly and eases smoothly into its resting position.</summary>
+        private static readonly Easing SettleEaseOut = new SplineEasing(0.16, 1, 0.3, 1);
         /// <summary>Applies the shared position to the official panel without changing its layout.</summary>
         private readonly TranslateTransform _translation = new();
         /// <summary>Retains the template's dismissible background.</summary>
@@ -285,7 +290,7 @@ namespace MajMusic.Presentation.Theme
                 return;
             }
 
-            _sheetUpdate = _motion.AnimateTo(target, MotionSpec.Tween(MusicMotion.SurfaceDuration, MusicMotion.InOut));
+            _sheetUpdate = _motion.AnimateTo(target, MotionSpec.Tween(SettleDuration, SettleEaseOut));
         }
 
         /// <summary>Updates both panel translation and scrim directly from the same current progress.</summary>

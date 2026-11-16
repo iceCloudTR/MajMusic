@@ -11,6 +11,8 @@ namespace MajMusic.Presentation.ViewModels
         private Task _transportUpdate = Task.CompletedTask;
         /// <summary>Retains only the latest timeline position waiting behind an active seek.</summary>
         private SeekRequest? _pendingSeek;
+        /// <summary>Holds the last committed target until its own native command publishes the confirmed position.</summary>
+        private SeekRequest? _committedSeek;
         /// <summary>Indicates whether one tracked timeline worker owns pending commits.</summary>
         private bool _seekWorkerRunning;
         /// <summary>Identifies the worker permitted to release shared seek ownership.</summary>
@@ -78,6 +80,7 @@ namespace MajMusic.Presentation.ViewModels
                 while (true)
                 {
                     SeekRequest? request;
+                    bool canExecute;
                     using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
                     lock (_seekGate)
                     {
@@ -89,13 +92,18 @@ namespace MajMusic.Presentation.ViewModels
                             return;
                         }
 
-                        if (_seekInvalidated || request.Version != _seekVersion || request.TrackId is null
-                            || _playback.Snapshot.Track?.Id != request.TrackId || !HasSeekableMedia)
+                        canExecute = !_seekInvalidated && request.Version == _seekVersion && request.TrackId is not null
+                            && _playback.Snapshot.Track?.Id == request.TrackId && HasSeekableMedia;
+                        if (canExecute)
                         {
-                            continue;
+                            _seekCancellation = cancellation;
                         }
+                    }
 
-                        _seekCancellation = cancellation;
+                    if (!canExecute)
+                    {
+                        CompleteSeekPresentation(request);
+                        continue;
                     }
 
                     try
@@ -120,7 +128,7 @@ namespace MajMusic.Presentation.ViewModels
                             }
                         }
 
-                        NotifyTimeline();
+                        CompleteSeekPresentation(request);
                     }
                 }
             }
@@ -134,6 +142,28 @@ namespace MajMusic.Presentation.ViewModels
                     }
                 }
             }
+        }
+
+        /// <summary>Hands the matching committed preview directly to the latest confirmed native clock before notifying bindings.</summary>
+        /// <param name="request">The completed, canceled or rejected gesture whose target may still be displayed.</param>
+        private void CompleteSeekPresentation(SeekRequest request)
+        {
+            lock (_seekGate)
+            {
+                if (!ReferenceEquals(_committedSeek, request))
+                {
+                    return;
+                }
+
+                var current = _playback.Snapshot;
+                if (current.Track is { } actual && _playbackSnapshot.Track is { } displayed && SameMetadataOwner(displayed, actual))
+                {
+                    _playbackSnapshot = _playbackSnapshot with { Position = current.Position };
+                }
+                _committedSeek = null;
+            }
+
+            NotifyTimeline();
         }
 
         /// <summary>Retains one complete timeline gesture without creating a queue of native operations.</summary>

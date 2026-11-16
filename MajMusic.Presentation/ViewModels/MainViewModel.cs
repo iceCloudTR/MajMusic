@@ -234,7 +234,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Gets the backend position or updates only an active user preview.</summary>
         public double PositionSeconds
         {
-            get => _isSeeking ? _seekPreviewSeconds : ClampPosition(_playbackSnapshot.Position.TotalSeconds);
+            get => _isSeeking ? _seekPreviewSeconds : _committedSeek?.Seconds ?? ClampPosition(_playbackSnapshot.Position.TotalSeconds);
             set
             {
                 if (!_isSeeking || !double.IsFinite(value))
@@ -479,11 +479,13 @@ namespace MajMusic.Presentation.ViewModels
                     return true;
                 }
 
+                var displayedPosition = PositionSeconds;
                 _seekVersion++;
                 _pendingSeek = null;
+                _committedSeek = null;
                 _seekCancellation?.Cancel();
                 _seekTrackId = _playbackSnapshot.Track!.Id;
-                _seekPreviewSeconds = ClampPosition(_playbackSnapshot.Position.TotalSeconds);
+                _seekPreviewSeconds = ClampPosition(displayedPosition);
                 _seekInvalidated = false;
                 _isSeeking = true;
             }
@@ -502,6 +504,7 @@ namespace MajMusic.Presentation.ViewModels
                 _seekInvalidated = false;
                 _seekTrackId = null;
                 _pendingSeek = null;
+                _committedSeek = null;
                 _seekCancellation?.Cancel();
             }
 
@@ -521,7 +524,7 @@ namespace MajMusic.Presentation.ViewModels
                 }
 
                 _isSeeking = false;
-                _pendingSeek = new SeekRequest(_seekTrackId, _seekPreviewSeconds, _seekVersion);
+                _pendingSeek = _committedSeek = new SeekRequest(_seekTrackId, _seekPreviewSeconds, _seekVersion);
                 _seekCancellation?.Cancel();
                 if (!_seekWorkerRunning)
                 {
@@ -1423,7 +1426,7 @@ namespace MajMusic.Presentation.ViewModels
             var snapshot = _playback.Snapshot;
             lock (_seekGate)
             {
-                if ((_isSeeking || _seekCancellation is not null)
+                if ((_isSeeking || _committedSeek is not null || _seekCancellation is not null)
                     && (snapshot.State is PlaybackState.Loading or PlaybackState.Empty or PlaybackState.Stopped or PlaybackState.Failed or PlaybackState.Completed
                         || snapshot.Track?.Id != _seekTrackId))
                 {
@@ -1444,7 +1447,7 @@ namespace MajMusic.Presentation.ViewModels
                     _playbackSnapshot = current;
                     SyncAudioOutputState();
                     PublishPlaybackMetadata(current);
-                    if (_seekInvalidated && _isSeeking)
+                    if (_seekInvalidated && (_isSeeking || _committedSeek is not null))
                     {
                         CancelSeek();
                     }

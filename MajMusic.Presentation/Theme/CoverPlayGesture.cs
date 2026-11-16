@@ -41,22 +41,20 @@ namespace MajMusic.Presentation.Theme
         };
         /// <summary>Keeps the resting button's ambient shadow centered so its two edge clearances remain equal.</summary>
         private static readonly BoxShadows ButtonShadow = new(new BoxShadow { Blur = 8, Color = Color.FromArgb(42, 0, 0, 0) });
-        /// <summary>Speeds up the complete trajectory while retaining the same continuous path and physical limit.</summary>
-        private const double PlaybackSpeedMultiplier = 3.2;
         /// <summary>Caps the actual speed of both the moving center and growing button edges in logical pixels per second.</summary>
-        private const double MaximumEdgeSpeed = 420 * PlaybackSpeedMultiplier;
+        private const double MaximumEdgeSpeed = 2200;
         /// <summary>Prevents small cards from traversing the complete path too quickly.</summary>
-        private const double MaximumProgressSpeed = .9 * PlaybackSpeedMultiplier;
-        /// <summary>Accelerates gradually from rest without adding spring overshoot.</summary>
-        private const double ProgressAcceleration = 1.8 * PlaybackSpeedMultiplier * PlaybackSpeedMultiplier;
+        private const double MaximumProgressSpeed = 8;
+        /// <summary>Follows the remaining physical distance with immediate response and a fast-to-slow finish.</summary>
+        private const double ResponseRate = 30;
+        /// <summary>Finishes the subpixel tail without extending an imperceptible animation.</summary>
+        private const double FinishDistance = .12;
         /// <summary>Defines the deliberate horizontal travel required before a release commits playback.</summary>
         private const double CommitProgress = .62;
         /// <summary>Defines the travel before a pending press becomes a horizontal or vertical gesture.</summary>
         private const double DirectionSlop = 8;
         /// <summary>Retains the latest finger or automatic destination independently of the displayed progress.</summary>
         private double _targetProgress;
-        /// <summary>Retains the signed progress velocity through continuous forward target changes.</summary>
-        private double _progressVelocity;
         /// <summary>Owns one versioned display-frame callback until the current target is reached.</summary>
         private Action<TimeSpan>? _frameCallback;
         /// <summary>Records the previous display timestamp without accumulating time while idle.</summary>
@@ -218,7 +216,6 @@ namespace MajMusic.Presentation.Theme
             _frameCallback = null;
             _framePending = false;
             _lastFrameTime = null;
-            _progressVelocity = 0;
             _targetProgress = _progress;
             _pressPosition = e.GetPosition(this);
             _pointer = e.Pointer;
@@ -447,7 +444,7 @@ namespace MajMusic.Presentation.Theme
             host.RequestAnimationFrame(_frameCallback);
         }
 
-        /// <summary>Follows the current target with bounded acceleration and a physical speed ceiling.</summary>
+        /// <summary>Follows the current target with a physical ease-out response and a speed ceiling.</summary>
         /// <param name="timestamp">The current platform display-frame time.</param>
         /// <param name="version">The attachment and gesture lifetime owning this callback chain.</param>
         private void OnAnimationFrame(TimeSpan timestamp, long version)
@@ -472,26 +469,22 @@ namespace MajMusic.Presentation.Theme
                 var direction = Math.Sign(error);
                 if (direction != 0)
                 {
-                    if (Math.Sign(_progressVelocity) != direction)
-                    {
-                        _progressVelocity = 0;
-                    }
                     var reduced = _level != ArcMotionLevel.Full;
-                    var acceleration = reduced ? 80 : ProgressAcceleration;
                     var maximumRate = reduced ? 1d / .12 : MaximumProgressSpeed;
-                    _progressVelocity = Math.Clamp(_progressVelocity, -maximumRate, maximumRate);
-                    var forwardExit = _settling && _commitPending;
-                    var desiredSpeed = forwardExit ? maximumRate : Math.Min(maximumRate, Math.Sqrt(2 * acceleration * Math.Abs(error)));
-                    var velocityChange = Math.Clamp(direction * desiredSpeed - _progressVelocity, -acceleration * seconds, acceleration * seconds);
-                    _progressVelocity += velocityChange;
-                    var step = Math.Min(Math.Abs(error), Math.Abs(_progressVelocity) * seconds);
+                    var step = Math.Min(Math.Abs(error), maximumRate * seconds);
                     if (!reduced)
                     {
                         var (start, halfSide) = InitialButton();
                         var path = new CoverPlayTrajectory(Bounds.Size, start, halfSide);
-                        step = LimitStep(path, _progress, direction, step, MaximumEdgeSpeed * seconds);
+                        var current = path.GetPose(_progress);
+                        var target = path.GetPose(_targetProgress);
+                        var displacement = target.Center - current.Center;
+                        var remainingDistance = Math.Sqrt(displacement.X * displacement.X + displacement.Y * displacement.Y)
+                            + Math.Sqrt(2) * Math.Abs(target.HalfSide - current.HalfSide);
+                        var easedDistance = remainingDistance * (1 - Math.Exp(-ResponseRate * seconds));
+                        var distanceBudget = Math.Min(MaximumEdgeSpeed * seconds, Math.Max(FinishDistance, easedDistance));
+                        step = LimitStep(path, _progress, direction, step, distanceBudget);
                     }
-                    _progressVelocity = direction * step / seconds;
                     ApplyProgress(_progress + direction * step);
                 }
             }
@@ -499,7 +492,6 @@ namespace MajMusic.Presentation.Theme
             if (Math.Abs(_targetProgress - _progress) <= .000001)
             {
                 ApplyProgress(_targetProgress);
-                _progressVelocity = 0;
                 _frameCallback = null;
                 _lastFrameTime = null;
                 if (_settling)
@@ -517,7 +509,7 @@ namespace MajMusic.Presentation.Theme
         /// <param name="path">The current card's continuous trajectory.</param>
         /// <param name="progress">The actual displayed position.</param>
         /// <param name="direction">The requested travel direction.</param>
-        /// <param name="step">The acceleration-limited candidate progress distance.</param>
+        /// <param name="step">The candidate progress distance toward the current target.</param>
         /// <param name="maximumDistance">The largest permitted movement of any visible button edge this frame.</param>
         /// <returns>A safe progress step whose full curve interval respects the physical speed ceiling.</returns>
         private static double LimitStep(CoverPlayTrajectory path, double progress, int direction, double step, double maximumDistance)
@@ -553,7 +545,6 @@ namespace MajMusic.Presentation.Theme
             _settling = false;
             _commitPending = false;
             _dragging = false;
-            _progressVelocity = 0;
             _frameCallback = null;
             _lastFrameTime = null;
             try
@@ -593,7 +584,6 @@ namespace MajMusic.Presentation.Theme
             _framePending = false;
             _lastFrameTime = null;
             _targetProgress = 0;
-            _progressVelocity = 0;
             _transitionCompletion?.TrySetResult(false);
             _transitionCompletion = null;
             ReleasePointer();
