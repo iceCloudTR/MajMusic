@@ -32,6 +32,10 @@ namespace MajMusic.Presentation.Views
         private bool _restoringMode;
         /// <summary>Indicates whether this view is the active responsive presentation.</summary>
         private bool _attached;
+        /// <summary>Owns only a drag that started on the noninteractive part of the bottom player.</summary>
+        private IPointer? _miniPlayerPointer;
+        /// <summary>Retains the player gesture origin in stable mobile-root coordinates.</summary>
+        private Point _miniPlayerGestureStart;
 
         /// <summary>Initializes the mobile shell and its existing seek gesture boundary.</summary>
         public MobileMusicView()
@@ -45,6 +49,10 @@ namespace MajMusic.Presentation.Views
             timeline.AddHandler(KeyDownEvent, OnSeekKeyPressed, RoutingStrategies.Tunnel, true);
             timeline.AddHandler(KeyUpEvent, OnSeekKeyReleased, RoutingStrategies.Bubble, true);
             timeline.LostFocus += OnSeekLostFocus;
+            var player = this.FindControl<Border>("MobileMiniPlayer")!;
+            player.AddHandler(PointerPressedEvent, OnMiniPlayerPressed, RoutingStrategies.Tunnel, true);
+            player.AddHandler(PointerReleasedEvent, OnMiniPlayerReleased, RoutingStrategies.Bubble, true);
+            player.PointerCaptureLost += OnMiniPlayerCaptureLost;
         }
 
         /// <summary>Gets or sets the visible home, playlists, directories, accounts or settings section.</summary>
@@ -93,6 +101,7 @@ namespace MajMusic.Presentation.Views
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             _attached = false;
+            ReleaseMiniPlayerGesture();
             ReleaseSection();
             if (_owner is not null)
             {
@@ -180,7 +189,89 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The updated touch viewport size.</param>
         private void OnMobileSizeChanged(object? sender, SizeChangedEventArgs e)
         {
+            ReleaseMiniPlayerGesture();
             UpdateBrowseViewport();
+        }
+
+        /// <summary>Tracks a tap or drag only when it begins on the bottom player's noninteractive information area.</summary>
+        /// <param name="sender">The persistent bottom player.</param>
+        /// <param name="e">The initial pointer contact.</param>
+        private void OnMiniPlayerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (sender is not Border player || !_attached || _miniPlayerPointer is not null
+                || DataContext is not MainViewModel { PlaybackTrack: not null }
+                || e.Pointer.Type == PointerType.Mouse && !e.GetCurrentPoint(player).Properties.IsLeftButtonPressed)
+            {
+                return;
+            }
+
+            for (var source = e.Source as Visual; source is not null && !ReferenceEquals(source, player); source = source.GetVisualParent())
+            {
+                if (source is Avalonia.Controls.Button or TextBox or ArcSlider or Thumb)
+                {
+                    return;
+                }
+            }
+
+            _miniPlayerGestureStart = e.GetPosition(this);
+            _miniPlayerPointer = e.Pointer;
+            e.Pointer.Capture(player);
+        }
+
+        /// <summary>Opens the loaded song after an information-area tap or upward drag without affecting transport or timeline controls.</summary>
+        /// <param name="sender">The persistent bottom player.</param>
+        /// <param name="e">The pointer release completing the local player gesture.</param>
+        private async void OnMiniPlayerReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (!ReferenceEquals(_miniPlayerPointer, e.Pointer))
+            {
+                return;
+            }
+
+            var movement = e.GetPosition(this) - _miniPlayerGestureStart;
+            ReleaseMiniPlayerGesture();
+            var isTap = Math.Abs(movement.X) <= 8 && Math.Abs(movement.Y) <= 8;
+            var isUpwardSwipe = movement.Y <= -48 && -movement.Y >= Math.Abs(movement.X) * 1.5;
+            if ((!isTap && !isUpwardSwipe)
+                || DataContext is not MainViewModel { PlaybackTrack: { } playing } owner)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            owner.SelectedTrack = playing;
+            OpenTrackDetails();
+            try
+            {
+                await owner.LoadCoverAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                // A changed selection or application shutdown superseded the inspector artwork.
+            }
+            catch (Exception exception)
+            {
+                owner.ReportError(exception);
+            }
+        }
+
+        /// <summary>Forgets an interrupted player-only pointer gesture.</summary>
+        /// <param name="sender">The bottom player losing pointer capture.</param>
+        /// <param name="e">The capture-loss notification.</param>
+        private void OnMiniPlayerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+        {
+            _miniPlayerPointer = null;
+        }
+
+        /// <summary>Releases the local player gesture without stealing a browser or slider pointer.</summary>
+        private void ReleaseMiniPlayerGesture()
+        {
+            var pointer = _miniPlayerPointer;
+            _miniPlayerPointer = null;
+            if (pointer is not null && pointer.Captured == this.FindControl<Border>("MobileMiniPlayer"))
+            {
+                pointer.Capture(null);
+            }
         }
 
         /// <summary>Applies only a viewport grouping change without recreating the active page or its song presentations.</summary>
@@ -188,11 +279,10 @@ namespace MajMusic.Presentation.Views
         {
             if (FindSectionControl<BrowseTracksView>("MobileSongBrowser") is { } browser && DataContext is MainViewModel owner)
             {
-                browser.ForceSingleColumn = Bounds.Width < 680;
+                browser.ForceSingleColumn = false;
                 if (browser.Bounds.Width > 0)
                 {
-                    var width = browser.Bounds.Width - 12;
-                    owner.SetBrowseViewportWidth(browser.ForceSingleColumn ? Math.Min(400, width) : width);
+                    owner.SetBrowseViewportWidth(browser.Bounds.Width);
                 }
             }
         }

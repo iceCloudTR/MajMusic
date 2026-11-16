@@ -14,6 +14,26 @@
              theme:AppearanceBridge.FollowPreference="True"
              Background="{DynamicResource MusicCanvasBrush}">
     <UserControl.Styles>
+        <Style Selector="arcm|Segmented">
+            <Setter Property="Height" Value="52" />
+            <Setter Property="Padding" Value="2.75" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border x:Name="MobileModeTrack" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}"
+                            BorderBrush="{DynamicResource MusicLineBrush}" BorderThickness="{x:Static theme:MusicGeometry.OutlineThickness}"
+                            Padding="{TemplateBinding Padding}">
+                        <Panel>
+                            <arc:GlidingIndicator Name="PART_Glider" Fill="{DynamicResource MusicPanelBrush}"
+                                                  Stroke="{DynamicResource MusicLineBrush}" StrokeThickness="1.25" CornerRadius="8" />
+                            <ItemsPresenter Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}" />
+                        </Panel>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="arcm|TextField, arcm|Searchbar, arc|Select">
+            <Setter Property="BorderThickness" Value="{x:Static theme:MusicGeometry.OutlineThickness}" />
+        </Style>
         <Style Selector="arc|Select">
             <Setter Property="MinHeight" Value="44" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -68,7 +88,7 @@
         <StreamGeometry x:Key="MobileShuffleIcon">M 3,6 L 6,6 C 10,6 14,18 18,18 L 21,18 M 17,14 L 21,18 L 17,22 M 3,18 L 6,18 C 10,18 14,6 18,6 L 21,6 M 17,2 L 21,6 L 17,10</StreamGeometry>
         <StreamGeometry x:Key="MobileRepeatIcon">M 3,10 C 3,6 5,5 8,5 L 21,5 M 17,1 L 21,5 L 17,9 M 21,14 C 21,18 19,19 16,19 L 3,19 M 7,15 L 3,19 L 7,23</StreamGeometry>
         <DataTemplate x:Key="MobileHomeTemplate" x:DataType="vm:MainViewModel">
-            <Grid RowDefinitions="44,44,*,Auto" RowSpacing="8">
+            <Grid RowDefinitions="52,44,*,Auto" RowSpacing="8">
                 <arcm:Segmented x:Name="MobileHomeModes" SelectionChanged="OnHomeModeChanged">
                     <arcm:SegmentedItem Content="推荐" />
                     <arcm:SegmentedItem Content="歌单" />
@@ -210,6 +230,10 @@
                             <arc:Select x:Name="MobileAppearancePicker" Size="Medium" Height="44" ItemsSource="{Binding AppearanceOptions}"
                                         TextSelector="{x:Static converters:MusicSelectLabels.Appearance}"
                                         SelectedItem="{Binding SelectedAppearanceOption, Mode=TwoWay}" />
+                            <TextBlock Text="列表格式" FontSize="17" FontWeight="SemiBold" />
+                            <arc:Select x:Name="MobileCardLayoutPicker" Size="Medium" Height="44" ItemsSource="{Binding CardLayoutChoices}"
+                                        TextSelector="{x:Static converters:MusicSelectLabels.CardLayout}"
+                                        SelectedItem="{Binding SelectedCardLayoutOption, Mode=TwoWay}" />
                         </StackPanel>
                     </Border>
                     <Border Classes="mobilePanel">

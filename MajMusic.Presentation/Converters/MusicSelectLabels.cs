@@ -10,6 +10,8 @@ namespace MajMusic.Presentation.Converters
     {
         /// <summary>Gets the visible label of a light, dark or system appearance choice.</summary>
         public static Func<object?, string?> Appearance { get; } = static item => (item as AppearanceOption)?.Name;
+        /// <summary>Gets the localized name of a spacious, compact or small card layout.</summary>
+        public static Func<object?, string?> CardLayout { get; } = static item => (item as CardLayoutOption)?.Name;
         /// <summary>Gets the display label of an independent endpoint and its current account.</summary>
         public static Func<object?, string?> Endpoint { get; } = static item => (item as EndpointProfile)?.DisplayName;
         /// <summary>Gets the display label of a remembered account or Guest.</summary>

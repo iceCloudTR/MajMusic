@@ -32,6 +32,10 @@
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </Styles.Resources>
+    <Style Selector="Border">
+        <Setter Property="BackgroundSizing" Value="OuterBorderEdge" />
+        <Setter Property="UseLayoutRounding" Value="False" />
+    </Style>
     <Style Selector="UserControl">
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}" />
@@ -132,6 +136,7 @@
     <Style Selector="arc|Slider">
         <Setter Property="ThumbDiameter" Value="16" />
         <Setter Property="TrackThickness" Value="4" />
+        <Setter Property="arc:ArcMotion.Level" Value="Off" />
     </Style>
     <Style Selector="TabControl.desktopPages">
         <Setter Property="Background" Value="Transparent" />
@@ -155,9 +160,10 @@
         </Setter>
     </Style>
     <Style Selector="Border.card">
+        <Setter Property="UseLayoutRounding" Value="True" />
         <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
         <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Border}" />
-        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderThickness" Value="{x:Static theme:MusicGeometry.OutlineThickness}" />
         <Setter Property="CornerRadius" Value="12" />
         <Setter Property="Padding" Value="16" />
     </Style>

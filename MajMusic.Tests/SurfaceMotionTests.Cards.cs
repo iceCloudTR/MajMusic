@@ -61,6 +61,7 @@ namespace MajMusic.Tests
                         Name = "Selected cards",
                         TrackIds = ["slide-card-0", "slide-card-1"]
                     };
+                    workspace.Inner.LocalPlaylists["slide-favorites"] = new MusicPlaylist { Id = "slide-favorites", Name = "Favorites", IsFavorite = true };
                     await using var model = new MainViewModel(workspace, new PlaybackService(new UnavailablePlaybackBackend()));
                     await model.InitializeAsync();
                     model.ShowLibraryModeCommand.Execute(null);

@@ -101,10 +101,10 @@ namespace MajMusic.Tests
             workspace.LocalPlaylists.Clear();
             workspace.Settings = workspace.Settings with { LocalDirectorySources = Array.Empty<LocalDirectorySource>() };
             await view.InitializeAsync();
-            TestAssert.True(view.Playlists.Count == 1 && view.VisiblePlaylists.Count == 1 && view.VisiblePlaylists[0].IsFavorite,
-                "Removing saved lists leaves the required favorites row visible on a valid page.");
-            TestAssert.True(ReferenceEquals(view.SelectedPlaylist, view.Playlists[0]),
-                "Removing the selected playlist must select a record from the refreshed collection.");
+            TestAssert.True(view.Playlists.Count == 0 && view.VisiblePlaylists.Count == 0,
+                "Removing all saved lists must leave a real empty page without synthesizing favorites.");
+            TestAssert.True(view.SelectedPlaylist is null && view.SelectedHomePlaylist is null,
+                "Removing the selected playlist must clear both stale selections when no saved list remains.");
             TestAssert.True(view.DirectorySources.Count == 0 && view.VisibleDirectorySources.Count == 0 && view.SelectedDirectory is null,
                 "An empty source configuration must not retain an obsolete directory selection.");
             TestAssert.Equal("1 / 1", view.PlaylistPageText, "A shortened playlist collection clamps its old page index.");
@@ -116,7 +116,7 @@ namespace MajMusic.Tests
             {
                 view.SetPlaylistViewportHeight(height);
                 view.SetDirectoryViewportHeight(height);
-                TestAssert.True(view.VisiblePlaylists.Count == 1 && view.VisibleDirectorySources.Count == 0,
+                TestAssert.True(view.VisiblePlaylists.Count == 0 && view.VisibleDirectorySources.Count == 0,
                     "An unmeasured viewport must retain bounded, valid panel contents.");
             }
         }

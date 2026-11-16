@@ -34,6 +34,7 @@ namespace MajMusic.Tests
             await session.Dispatch<bool>(async () =>
             {
                 var workspace = new CardDownloadPresentationTests.DownloadWorkspace();
+                workspace.Inner.LocalPlaylists["motion-favorites"] = new MusicPlaylist { Id = "motion-favorites", Name = "Favorites", IsFavorite = true };
                 workspace.Inner.Library.Add(new MusicTrack
                 {
                     Id = "motion-song",

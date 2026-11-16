@@ -41,6 +41,7 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- browse-placeholder-
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- cover-preload browse-entry catalog-read-ordering
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- recommendation-paging recommendation-paging-layout recommendation-playback card-feedback
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- playback-region-motion playlist-mirrors context-actions context-menus-layout
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- mobile-safe-area mobile-player-gesture surface-geometry default-favorites download-metadata
 ```
 
 测试使用与桌面入口相同的 Arc 注册和主题。手机界面覆盖 360×640、390×844、430×932，检查安全区、软键盘收缩、底部导航、触摸目标、详情抽屉，以及桌面与窄屏切换时账号和 Guest 选择不变。该检查在 Skia 离屏窗口中运行；Android 安装包检查见下文，iOS 宿主待接入。
@@ -60,6 +61,10 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- playback-region-mot
 播放器区域检查覆盖深浅外观和实际显示缩放下的封面、文字与播放图标中间帧，原始图片释放、快速切歌及控件回收。同步收藏检查覆盖精确账号绑定、单一 MajNet 入口、完整成员和本地编辑在旧云端快照及重启后的保留。菜单检查用真实右键、键盘和触摸操作验证目标归属、歌单连续滚动、重命名、导出与删除。
 
 `home-ui` 包含两万四千首曲目的整批通知、卡片懒创建、加载状态所有权与模式快切回归；`storage` 使用真实 SQLite 数据库锁验证界面队列可继续运行，以及取消后的结果隔离。
+
+`mobile-safe-area` 使用生产安全区适配器与真实 Arc Page，检查 140 物理像素在 3.25 倍缩放下只应用一次、屏幕缺口与底栏变更、缩放通知和移除后的解绑。`mobile-player-gesture` 使用真实触摸验证上滑打开实际播放歌曲、浏览另一首时的归属，以及列表滚动、按钮和进度拖动互不干扰。`surface-geometry` 在多种显示缩放下检查手机选中项间距、均分触摸区域和桌面详情封面占宽；已有 `surface-motion` 同时检查横移首帧的封面像素尺寸保持不变。
+
+`default-favorites` 检查新工作区不创建默认歌单，仅清理旧版生成且没有成员或云端绑定的空列表，保留手建、导入和同步的歌单。`download-metadata` 检查完成下载后直接解析本地文件、原卡片与详情即时更新、旧查询隔离、原生属性优先、关闭取消和有界保留。
 
 下载与播放准备的专项回归：
 
@@ -122,7 +127,7 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- native-vault
 - APK v1、v2、v3 签名验证通过；包含第三方声明，无桌面 VLC、运行数据或签名私钥。
 - 合并 Manifest 包含 Application、Launcher 和 `mediaPlayback` 前台服务，以及播放、网络和通知权限。
 
-共享逻辑的 66 组默认回归通过。`document-storage` 通过真实工作区和模拟文档提供者检查嵌套曲库、TXT 标题与 Maj 哈希、保留原音频 URI、不复制音乐、封面缓存、只读授权入口、Maj JSON 导入导出和桌面选择器回退。
+此前版本的共享逻辑 66 组默认回归通过。`document-storage` 通过真实工作区和模拟文档提供者检查嵌套曲库、TXT 标题与 Maj 哈希、保留原音频 URI、不复制音乐、封面缓存、只读授权入口、Maj JSON 导入导出和桌面选择器回退。
 
 ```powershell
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- document-storage
@@ -139,4 +144,8 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- document
 
 手机实测确认 Guest 曲库可读取；用户名与电脑一致后，账号登录成功。更新后冷启动自动登录返回 200 并取得会话，空密码框弹出 QWERTY 密码键盘，没有中文候选。`auth-boundaries` 和 `endpoint-cards` 覆盖登录 401 的“账号或密码错误”、普通会话 401 的“请重新登录”，以及权限拒绝与浏览器验证的区分。`mobile-account-input` 检查真实手机模板的密码键盘选项、禁用联想与自动大写、用户名大小写和密码的双向绑定。
 
-系统音频解码、播放时的后台与锁屏操作、耳机和音频焦点、实际目录提供者尚未完成真机验证。
+同日手机检查确认：全屏视口为 1200×2670、缩放 3.25，140 像素的顶部安全区仅保留一次；导航栏起点为 43.0769 逻辑像素。静音播放期间，从底部播放器上滑打开当前歌曲详情；下载另一首歌后，同页卡片和详情从未知时长直接更新为 02:14、128 kbps、44.1 kHz。
+
+后续增加滑条即时跟随、点击底部信息打开详情，以及宽松、紧凑、小型三种列表格式。本轮按要求检查 Release 编译、覆盖安装与启动显示。
+
+锁屏媒体按钮、耳机与音频焦点、实际目录提供者待在对应设备验证。

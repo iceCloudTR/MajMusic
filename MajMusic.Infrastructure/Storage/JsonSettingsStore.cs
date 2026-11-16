@@ -112,6 +112,11 @@ namespace MajMusic.Infrastructure.Storage
                 throw new InvalidDataException("The appearance preference must be light, dark or system.");
             }
 
+            if (!Enum.IsDefined(settings.CardLayout))
+            {
+                throw new InvalidDataException("The card layout must be spacious, compact or small.");
+            }
+
             if (settings.AudioOutput is null || settings.AudioOutput.Volume is < 0 or > 100
                 || settings.AudioOutput.DeviceId is { Length: > 4096 } || settings.AudioOutput.DeviceId?.Contains('\0') == true)
             {

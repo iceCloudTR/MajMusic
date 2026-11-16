@@ -310,6 +310,7 @@ namespace MajMusic.Tests
         private static async Task SeedAsync(string root, MusicWorkspace workspace, CancellationToken token)
         {
             var settings = await workspace.LoadSettingsAsync(token);
+            await workspace.SavePlaylistAsync(new MusicPlaylist { Id = "phone-favorites", Name = "Favorites", IsFavorite = true }, token);
             await workspace.SaveSettingsAsync(settings with
             {
                 Endpoints = [new EndpointConfiguration

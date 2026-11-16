@@ -152,8 +152,8 @@ namespace MajMusic.Presentation.ViewModels
                         {
                             updated = await _metadata.EnrichAsync(updated, cancellation.Token);
                         }
-
                         cancellation.Token.ThrowIfCancellationRequested();
+                        updated = PreferDownloadedMetadata(updated);
                         if (updated != track)
                         {
                             ApplyTrackMetadata(updated);
@@ -189,6 +189,7 @@ namespace MajMusic.Presentation.ViewModels
                         }
 
                         cancellation.Token.ThrowIfCancellationRequested();
+                        updated = PreferDownloadedMetadata(updated);
                         if (updated != track)
                         {
                             if (_onlineWorkspace is not null)
@@ -229,7 +230,8 @@ namespace MajMusic.Presentation.ViewModels
 
         /// <summary>Replaces matching visible metadata while preserving selected and queued entry identities.</summary>
         /// <param name="updated">The immutable metadata result.</param>
-        private void ApplyTrackMetadata(MusicTrack updated)
+        /// <param name="completedAudio">Whether the result also supplies a validated completed audio path.</param>
+        private void ApplyTrackMetadata(MusicTrack updated, bool completedAudio = false)
         {
             if (Volatile.Read(ref _isDisposing))
             {
@@ -241,7 +243,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 if (SameMetadataOwner(Tracks[index], updated))
                 {
-                    Tracks[index] = MergeRowMetadata(Tracks[index], updated);
+                    Tracks[index] = MergeMetadataUpdate(Tracks[index], updated, completedAudio);
                     if (SelectedTrack is { } selection && SameMetadataOwner(selection, updated))
                     {
                         selected = Tracks[index];
@@ -253,7 +255,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 if (SameMetadataOwner(VisibleTracks[index], updated))
                 {
-                    VisibleTracks[index] = MergeRowMetadata(VisibleTracks[index], updated);
+                    VisibleTracks[index] = MergeMetadataUpdate(VisibleTracks[index], updated, completedAudio);
                 }
             }
 
@@ -263,9 +265,14 @@ namespace MajMusic.Presentation.ViewModels
                 {
                     if (SameMetadataOwner(_recommendationTracks[index], updated))
                     {
-                        _recommendationTracks[index] = MergeRowMetadata(_recommendationTracks[index], updated);
+                        _recommendationTracks[index] = MergeMetadataUpdate(_recommendationTracks[index], updated, completedAudio);
                     }
                 }
+            }
+
+            if (selected is null && SelectedTrack is { } inspected && SameMetadataOwner(inspected, updated))
+            {
+                selected = MergeMetadataUpdate(inspected, updated, completedAudio);
             }
 
             if (selected is not null)
@@ -274,6 +281,11 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             RefreshCardTrackMetadata(updated);
+            if (completedAudio && _cards.TryGetValue((updated.Id, updated.SourceId, updated.EndpointId), out var card)
+                && SameMetadataOwner(card.Track, updated))
+            {
+                card.UpdateTrack(MergeMetadataUpdate(card.Track, updated, true));
+            }
         }
 
         /// <summary>Checks that a metadata result still belongs to the same indexed source revision.</summary>
@@ -282,7 +294,20 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>Whether the row can accept those properties.</returns>
         private static bool SameMetadataOwner(MusicTrack current, MusicTrack incoming)
         {
-            return current.Id == incoming.Id && current.Revision == incoming.Revision && current.EndpointId == incoming.EndpointId;
+            return current.Id == incoming.Id && current.SourceId == incoming.SourceId
+                && current.Revision == incoming.Revision && current.EndpointId == incoming.EndpointId;
+        }
+
+        /// <summary>Retains current resource ownership while accepting a completed download's validated local path.</summary>
+        /// <param name="current">The latest indexed descriptor.</param>
+        /// <param name="incoming">The parsed audio properties.</param>
+        /// <param name="completedAudio">Whether this update owns a completed local audio resource.</param>
+        /// <returns>The descriptor enriched without changing its title, cover or source addresses.</returns>
+        private static MusicTrack MergeMetadataUpdate(MusicTrack current, MusicTrack incoming, bool completedAudio)
+        {
+            var merged = MergeRowMetadata(current, incoming);
+            return completedAudio && incoming.Audio.LocalPath is { } path
+                ? merged with { Audio = current.Audio with { LocalPath = path } } : merged;
         }
 
         /// <summary>Merges only audio properties so an old playback object cannot replace current source descriptors.</summary>
@@ -327,6 +352,7 @@ namespace MajMusic.Presentation.ViewModels
 
             _publishedPlaybackMetadata = key;
             var updated = track with { Duration = snapshot.Duration ?? track.Duration, AudioInfo = snapshot.AudioInfo };
+            RememberDownloadedPlaybackMetadata(updated);
             ApplyTrackMetadata(updated);
             if (_onlineWorkspace is not null)
             {

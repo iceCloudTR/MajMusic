@@ -17,6 +17,7 @@ namespace MajMusic.Presentation.Theme
             .Token("RadiusControl", "12")
             .Token("RadiusPanel", "12")
             .Token("RadiusSurface", "12")
+            .Token("EdgeThickness", "1.25")
             .ForDark(dark => dark
                 .Token("Background", "#141416").Token("Surface", "#1C1C1F")
                 .Token("SurfaceRaised", "#27272C").Token("SurfaceMuted", "#242428")

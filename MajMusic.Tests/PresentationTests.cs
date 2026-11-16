@@ -55,7 +55,11 @@ namespace MajMusic.Tests
             await using var viewModel = CreateViewModel(workspace, new UnavailablePlaybackBackend());
             await viewModel.InitializeAsync();
             await TestAssert.ExecuteAsync(viewModel.ShowAllCommand);
-            TestAssert.True(viewModel.Playlists.Any(item => item.IsFavorite), "The local favorites collection must always be available.");
+            TestAssert.True(viewModel.Playlists.Count == 0 && !viewModel.ToggleFavoriteCommand.CanExecute(null),
+                "A fresh workspace cannot silently create a favorite collection.");
+            viewModel.NewPlaylistName = "我喜欢";
+            await TestAssert.ExecuteAsync(viewModel.CreatePlaylistCommand);
+            TestAssert.True(viewModel.Playlists.Single().IsFavorite, "An explicitly created favorite collection becomes available for local favorite actions.");
             await viewModel.ImportDirectoryAsync("synthetic-source-root");
             TestAssert.Equal(1, workspace.IndexCount, "The folder action must use recursive read-only indexing.");
             TestAssert.Equal(0, workspace.ManagedImportCount, "The folder action must never invoke managed file copying.");

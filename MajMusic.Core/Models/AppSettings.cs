@@ -11,6 +11,9 @@ namespace MajMusic.Core.Models
         /// <summary>Gets the saved light, dark or system appearance; existing installations retain dark mode.</summary>
         public AppearancePreference Appearance { get; init; } = AppearancePreference.Dark;
 
+        /// <summary>Gets the saved music-list card layout; existing installations retain spacious cards.</summary>
+        public SongCardLayout CardLayout { get; init; } = SongCardLayout.Loose;
+
         /// <summary>Gets the configured endpoint selected for explicit online actions.</summary>
         public string? ActiveEndpointId { get; init; }
 

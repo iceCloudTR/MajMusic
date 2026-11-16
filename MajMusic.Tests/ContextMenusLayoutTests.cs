@@ -62,6 +62,7 @@ namespace MajMusic.Tests
             using var client = new HttpClient(handler);
             using var workspace = new MusicWorkspace(Path.Combine(root, "data"), client, client, credentialStore: new NoCredentials());
             await workspace.LoadSettingsAsync();
+            await workspace.SavePlaylistAsync(new MusicPlaylist { Id = "menu-favorites", Name = "Favorites", IsFavorite = true });
             var tracks = Enumerable.Range(0, 3).Select(index => new MusicTrack
             {
                 Id = "menu-track-" + index,

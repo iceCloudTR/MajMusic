@@ -61,7 +61,7 @@ namespace MajMusic.Presentation.Views
             add.IsEnabled = add.Items.Count > 0;
             menu.Items.Add(add);
             menu.Items.Add(Action(owner.IsTrackFavoriteForMenu(track) ? "取消喜欢" : "喜欢", owner,
-                () => owner.ToggleTrackFavoriteFromMenuAsync(track), () => owner.IsIdle, ArcIcons.Heart));
+                () => owner.ToggleTrackFavoriteFromMenuAsync(track), () => owner.IsIdle && owner.HasFavorites, ArcIcons.Heart));
             menu.Items.Add(Action("下载", owner, () => owner.DownloadTrackFromMenuAsync(track),
                 () => owner.OnlineEnabled && track.RemoteId is not null, ArcIcons.Download));
             if (owner.BrowsedPlaylistForMenu is { } browsed)

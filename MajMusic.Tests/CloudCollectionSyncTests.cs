@@ -268,6 +268,8 @@ namespace MajMusic.Tests
             await harness.EnableAccountAsync("first", "Alice");
             await using var view = new MainViewModel(harness.Workspace, new PlaybackService(new UnavailablePlaybackBackend()), static action => action());
             await view.InitializeAsync();
+            view.NewPlaylistName = "我喜欢";
+            await ExecuteAsync(view, view.CreatePlaylistCommand);
             await view.CloudCollectionsUpdate.WaitAsync(TimeSpan.FromSeconds(5));
             view.SelectedTrack = (await harness.Workspace.SearchAsync(null)).Single(track => track.Id == "first-track");
             transport.BlockNextUpdate("a.example.test");

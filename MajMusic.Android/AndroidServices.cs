@@ -4,6 +4,7 @@ using System.Net;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using MajMusic.Android.Audio;
 using MajMusic.Android.Network;
 using MajMusic.Android.Security;
@@ -74,9 +75,32 @@ namespace MajMusic.Android
         public Control CreateMainView()
         {
             var view = new MainView { DataContext = _viewModel, DirectoryReferenceResolver = RetainDirectoryReferenceAsync };
+            TopLevel.SetAutoSafeAreaPadding(view, false);
             _currentView = new WeakReference<Control>(view);
             view.Loaded += OnViewLoaded;
+            view.LayoutUpdated += OnMobileLayoutReady;
             return view;
+        }
+
+        /// <summary>Connects the single page-owned safe area after the real mobile viewport and native rendering scale are available.</summary>
+        /// <param name="sender">The current activity's shared root view.</param>
+        /// <param name="args">The completed layout notification.</param>
+        private static void OnMobileLayoutReady(object? sender, EventArgs args)
+        {
+            if (sender is not MainView view || TopLevel.GetTopLevel(view) is not { } topLevel
+                || view.GetVisualDescendants().OfType<MobileMusicView>().FirstOrDefault() is not { } mobile
+                || mobile.FindControl<TKCode.Arc.Mobile.Page>("MobilePage") is not { } page
+                || topLevel.ClientSize.Width < 200 || topLevel.ClientSize.Height < 200
+                || Math.Abs(view.Bounds.Width - topLevel.ClientSize.Width) > 1
+                || Math.Abs(view.Bounds.Height - topLevel.ClientSize.Height) > 1
+                || mobile.Bounds.Width < 200 || mobile.Bounds.Height < 200 || page.Bounds.Height < 200
+                || Math.Abs(topLevel.RenderScaling - (global::Android.App.Application.Context.Resources?.DisplayMetrics?.Density ?? 1)) > .01)
+            {
+                return;
+            }
+
+            view.LayoutUpdated -= OnMobileLayoutReady;
+            PageSafeAreaOwner.Attach(topLevel, view, page);
         }
 
         /// <summary>Starts indexing and saved preferences after the Android document provider is available.</summary>
@@ -84,6 +108,12 @@ namespace MajMusic.Android
         /// <param name="args">The native view-load event.</param>
         private async void OnViewLoaded(object? sender, RoutedEventArgs args)
         {
+            if (sender is MainView view)
+            {
+                view.LayoutUpdated -= OnMobileLayoutReady;
+                view.LayoutUpdated += OnMobileLayoutReady;
+            }
+
             try
             {
                 _initialization ??= _viewModel.InitializeAsync();

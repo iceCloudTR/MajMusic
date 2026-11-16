@@ -57,6 +57,27 @@ namespace MajMusic.Infrastructure.Storage
             }
         }
 
+        /// <summary>Checks every account scope before a legacy local placeholder can be retired.</summary>
+        /// <param name="playlistId">The exact local backing identity.</param>
+        /// <param name="token">Cancels the local lookup.</param>
+        /// <returns>Whether any durable binding or pending-creation journal references the local list.</returns>
+        public async Task<bool> HasPlaylistBindingAsync(string playlistId, CancellationToken token)
+        {
+            await _gate.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                await using var connection = await OpenAsync(token).ConfigureAwait(false);
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT EXISTS(SELECT 1 FROM bindings WHERE playlist = $playlist);";
+                command.Parameters.AddWithValue("$playlist", playlistId);
+                return Convert.ToInt64(await command.ExecuteScalarAsync(token).ConfigureAwait(false)) != 0;
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         /// <summary>Atomically saves a binding or its durable pending-creation journal.</summary>
         /// <param name="binding">The application-owned binding.</param>
         /// <param name="token">Cancels the local write before publication.</param>

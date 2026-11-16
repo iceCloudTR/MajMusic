@@ -7,6 +7,8 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.VisualTree;
 using MajMusic.Presentation.ViewModels;
+using MajMusic.Presentation.Theme;
+using MajMusic.Core.Models;
 
 namespace MajMusic.Presentation.Views
 {
@@ -15,6 +17,8 @@ namespace MajMusic.Presentation.Views
     {
         /// <summary>Identifies the compact searchable-row layout.</summary>
         public static readonly StyledProperty<bool> IsCompactProperty = AvaloniaProperty.Register<SongCard, bool>(nameof(IsCompact));
+        /// <summary>Identifies the preferred proportions and information density of the shared card.</summary>
+        public static readonly StyledProperty<SongCardLayout> CardLayoutProperty = AvaloniaProperty.Register<SongCard, SongCardLayout>(nameof(CardLayout));
         /// <summary>Identifies whether the owning browse mode currently displays this presentation.</summary>
         public static readonly StyledProperty<bool> IsBrowsingActiveProperty = AvaloniaProperty.Register<SongCard, bool>(nameof(IsBrowsingActive), true);
         /// <summary>Constrains Arc's animated label slot to the actual card content width.</summary>
@@ -22,6 +26,8 @@ namespace MajMusic.Presentation.Views
             nameof(CardContentWidth), card => card.CardContentWidth);
         /// <summary>Stores the finite width shared by the card's cover and information columns.</summary>
         private double _cardContentWidth;
+        /// <summary>Retains the width used by the latest proportional height calculation.</summary>
+        private double _measuredCardWidth;
         /// <summary>Cancels optional metadata when the item leaves the viewport.</summary>
         private CancellationTokenSource? _activationCancellation;
         /// <summary>Retains the exact presentation whose artwork lease is active.</summary>
@@ -34,7 +40,7 @@ namespace MajMusic.Presentation.Views
         /// <summary>Registers layout invalidation for compact-mode changes.</summary>
         static SongCard()
         {
-            AffectsMeasure<SongCard>(IsCompactProperty);
+            AffectsMeasure<SongCard>(IsCompactProperty, CardLayoutProperty);
         }
 
         /// <summary>Initializes the artwork and song-information template.</summary>
@@ -44,6 +50,7 @@ namespace MajMusic.Presentation.Views
             DataContextChanged += OnCardDataContextChanged;
             Loaded += OnCardLoaded;
             EffectiveViewportChanged += OnCardViewportChanged;
+            SizeChanged += OnCardSizeChanged;
             SetValue(InputElement.IsHoldingEnabledProperty, true);
             AddHandler(ContextRequestedEvent, OnCardContextRequested, RoutingStrategies.Bubble);
             AddHandler(HoldingEvent, OnCardHolding, RoutingStrategies.Bubble);
@@ -56,6 +63,16 @@ namespace MajMusic.Presentation.Views
             set => SetValue(IsCompactProperty, value);
         }
 
+        /// <summary>Gets or sets the shared loose, compact or small card presentation.</summary>
+        public SongCardLayout CardLayout
+        {
+            get => GetValue(CardLayoutProperty);
+            set => SetValue(CardLayoutProperty, value);
+        }
+
+        /// <summary>Gets the current proportions while retaining compatibility with an explicit compact flag.</summary>
+        private SongCardLayout EffectiveLayout => IsCompact ? SongCardLayout.Compact : CardLayout;
+
         /// <summary>Gets or sets whether the owning list is currently visible.</summary>
         public bool IsBrowsingActive
         {
@@ -63,13 +80,18 @@ namespace MajMusic.Presentation.Views
             set => SetValue(IsBrowsingActiveProperty, value);
         }
 
-        /// <summary>Gets the finite content width after the card's one-pixel border.</summary>
+        /// <summary>Gets the finite content width after the card's shared outline.</summary>
         public double CardContentWidth => _cardContentWidth;
 
         /// <inheritdoc />
         protected override async void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
             base.OnPropertyChanged(change);
+            if (change.Property == CardLayoutProperty || change.Property == IsCompactProperty)
+            {
+                UpdateCardLayout();
+            }
+
             if ((change.Property == IsBrowsingActiveProperty || change.Property == IsVisibleProperty) && _attached)
             {
                 await ActivateCardAsync();
@@ -79,11 +101,37 @@ namespace MajMusic.Presentation.Views
         /// <inheritdoc />
         protected override Size MeasureOverride(Size availableSize)
         {
-            var width = double.IsFinite(availableSize.Width) ? availableSize.Width : 320;
-            var height = IsCompact ? 60 : width / 2;
-            SetAndRaise(CardContentWidthProperty, ref _cardContentWidth, Math.Max(0, width - 2));
+            var width = SongCardGeometry.GetMeasureWidth(availableSize.Width, Bounds.Width, EffectiveLayout);
+            _measuredCardWidth = width;
+            var height = SongCardGeometry.GetHeight(width, EffectiveLayout);
+            Classes.Set("tight", height < 90);
+            Classes.Set("tiny", height < 68);
+            SetAndRaise(CardContentWidthProperty, ref _cardContentWidth, Math.Max(0, width - MusicGeometry.OutlineWidth * 2));
             base.MeasureOverride(new Size(width, height));
             return new Size(width, height);
+        }
+
+        /// <summary>Recalculates a virtualized row after its first actual viewport width replaces an earlier zero constraint.</summary>
+        /// <param name="sender">The arranged song card.</param>
+        /// <param name="e">The actual assigned dimensions.</param>
+        private void OnCardSizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            if (double.IsFinite(e.NewSize.Width) && e.NewSize.Width > MusicGeometry.OutlineWidth * 2
+                && Math.Abs(e.NewSize.Width - _measuredCardWidth) > 0.5)
+            {
+                InvalidateMeasure();
+            }
+        }
+
+        /// <summary>Updates the existing two-column template without replacing controls or their artwork leases.</summary>
+        private void UpdateCardLayout()
+        {
+            Classes.Set("compact", EffectiveLayout == SongCardLayout.Compact);
+            Classes.Set("small", EffectiveLayout == SongCardLayout.Small);
+            if (this.FindControl<Grid>("CardArtGrid") is { } grid)
+            {
+                grid.ColumnDefinitions = new ColumnDefinitions(EffectiveLayout == SongCardLayout.Compact ? "*,2*" : "*,*");
+            }
         }
 
         /// <inheritdoc />

@@ -52,6 +52,8 @@ namespace MajMusic.Presentation.ViewModels
                 card.RestoreDownloadState(state);
                 card.NotifyDownloadState();
             }
+
+            ObserveDownloadedMetadata(owner, progress);
         }
 
         /// <summary>Restores a card's retained operation without performing any filesystem work for an invisible song.</summary>

@@ -1,6 +1,5 @@
 #nullable enable
 
-using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Headless;
@@ -18,59 +17,11 @@ namespace MajMusic.Tests
     /// <summary>Checks actual mobile account keyboard hints and mixed-case credential binding using generated input only.</summary>
     internal static class MobileAccountInputTests
     {
-        /// <summary>Identifies this test's worker process without changing production behavior or the selected validation groups.</summary>
-        private const string WorkerEnvironmentKey = "MAJMUSIC_MOBILE_ACCOUNT_INPUT_TEST_WORKER";
-
         /// <summary>Checks realized Arc mobile account fields without reading saved secrets or contacting a source.</summary>
         /// <returns>A task representing the mobile input configuration and binding regressions.</returns>
-        public static async Task RunAsync()
+        public static Task RunAsync()
         {
-            if (Environment.GetEnvironmentVariable(WorkerEnvironmentKey) == "1")
-            {
-                await RunHeadlessAsync();
-                return;
-            }
-
-            // Arc's process-global icon geometries retain their originating dispatcher. A separate
-            // process gives this additional Android input fixture a complete application lifetime.
-            var start = new ProcessStartInfo
-            {
-                FileName = Environment.ProcessPath ?? throw new InvalidOperationException("The validation executable is unavailable."),
-                WorkingDirectory = Environment.CurrentDirectory,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            if (string.Equals(Path.GetFileNameWithoutExtension(start.FileName), "dotnet", StringComparison.OrdinalIgnoreCase))
-            {
-                start.ArgumentList.Add(typeof(MobileAccountInputTests).Assembly.Location);
-            }
-
-            start.ArgumentList.Add("mobile-account-input");
-            start.Environment[WorkerEnvironmentKey] = "1";
-            using var process = Process.Start(start) ?? throw new InvalidOperationException("The mobile input validation worker could not start.");
-            var output = process.StandardOutput.ReadToEndAsync();
-            var error = process.StandardError.ReadToEndAsync();
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            try
-            {
-                await process.WaitForExitAsync(timeout.Token);
-            }
-            catch
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                    await process.WaitForExitAsync();
-                }
-
-                await Task.WhenAll(output, error);
-                throw;
-            }
-
-            var diagnostics = (await output) + (await error);
-            TestAssert.True(process.ExitCode == 0, "The isolated mobile input and binding regression must pass. " + diagnostics);
+            return HeadlessProcessIsolation.RunAsync("mobile-account-input", RunHeadlessAsync);
         }
 
         /// <summary>Exercises the real mobile template in one process-owned Avalonia application and dispatcher.</summary>

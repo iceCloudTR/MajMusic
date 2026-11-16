@@ -231,6 +231,20 @@ namespace MajMusic.Infrastructure.Storage
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        /// <summary>Removes an identified legacy placeholder without recording a user deletion that would block future Maj imports.</summary>
+        /// <param name="id">The legacy playlist identity already verified by the workspace.</param>
+        /// <param name="cancellationToken">Cancels the local removal.</param>
+        /// <returns>A task representing the completed local migration.</returns>
+        internal async Task RemoveLegacyEmptyPlaylistAsync(string id, CancellationToken cancellationToken)
+        {
+            await InitializeAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM playlists WHERE id = $id;";
+            command.Parameters.AddWithValue("$id", id);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         /// <inheritdoc />
         public async Task DeletePlaylistAsync(string id, CancellationToken cancellationToken = default)
         {

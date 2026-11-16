@@ -127,8 +127,8 @@ namespace MajMusic.Presentation.ViewModels
             PauseCommand = CreateTransportCommand(() => _playback.PauseAsync(_lifetime.Token), () => CanPlay && _playbackSnapshot.State is PlaybackState.Playing or PlaybackState.Loading);
             NextCommand = CreateTransportCommand(() => _playback.NextAsync(_lifetime.Token), () => CanPlay && _playback.Queue.Tracks.Count > 0);
             PreviousCommand = CreateTransportCommand(() => _playback.PreviousAsync(_lifetime.Token), () => CanPlay && _playback.Queue.Tracks.Count > 0);
-            ToggleFavoriteCommand = CreateCommand(ToggleFavoriteAsync, () => SelectedTrack is not null);
-            OpenFavoritesCommand = CreateCommand(OpenFavoritesAsync);
+            ToggleFavoriteCommand = CreateCommand(ToggleFavoriteAsync, () => HasFavorites && SelectedTrack is not null);
+            OpenFavoritesCommand = CreateCommand(OpenFavoritesAsync, () => HasFavorites);
             RescanCommand = CreateCommand(RescanAsync, () => _settings.LocalDirectorySources.Count > 0);
             InitializeSourceCommands();
             InitializeMetadataCommands();
@@ -193,6 +193,8 @@ namespace MajMusic.Presentation.ViewModels
         public string FavoriteButtonText => IsSelectedFavorite ? "♥ 已喜欢" : "♡ 我喜欢";
         /// <summary>Gets whether the selected entry or its portable Maj identity is favorited.</summary>
         public bool IsSelectedFavorite => SelectedTrack is { } track && IsTrackFavorite(track);
+        /// <summary>Gets whether an explicitly created or imported editable favorites collection is available.</summary>
+        public bool HasFavorites => _favorites is not null;
         /// <summary>Gets readable properties of the actual loaded audio stream.</summary>
         public string AudioDetails => FormatAudioDetails(_playbackSnapshot.AudioInfo);
         /// <summary>Gets whether actual loaded audio properties are available.</summary>
@@ -215,6 +217,8 @@ namespace MajMusic.Presentation.ViewModels
         public string SelectedArtist => SelectedTrack?.Artist ?? string.Empty;
         /// <summary>Gets the loaded music title independently of the browsing selection.</summary>
         public string PlaybackTitle => _playbackSnapshot.Track?.Title ?? "尚未播放";
+        /// <summary>Gets the actual playback owner independently of the song currently selected for inspection.</summary>
+        public MusicTrack? PlaybackTrack => _playbackSnapshot.Track;
         /// <summary>Gets the loaded music artist independently of the browsing selection.</summary>
         public string PlaybackArtist => _playbackSnapshot.Track?.Artist ?? string.Empty;
         /// <summary>Gets the action label for starting or resuming audio.</summary>
@@ -388,9 +392,11 @@ namespace MajMusic.Presentation.ViewModels
                 _accountSettingsLoaded = false;
                 await PrepareOnlinePreferencesAsync();
                 await PrepareAppearanceSettingsAsync();
+                await PrepareCardLayoutSettingsAsync();
                 _settings = LocalDirectorySettings.Normalize(await _workspace.LoadSettingsAsync(_lifetime.Token));
                 _lifetime.Token.ThrowIfCancellationRequested();
                 RestoreAppearanceSettings(_settings.Appearance);
+                RestoreCardLayoutSettings(_settings.CardLayout);
                 RestoreOnlinePreference(_settings.OnlineEnabled);
                 var endpoint = _settings.Endpoints.FirstOrDefault(item => item.Id == _settings.ActiveEndpointId)
                     ?? _settings.Endpoints.FirstOrDefault();
@@ -1002,6 +1008,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <param name="covers">The ready first-screen artwork, or null when no browsing view is attached.</param>
         private void PublishBrowseSnapshot(BrowseSnapshot entries, bool preservePage, CoverThumbnailCache.PreloadBatch? covers)
         {
+            OverlayDownloadedMetadata(entries);
             var inspected = SelectedTrack;
             _tracks.ReplaceAll(entries.Tracks);
             RefreshCardTracks(preservePage, entries, covers);
@@ -1040,13 +1047,6 @@ namespace MajMusic.Presentation.ViewModels
         {
             var playlists = (await _workspace.GetPlaylistsAsync(_lifetime.Token)).ToList();
             _favorites = playlists.FirstOrDefault(item => item.IsFavorite || item.Id == FavoritesId);
-            if (_favorites is null)
-            {
-                _favorites = new MusicPlaylist { Id = FavoritesId, Name = "我喜欢", IsFavorite = true };
-                await _workspace.SavePlaylistAsync(_favorites, _lifetime.Token);
-                playlists.Add(_favorites);
-            }
-
             _lifetime.Token.ThrowIfCancellationRequested();
             var library = (await _workspace.SearchAsync(null, _lifetime.Token)).ToDictionary(item => item.Id, StringComparer.Ordinal);
             _lifetime.Token.ThrowIfCancellationRequested();
@@ -1054,7 +1054,7 @@ namespace MajMusic.Presentation.ViewModels
             var selectedLocalId = selectedId is null ? null : _playlistMirrorBackings.GetValueOrDefault(selectedId) ?? selectedId;
             var activeLocalId = _activePlaylistId is null ? null : _playlistMirrorBackings.GetValueOrDefault(_activePlaylistId) ?? _activePlaylistId;
             var projected = ProjectPlaylistMirrors(playlists, _cloudPlaylists.Values.SelectMany(items => items).ToArray(), library);
-            _favorites = _localPlaylistSnapshots[_favorites.Id];
+            _favorites = _favorites is { } favorite && _localPlaylistSnapshots.TryGetValue(favorite.Id, out var localFavorite) ? localFavorite : null;
             RefreshFavoriteMembership(library);
             Playlists.Clear();
             foreach (var playlist in projected.OrderByDescending(item => item.IsFavorite))
@@ -1070,11 +1070,14 @@ namespace MajMusic.Presentation.ViewModels
 
             SelectedPlaylist = Playlists.FirstOrDefault(item => item.Id == selectedId)
                 ?? (selectedLocalId is not null && _localPlaylistSnapshots.TryGetValue(selectedLocalId, out var selectedLocal)
-                    ? VisiblePlaylistForLocal(selectedLocal) : VisiblePlaylistForLocal(_favorites));
+                    ? VisiblePlaylistForLocal(selectedLocal) : _favorites is { } currentFavorite ? VisiblePlaylistForLocal(currentFavorite) : Playlists.FirstOrDefault());
             RefreshPlaylistPages();
             OnPropertyChanged(nameof(SelectedHomePlaylist));
             OnPropertyChanged(nameof(FavoriteButtonText));
             OnPropertyChanged(nameof(IsSelectedFavorite));
+            OnPropertyChanged(nameof(HasFavorites));
+            ToggleFavoriteCommand.NotifyCanExecuteChanged();
+            OpenFavoritesCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(ExportFileName));
             if (!Playlists.Any(item => item.Id == _activePlaylistId))
             {
@@ -1216,7 +1219,12 @@ namespace MajMusic.Presentation.ViewModels
         {
             var name = NewPlaylistName.Trim();
             ArgumentException.ThrowIfNullOrWhiteSpace(name);
-            await _workspace.SavePlaylistAsync(new MusicPlaylist { Id = Guid.NewGuid().ToString("N"), Name = name }, _lifetime.Token);
+            await _workspace.SavePlaylistAsync(new MusicPlaylist
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = name,
+                IsFavorite = !HasFavorites && name == "我喜欢"
+            }, _lifetime.Token);
             await ReloadPlaylistsAsync();
             NewPlaylistName = string.Empty;
             Status = $"已创建播放列表：{name}";
@@ -1429,7 +1437,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 if (!Volatile.Read(ref _isDisposing))
                 {
-                    var current = _playback.Snapshot;
+                    var current = WithDownloadedPlaybackMetadata(_playback.Snapshot);
                     var changed = _playbackSnapshot.State != current.State || _playbackSnapshot.Track?.Id != current.Track?.Id
                         || _playbackSnapshot.Error != current.Error;
                     var audioChanged = !ReferenceEquals(_playbackSnapshot.AudioInfo, current.AudioInfo);

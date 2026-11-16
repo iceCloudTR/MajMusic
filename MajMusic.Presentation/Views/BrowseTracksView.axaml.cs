@@ -8,6 +8,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
+using MajMusic.Core.Models;
 using System.Collections;
 using System.ComponentModel;
 
@@ -18,6 +19,8 @@ namespace MajMusic.Presentation.Views
     {
         /// <summary>Identifies a touch viewport that keeps complete cover cards in one column.</summary>
         public static readonly StyledProperty<bool> ForceSingleColumnProperty = AvaloniaProperty.Register<BrowseTracksView, bool>(nameof(ForceSingleColumn));
+        /// <summary>Identifies the current density shared by all virtualized cards and placeholders.</summary>
+        public static readonly StyledProperty<SongCardLayout> CardLayoutProperty = AvaloniaProperty.Register<BrowseTracksView, SongCardLayout>(nameof(CardLayout));
         /// <summary>Identifies the indexed music rows and their optional trailing recommendation pager.</summary>
         public static readonly DirectProperty<BrowseTracksView, IEnumerable?> PresentationRowsProperty =
             AvaloniaProperty.RegisterDirect<BrowseTracksView, IEnumerable?>(nameof(PresentationRows), view => view.PresentationRows);
@@ -30,6 +33,12 @@ namespace MajMusic.Presentation.Views
         }
         /// <summary>Gets the unchanged lightweight music rows followed by an available recommendation footer.</summary>
         public IEnumerable? PresentationRows => _rowsPresentation;
+        /// <summary>Gets the active density selected in the music appearance settings.</summary>
+        public SongCardLayout CardLayout
+        {
+            get => GetValue(CardLayoutProperty);
+            private set => SetValue(CardLayoutProperty, value);
+        }
 
         /// <inheritdoc />
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -73,6 +82,7 @@ namespace MajMusic.Presentation.Views
             base.OnAttachedToVisualTree(e);
             if (_browseOwner is { } owner)
             {
+                CardLayout = owner.SelectedCardLayout;
                 owner.PropertyChanged -= OnBrowseOwnerChanged;
                 owner.PropertyChanged += OnBrowseOwnerChanged;
                 if (Bounds.Width > 0)
@@ -117,6 +127,7 @@ namespace MajMusic.Presentation.Views
             }
 
             _browseOwner = DataContext as MainViewModel;
+            CardLayout = _browseOwner?.SelectedCardLayout ?? SongCardLayout.Loose;
             var previousRows = _rowsPresentation;
             previousRows?.Dispose();
             _rowsPresentation = _browseOwner is { } current ? new BrowseRowsPresentation(current) : null;
@@ -148,7 +159,13 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The changed property notification.</param>
         private void OnBrowseOwnerChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(MainViewModel.BrowseTransitionVersion) && _browseOwner is { } owner)
+            if (e.PropertyName == nameof(MainViewModel.SelectedCardLayout) && _browseOwner is { } layoutOwner)
+            {
+                CardLayout = layoutOwner.SelectedCardLayout;
+                SetBrowseViewport(layoutOwner, Bounds.Width, _browseViewport.Height);
+                UpdateSkeletonViewport();
+            }
+            else if (e.PropertyName == nameof(MainViewModel.BrowseTransitionVersion) && _browseOwner is { } owner)
             {
                 RegisterBrowseTransition(owner);
             }
@@ -230,7 +247,7 @@ namespace MajMusic.Presentation.Views
         {
             if (TopLevel.GetTopLevel(this) is not null && _browseOwner is { IsBrowsePlaceholderVisible: true } owner)
             {
-                this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.SetViewport(_browseViewport, owner.BrowseColumns);
+                this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.SetViewport(_browseViewport, owner.BrowseColumns, CardLayout);
             }
             else
             {
@@ -288,12 +305,12 @@ namespace MajMusic.Presentation.Views
             owner.SetBrowseViewportSize(cardWidth, height);
         }
 
-        /// <summary>Maps a touch viewport to one column while retaining desktop row virtualization.</summary>
+        /// <summary>Preserves the actual viewport so card size preferences choose the same columns on every platform.</summary>
         /// <param name="width">The actual content width.</param>
         /// <returns>The logical width used only to choose the card column count.</returns>
         private double CardViewportWidth(double width)
         {
-            return ForceSingleColumn ? Math.Min(400, width - 12) : width - 12;
+            return width;
         }
 
         /// <summary>Moves between individual artwork cards while keeping the selected row and inspector visible.</summary>

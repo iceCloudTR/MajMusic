@@ -227,7 +227,7 @@ namespace MajMusic.Infrastructure.Application
         /// <inheritdoc />
         public Task<IReadOnlyList<MusicPlaylist>> GetPlaylistsAsync(CancellationToken cancellationToken = default)
         {
-            return _library.GetPlaylistsAsync(cancellationToken);
+            return GetRetainedPlaylistsAsync(cancellationToken);
         }
 
         /// <inheritdoc />

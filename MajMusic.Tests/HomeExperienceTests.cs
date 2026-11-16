@@ -219,6 +219,7 @@ namespace MajMusic.Tests
         private static async Task ValidateHomePlaylistSelectionAsync()
         {
             var workspace = Workspace(5);
+            workspace.LocalPlaylists["home-favorites"] = new MusicPlaylist { Id = "home-favorites", Name = "Favorites", IsFavorite = true };
             await using var view = View(workspace, new LibraryExperienceTests.ExperienceBackend());
             await view.InitializeAsync();
             view.SelectedHomePlaylist = view.Playlists.Single(item => item.Id == "ordered");

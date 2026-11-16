@@ -52,7 +52,7 @@ namespace MajMusic.Presentation.ViewModels
             }
         }
 
-        /// <summary>Fits complete artwork cards into one, two or three equal-width columns.</summary>
+        /// <summary>Fits artwork cards within the preferred width range without imposing platform-specific column counts.</summary>
         /// <param name="width">The actual scroll viewport width in logical pixels.</param>
         public void SetBrowseViewportWidth(double width)
         {
@@ -61,7 +61,13 @@ namespace MajMusic.Presentation.ViewModels
                 return;
             }
 
-            var columns = width < 420 ? 1 : Math.Clamp((int)Math.Floor(width / 300), 2, 3);
+            const double gap = 12;
+            var small = SelectedCardLayout == SongCardLayout.Small;
+            var preferredWidth = small ? 250 : 500;
+            var minimumWidth = small ? 140 : 280;
+            var preferredColumns = (int)Math.Ceiling((width + gap) / (preferredWidth + gap));
+            var capacity = Math.Max(1, (int)Math.Floor((width + gap) / (minimumWidth + gap)));
+            var columns = Math.Clamp(preferredColumns, 1, Math.Min(16, capacity));
             if (columns != _browseColumns)
             {
                 _browseColumns = columns;
@@ -173,7 +179,7 @@ namespace MajMusic.Presentation.ViewModels
                     {
                         await _browseMetadataGate.WaitAsync(cancellation.Token);
                         entered = true;
-                        var updated = _metadata is null ? track : await _metadata.EnrichAsync(track, cancellation.Token);
+                        var updated = PreferDownloadedMetadata(_metadata is null ? track : await _metadata.EnrichAsync(track, cancellation.Token));
                         cancellation.Token.ThrowIfCancellationRequested();
                         if (updated != track)
                         {
@@ -197,11 +203,11 @@ namespace MajMusic.Presentation.ViewModels
                             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
                             timeout.CancelAfter(TimeSpan.FromSeconds(8));
                             var remote = await _onlineWorkspace.EnrichTrackMetadataAsync(updated, timeout.Token);
-                            var merged = updated with
+                            var merged = PreferDownloadedMetadata(updated with
                             {
                                 Duration = updated.Duration ?? remote.Duration,
                                 AudioInfo = updated.AudioInfo ?? remote.AudioInfo
-                            };
+                            });
                             cancellation.Token.ThrowIfCancellationRequested();
                             if (merged != updated)
                             {

@@ -24,6 +24,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Releases the transfer subscription before workspace shutdown.</summary>
         private void DisposeAudioDownloadProgress()
         {
+            CancelDownloadedMetadata();
             if (_audioDownloadSource is not null)
             {
                 _audioDownloadSource.AudioDownloadProgressChanged -= OnAudioDownloadProgressChanged;

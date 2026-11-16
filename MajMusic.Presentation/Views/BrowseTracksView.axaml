@@ -47,14 +47,15 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:SongCardViewModel">
-                        <views:SongCard Margin="6" IsBrowsingActive="{Binding $parent[ListBox].IsVisible}" />
+                        <views:SongCard Margin="6" IsBrowsingActive="{Binding $parent[ListBox].IsVisible}"
+                                        CardLayout="{Binding CardLayout, RelativeSource={RelativeSource AncestorType=views:BrowseTracksView}}" />
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </DataTemplate>
         <DataTemplate DataType="views:RecommendationFooterRow" x:DataType="views:RecommendationFooterRow">
             <Border DataContext="{Binding Owner}" Margin="6,12,6,8" Padding="10,8" CornerRadius="12"
-                    Background="{DynamicResource MusicPanelBrush}" BorderBrush="{DynamicResource MusicLineBrush}" BorderThickness="1">
+                    Background="{DynamicResource MusicPanelBrush}" BorderBrush="{DynamicResource MusicLineBrush}" BorderThickness="{x:Static theme:MusicGeometry.OutlineThickness}">
                 <Grid x:Name="RecommendationPagination" x:DataType="vm:MainViewModel" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                     <TextBlock Classes="muted" FontSize="12" VerticalAlignment="Center">
                         <Run Text="{Binding RecommendationPageNumber}" /><Run Text=" / " /><Run Text="{Binding RecommendationPageCount}" />

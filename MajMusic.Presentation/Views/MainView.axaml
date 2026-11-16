@@ -113,15 +113,15 @@
                         <views:BrowseTracksView x:Name="SongBrowser" />
                     </Border>
                     <Border x:Name="LibraryDetails" Grid.Row="1" Grid.Column="1" Classes="card" Padding="10">
-                        <Grid RowSpacing="6" IsVisible="{Binding SelectedBrowseTrack, Converter={x:Static ac:ObjectConverters.IsNotNull}}">
+                        <Grid RowSpacing="6" VerticalAlignment="Top" IsVisible="{Binding SelectedBrowseTrack, Converter={x:Static ac:ObjectConverters.IsNotNull}}">
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="*" MaxHeight="120" />
+                                <RowDefinition Height="*" />
                                 <RowDefinition Height="36" />
                                 <RowDefinition Height="32" />
                                 <RowDefinition Height="32" />
                             </Grid.RowDefinitions>
-                            <Viewbox Stretch="Uniform" MaxWidth="120" MaxHeight="120" HorizontalAlignment="Center" VerticalAlignment="Top">
-                                <Border Width="120" Height="120" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}" ClipToBounds="True">
+                            <Viewbox x:Name="DesktopDetailsCover" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Top">
+                                <Border Width="240" Height="240" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}" ClipToBounds="True">
                                     <theme:CoverTransition Source="{Binding Cover}" Stretch="UniformToFill" />
                                 </Border>
                             </Viewbox>
@@ -226,11 +226,15 @@
             <TabItem x:Name="SettingsTab" Header="设置">
                 <StackPanel Margin="0" Spacing="10">
                     <Border x:Name="AppearanceSettingsPanel" Classes="card" Padding="10">
-                        <Grid ColumnDefinitions="80,*" ColumnSpacing="10">
+                        <Grid RowDefinitions="Auto,Auto" RowSpacing="8" ColumnDefinitions="80,*" ColumnSpacing="10">
                             <TextBlock Text="外观" FontWeight="SemiBold" VerticalAlignment="Center" />
                             <arc:Select x:Name="AppearancePicker" Grid.Column="1" ItemsSource="{Binding AppearanceOptions}"
                                         TextSelector="{x:Static converters:MusicSelectLabels.Appearance}"
                                         SelectedItem="{Binding SelectedAppearanceOption, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                            <TextBlock Grid.Row="1" Text="列表格式" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <arc:Select x:Name="CardLayoutPicker" Grid.Row="1" Grid.Column="1" ItemsSource="{Binding CardLayoutChoices}"
+                                        TextSelector="{x:Static converters:MusicSelectLabels.CardLayout}"
+                                        SelectedItem="{Binding SelectedCardLayoutOption, Mode=TwoWay}" HorizontalAlignment="Stretch" />
                         </Grid>
                     </Border>
                     <Border x:Name="AudioSettingsPanel" Classes="card" Padding="10">
@@ -262,7 +266,7 @@
             <TextBlock Text="{Binding PlaybackHint}" IsVisible="{Binding HasPlaybackHint}" Classes="muted" FontSize="11" MaxWidth="360" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding PlaybackHint}" />
             <TextBlock Grid.Column="1" Text="{Binding Status}" IsVisible="{Binding HasStatus}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Status}" />
         </Grid>
-        <Border x:Name="PlaybackBar" Grid.Row="3" Background="{DynamicResource MusicPanelBrush}" BorderBrush="{DynamicResource MusicLineBrush}" BorderThickness="1" CornerRadius="12" Padding="14,10">
+        <Border x:Name="PlaybackBar" Grid.Row="3" Background="{DynamicResource MusicPanelBrush}" BorderBrush="{DynamicResource MusicLineBrush}" BorderThickness="{x:Static theme:MusicGeometry.OutlineThickness}" CornerRadius="12" Padding="14,10">
             <Grid RowDefinitions="40,48" RowSpacing="3">
                 <Grid>
                     <Grid ColumnDefinitions="*,224,*">

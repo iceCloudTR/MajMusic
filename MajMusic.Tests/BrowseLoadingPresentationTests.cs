@@ -208,7 +208,8 @@ namespace MajMusic.Tests
                 "Loading must instantiate only the current viewport's responsive placeholder rows.");
             var cards = skeleton.Children.OfType<SongCardSkeleton>().ToArray();
             var visible = cards.Where(card => card.Bounds.Top < browser.Bounds.Height).ToArray();
-            TestAssert.True(visible.Length >= columns && visible.All(card => Math.Abs(card.Bounds.Width - card.Bounds.Height * 2) <= 1),
+            var outline = MusicGeometry.OutlineWidth * 2;
+            TestAssert.True(visible.Length >= columns && visible.All(card => Math.Abs((card.Bounds.Width - outline) - (card.Bounds.Height - outline) * 2) <= 1),
                 "Every loading music card must reserve the real two-to-one card geometry: "
                 + string.Join("; ", cards.Select(card => card.Bounds.ToString())) + "; surface=" + skeleton.Bounds + "; viewport=" + browser.Bounds);
             TestAssert.True(cards.SelectMany(card => card.GetVisualDescendants()).OfType<Skeleton>().Any(),
