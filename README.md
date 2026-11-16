@@ -35,13 +35,21 @@ dotnet restore MajMusic.sln
 dotnet run --project MajMusic/MajMusic.csproj
 ```
 
-Windows 构建自带 LibVLC；Linux 和 macOS 需要安装对应的 LibVLC 运行库。当前桌面开发验证环境为 Windows，移动端宿主仍在开发计划中。
+Windows 构建自带 LibVLC；Linux 和 macOS 需要安装对应的 LibVLC 运行库。Android 使用系统音频接口，生成 ARM64 安装包。
 
 Windows 网络请求使用系统 WinHTTP，其他平台使用对应的 .NET 网络接口；兼容请求使用 `MajdataPlay/2.1.0` UA，各接入点独立管理登录会话。
 
 Windows 分发使用 [发布脚本](Tools/README.md)：默认生成自带 .NET 运行时的 x64 ZIP，也可生成依赖已安装运行时的较小版本。发布包只包含对应架构，保留完整音频插件。
 
-界面采用 TKCode.Arc 1.1.0 和 Avalonia 12.1.5，共享现有 ViewModel、命令与服务。窄屏界面已使用 Arc.Mobile 组件适配安全区、软键盘和触摸区域；Android/iOS 应用宿主、后台音频服务和系统媒体控制仍需接入。[上游移动支持状态](https://github.com/AIDotNet/TKCode.Arc#status-and-compatibility)目前也区分了桌面手机框预览与实机验证。
+界面采用 TKCode.Arc 1.1.0 和 Avalonia 12.1.5，共享 ViewModel、命令与服务。窄屏使用 Arc.Mobile 组件适配安全区、软键盘和触摸区域。Android 宿主接入后台播放、通知栏与锁屏媒体控制；iOS 宿主待接入。
+
+Android 开发打开 `MajMusic.Android.sln`，安装 .NET 10 Android workload、Android SDK 36 与 JDK 17 或 21 后运行：
+
+```powershell
+./Tools/Publish-Android.ps1
+```
+
+安装包输出到 `artifacts/android-arm64-*/MajMusic-android-arm64.apk`。首次测试包使用开发签名，构建详情见 [Tools/README.md](Tools/README.md)。
 
 Arc 的 MIT 许可证和随包第三方声明保留在 [ThirdPartyNotices](ThirdPartyNotices/)，构建和发布时会一同复制。
 
@@ -64,6 +72,8 @@ Arc 的 MIT 许可证和随包第三方声明保留在 [ThirdPartyNotices](Third
 
 PC 版配置与数据保存在程序所在目录：`settings.json`、`library.db`、`cloud-collections.db`，以及 `Cache`、`Downloads`、`AudioMetadata` 子目录。旧版应用数据会在首次启动时迁移到此处。
 
+Android 在“目录”页选择系统授权的曲库或收藏夹目录，递归读取原文件，保留目录权限；音乐不复制，封面按需缓存。配置、索引和下载保存在应用私有目录，记住的密码由 Android Keystore 加密。音频输出跟随系统当前设备。
+
 在“设置”页选择音频输出设备、调整音量或清理缓存。音频设置实时生效并保存。
 
 音乐与封面优先读取本地文件；接入点暂时不可用时，已缓存的内容仍可使用。手动下载会保留音频与封面，清理缓存不会删除这些下载。
@@ -75,6 +85,7 @@ PC 版配置与数据保存在程序所在目录：`settings.json`、`library.db
 | 项目 | 职责 |
 | --- | --- |
 | `MajMusic` | 桌面入口与窗口生命周期 |
+| `MajMusic.Android` | ARM64 安卓入口、系统音频与后台媒体服务 |
 | `MajMusic.Core` | 数据模型、接口与播放队列 |
 | `MajMusic.Infrastructure` | 本地索引、SQLite、网络、缓存与凭据 |
 | `MajMusic.Audio.Desktop` | LibVLC 音频播放与输出控制 |

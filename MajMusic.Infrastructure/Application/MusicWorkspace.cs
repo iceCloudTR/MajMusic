@@ -23,6 +23,8 @@ namespace MajMusic.Infrastructure.Application
         private readonly LocalMusicImporter _importer;
         /// <summary>Indexes user-selected directory trees without copying their source files.</summary>
         private readonly LocalMusicScanner _scanner = new();
+        /// <summary>Reads explicitly granted provider trees before any filesystem-only operation.</summary>
+        private readonly IReadOnlyDocumentStorage? _documentStorage;
         /// <summary>Controls all explicitly requested network operations.</summary>
         private readonly NetworkAccessPolicy _networkPolicy = new();
         /// <summary>Downloads public resources without account cookies.</summary>
@@ -54,13 +56,16 @@ namespace MajMusic.Infrastructure.Application
         /// <param name="resourceClient">An optional caller-owned anonymous audio and cover transport.</param>
         /// <param name="settingsStore">An optional host-supplied non-secret preference store.</param>
         /// <param name="credentialStore">An optional system-vault adapter; tests may inject an isolated store.</param>
+        /// <param name="documentStorage">An optional read-only provider-tree adapter for mobile local sources.</param>
         public MusicWorkspace(string? dataDirectory = null, HttpClient? apiClient = null,
-            HttpClient? resourceClient = null, ISettingsStore? settingsStore = null, ICredentialStore? credentialStore = null)
+            HttpClient? resourceClient = null, ISettingsStore? settingsStore = null, ICredentialStore? credentialStore = null,
+            IReadOnlyDocumentStorage? documentStorage = null)
         {
             DataDirectory = Path.GetFullPath(dataDirectory ?? GetDefaultDataDirectory());
             _library = new SqliteLibraryRepository(Path.Combine(DataDirectory, "library.db"));
             _settingsStore = settingsStore ?? new JsonSettingsStore(Path.Combine(DataDirectory, "settings.json"));
             _credentialStore = credentialStore ?? CredentialStoreFactory.Create();
+            _documentStorage = documentStorage;
             _importer = new LocalMusicImporter(Path.Combine(DataDirectory, "Library"));
             _apiClient = apiClient;
             _ownsResourceClient = resourceClient is null;
@@ -162,7 +167,9 @@ namespace MajMusic.Infrastructure.Application
         /// <inheritdoc />
         public async Task<LocalLibraryScanResult> IndexDirectoryAsync(string directory, CancellationToken cancellationToken = default)
         {
-            var result = await _scanner.ScanAsync(directory, cancellationToken).ConfigureAwait(false);
+            var result = DocumentReference.IsContentUri(directory)
+                ? await (_documentStorage ?? throw new NotSupportedException("此宿主未提供文档目录访问。")).ScanAsync(directory, cancellationToken).ConfigureAwait(false)
+                : await _scanner.ScanAsync(directory, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             await _metadataGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -174,6 +181,11 @@ namespace MajMusic.Infrastructure.Application
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     existing.TryGetValue(track.Id, out var previous);
+                    if (DocumentReference.IsContentUri(track.Audio.LocalPath))
+                    {
+                        preserved.Add(previous is not null && previous.Revision == track.Revision ? track with { Duration = previous.Duration, AudioInfo = previous.AudioInfo } : track);
+                        continue;
+                    }
                     if (previous?.AudioMetadataLength is { } length && previous.AudioMetadataLastWriteUtcTicks is { } ticks
                         && track.Audio.LocalPath is { } path)
                     {
@@ -297,6 +309,12 @@ namespace MajMusic.Infrastructure.Application
         public async Task<string?> ResolveCoverAsync(MusicTrack track, CancellationToken cancellationToken = default)
         {
             var resolved = await ResolveMetadataAsync(track, true, cancellationToken).ConfigureAwait(false);
+            if (DocumentReference.IsContentUri(resolved.Cover?.LocalPath))
+            {
+                return await (_documentStorage ?? throw new NotSupportedException("此宿主未提供文档封面访问。"))
+                    .ResolveCoverAsync(resolved.Cover!, cancellationToken).ConfigureAwait(false);
+            }
+
             if (resolved.Cover is null)
             {
                 return null;
@@ -327,6 +345,14 @@ namespace MajMusic.Infrastructure.Application
             try
             {
                 var resolved = await ResolveMetadataAsync(track, true, cancellationToken).ConfigureAwait(false);
+                if (DocumentReference.IsContentUri(resolved.Audio.LocalPath))
+                {
+                    var reference = await (_documentStorage ?? throw new NotSupportedException("此宿主未提供文档音乐访问。"))
+                        .ResolveAudioAsync(resolved.Audio.LocalPath!, cancellationToken).ConfigureAwait(false);
+                    operation.Finish(AudioDownloadState.Completed, reference);
+                    return reference;
+                }
+
                 var path = await _cache.TryGetCachedAsync(ScopeResourceForCache(resolved, resolved.Audio), keepOffline, cancellationToken).ConfigureAwait(false);
                 if (path is null)
                 {

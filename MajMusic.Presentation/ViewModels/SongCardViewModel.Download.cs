@@ -32,10 +32,10 @@ namespace MajMusic.Presentation.ViewModels
             Transfer: { TotalBytes: > 0 } transfer
         } ? Math.Clamp(transfer.ReceivedBytes * 100d / transfer.TotalBytes.Value, 0, 100) : 0;
         /// <summary>Gets whether the online song is preparing or receiving audio bytes.</summary>
-        public bool IsDownloading => _track.RemoteId is not null && !_downloadState.IsAvailable
+        public bool IsDownloading => _track.RemoteId is not null && !DocumentReference.IsContentUri(_track.Audio.LocalPath) && !_downloadState.IsAvailable
             && _downloadState.Progress?.State is AudioDownloadState.Preparing or AudioDownloadState.Downloading;
         /// <summary>Gets whether this online song has a complete available audio file.</summary>
-        public bool IsDownloaded => _track.RemoteId is not null && _downloadState.IsAvailable;
+        public bool IsDownloaded => _track.RemoteId is not null && !DocumentReference.IsContentUri(_track.Audio.LocalPath) && _downloadState.IsAvailable;
         /// <summary>Gets whether an active transfer has no usable total length.</summary>
         public bool IsDownloadIndeterminate => IsDownloading && _downloadState.Progress?.Transfer?.TotalBytes is not > 0;
         /// <summary>Gets whether the information half displays a transfer or completed-download label.</summary>
@@ -145,7 +145,7 @@ namespace MajMusic.Presentation.ViewModels
 
             var state = _downloadState;
             var path = state.LocalPath ?? track.Audio.LocalPath;
-            if (string.IsNullOrWhiteSpace(path))
+            if (string.IsNullOrWhiteSpace(path) || DocumentReference.IsContentUri(path))
             {
                 return;
             }

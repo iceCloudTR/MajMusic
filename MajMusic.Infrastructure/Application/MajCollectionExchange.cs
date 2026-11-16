@@ -7,26 +7,32 @@ using MajMusic.Infrastructure.Collections;
 namespace MajMusic.Infrastructure.Application
 {
     /// <summary>Persists compatible lists locally while keeping source directories and imported JSON read-only.</summary>
-    public sealed class MajCollectionExchange : IMajCollectionExchange
+    public sealed partial class MajCollectionExchange : IMajCollectionExchange
     {
         /// <summary>Provides local library and playlist persistence.</summary>
         private readonly IMusicWorkspace _workspace;
         /// <summary>Reads and writes the Maj JSON contract independently of storage ownership.</summary>
         private readonly MajCollectionService _service = new();
+        /// <summary>Reads only explicitly granted provider documents on mobile hosts.</summary>
+        private readonly IReadOnlyDocumentStorage? _documents;
 
         /// <summary>Creates a collection exchange without touching any source.</summary>
         /// <param name="workspace">The local application workspace.</param>
-        public MajCollectionExchange(IMusicWorkspace workspace)
+        /// <param name="documentStorage">The optional read-only mobile document provider.</param>
+        public MajCollectionExchange(IMusicWorkspace workspace, IReadOnlyDocumentStorage? documentStorage = null)
         {
             ArgumentNullException.ThrowIfNull(workspace);
             _workspace = workspace;
+            _documents = documentStorage;
         }
 
         /// <inheritdoc />
         public async Task<MajCollectionImportResult> ImportDirectoryAsync(string directory, bool preserveExisting = true, CancellationToken cancellationToken = default)
         {
             var tracks = await _workspace.SearchAsync(null, cancellationToken).ConfigureAwait(false);
-            var result = await _service.ReadDirectoryAsync(directory, tracks, cancellationToken).ConfigureAwait(false);
+            var result = DocumentReference.IsContentUri(directory)
+                ? await ReadDocumentDirectoryAsync(directory, false, tracks, cancellationToken).ConfigureAwait(false)
+                : await _service.ReadDirectoryAsync(directory, tracks, cancellationToken).ConfigureAwait(false);
             return await PersistImportedCollectionsAsync(result, tracks, preserveExisting, cancellationToken).ConfigureAwait(false);
         }
 
@@ -34,7 +40,9 @@ namespace MajMusic.Infrastructure.Application
         public async Task<MajCollectionImportResult> ImportIndexDirectoryAsync(string directory, bool preserveExisting = true, CancellationToken cancellationToken = default)
         {
             var tracks = await _workspace.SearchAsync(null, cancellationToken).ConfigureAwait(false);
-            var result = await _service.ReadIndexDirectoryAsync(directory, tracks, cancellationToken).ConfigureAwait(false);
+            var result = DocumentReference.IsContentUri(directory)
+                ? await ReadDocumentDirectoryAsync(directory, true, tracks, cancellationToken).ConfigureAwait(false)
+                : await _service.ReadIndexDirectoryAsync(directory, tracks, cancellationToken).ConfigureAwait(false);
             return await PersistImportedCollectionsAsync(result, tracks, preserveExisting, cancellationToken).ConfigureAwait(false);
         }
 
@@ -112,7 +120,10 @@ namespace MajMusic.Infrastructure.Application
         public async Task<MusicPlaylist> ImportFileAsync(string filePath, CancellationToken cancellationToken = default)
         {
             var tracks = await _workspace.SearchAsync(null, cancellationToken).ConfigureAwait(false);
-            var playlist = await _service.ReadFileAsync(filePath, tracks, cancellationToken).ConfigureAwait(false);
+            var playlist = DocumentReference.IsContentUri(filePath)
+                ? await ReadDocumentAsync(await (_documents ?? throw new NotSupportedException("此宿主未提供文档列表访问。"))
+                    .GetFileReferenceAsync(filePath, cancellationToken).ConfigureAwait(false), tracks, cancellationToken).ConfigureAwait(false)
+                : await _service.ReadFileAsync(filePath, tracks, cancellationToken).ConfigureAwait(false);
             if (playlist.IsFavorite)
             {
                 var previous = (await _workspace.GetPlaylistsAsync(cancellationToken).ConfigureAwait(false))
@@ -344,11 +355,11 @@ namespace MajMusic.Infrastructure.Application
             var destination = Path.GetFullPath(filePath);
             var settings = await _workspace.LoadSettingsAsync(cancellationToken).ConfigureAwait(false);
             var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            IEnumerable<string> sourceRoots = settings.LocalMusicDirectories.Concat(settings.LocalDirectorySources.Select(source =>
+            IEnumerable<string> sourceRoots = settings.LocalMusicDirectories.Where(path => !DocumentReference.IsContentUri(path)).Concat(settings.LocalDirectorySources.Where(source => !DocumentReference.IsContentUri(source.Path)).Select(source =>
                 source.Kind == LocalDirectoryKind.CollectionIndex
                     && string.Equals(Path.GetFileName(Path.TrimEndingDirectorySeparator(source.Path)), "majcollection", StringComparison.OrdinalIgnoreCase)
                     ? Path.GetDirectoryName(source.Path) ?? source.Path : source.Path));
-            if (playlist.MajCollection?.SourceFilePath is { } sourcePath)
+            if (playlist.MajCollection?.SourceFilePath is { } sourcePath && !DocumentReference.IsContentUri(sourcePath))
             {
                 var sourceDirectory = Path.GetDirectoryName(Path.GetFullPath(sourcePath))!;
                 var sourceRoot = string.Equals(Path.GetFileName(sourceDirectory), "majcollection", StringComparison.OrdinalIgnoreCase)

@@ -11,6 +11,7 @@ using MajMusic.Core.Models;
 using MajMusic.Presentation.Converters;
 using MajMusic.Presentation.Commands;
 using MajMusic.Presentation.ViewModels;
+using MajMusic.Presentation.Storage;
 using TKCode.Arc;
 
 namespace MajMusic.Presentation.Views
@@ -246,13 +247,12 @@ namespace MajMusic.Presentation.Views
             {
                 Title = "导出播放列表",
                 SuggestedFileName = playlist.IsFavorite ? "MyFavorites.json" : "MajMusic-playlist.json",
-                DefaultExtension = "json",
-                FileTypeChoices = [new FilePickerFileType("Maj JSON") { Patterns = ["*.json"] }]
+                DefaultExtension = OperatingSystem.IsAndroid() ? null : "json",
+                FileTypeChoices = [new FilePickerFileType("Maj JSON") { Patterns = ["*.json"], MimeTypes = ["application/json"] }]
             });
             if (file is not null)
             {
-                await owner.ExportPlaylistFromMenuAsync(playlist, file.TryGetLocalPath()
-                    ?? throw new NotSupportedException("请选择本地导出位置。"));
+                await StoragePickerBridge.ExportAsync(owner, file, playlist);
             }
         }
 

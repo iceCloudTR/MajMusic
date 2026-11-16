@@ -59,6 +59,13 @@ sessions.json
 *.pfx
 *.p12
 *.snk
+*.keystore
+*.jks
+*.apk
+*.aab
+*.apks
+*.idsig
+*.hprof
 *.token
 
 # Music and video resources

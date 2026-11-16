@@ -18,6 +18,17 @@ namespace MajMusic.Presentation.ViewModels
         private string _directoryPath = string.Empty;
         /// <summary>Stores the role chosen for the edited directory.</summary>
         private DirectoryKindOption _selectedDirectoryKind = new(LocalDirectoryKind.MusicLibrary, "曲库");
+        /// <summary>Retains the native picker's display name without decoding opaque document IDs.</summary>
+        private (string Reference, string Name)? _pickedDirectory;
+
+        /// <summary>Applies an explicit native folder selection without interpreting its URI as a filesystem path.</summary>
+        /// <param name="reference">The ordinary local path or granted document-tree URI.</param>
+        /// <param name="name">The provider's display name.</param>
+        public void SetPickedDirectory(string reference, string name)
+        {
+            _pickedDirectory = (reference, name);
+            DirectoryPath = reference;
+        }
 
         /// <summary>Gets independently configured local sources.</summary>
         public ObservableCollection<LocalDirectorySource> DirectorySources { get; } = new();
@@ -115,7 +126,7 @@ namespace MajMusic.Presentation.ViewModels
                 Id = SelectedDirectory?.Id ?? Guid.NewGuid().ToString("N"),
                 Path = path,
                 Kind = SelectedDirectoryKind.Kind,
-                Name = Path.GetFileName(path)
+                Name = _pickedDirectory is { } picked && picked.Reference == path ? picked.Name : Path.GetFileName(path)
             };
             await PersistDirectorySourceAsync(source);
             await ScanAndRefreshDirectoryAsync(source);

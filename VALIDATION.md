@@ -43,7 +43,7 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- recommendation-pagi
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- playback-region-motion playlist-mirrors context-actions context-menus-layout
 ```
 
-测试使用与桌面入口相同的 Arc 注册和主题。手机界面覆盖 360×640、390×844、430×932，检查安全区、软键盘收缩、底部导航、触摸目标、详情抽屉，以及桌面与窄屏切换时账号和 Guest 选择不变。该检查在 Skia 离屏窗口中运行；Android/iOS 宿主与实机播放另行验证。
+测试使用与桌面入口相同的 Arc 注册和主题。手机界面覆盖 360×640、390×844、430×932，检查安全区、软键盘收缩、底部导航、触摸目标、详情抽屉，以及桌面与窄屏切换时账号和 Guest 选择不变。该检查在 Skia 离屏窗口中运行；Android 安装包检查见下文，iOS 宿主待接入。
 
 布局检查关闭动画以固定截图。`arc-motion` 使用应用默认的完整动效，逐帧检查按钮按压与恢复、模式滑块、页面横向位移，以及搜索框从右侧图标展开、收起时的宽度、锚点与菜单对齐；同时验证快速反转和窗口缩放后的布局。中间帧保存在 `.work/ui-arc-motion-*.png`。
 
@@ -110,3 +110,23 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- native-vault
 | 使用已安装的 .NET 10 x64 运行时 | 155.07 MiB | 66.81 MiB |
 
 两包均检查了架构、依赖清单、符号和本地数据，并分别从发布目录加载原生 VLC，完成生成 WAV/MP3 的解码、暂停、进度拖动与切歌检查，使用静音测试输出。
+
+## Android ARM64
+
+2026-11-17，使用 .NET 10、Android SDK 36 和 JDK 17.0.18 构建。Debug 编译 0 警告、0 错误；Release 通过 [发布脚本](Tools/README.md) 生成自带运行时的开发签名 APK，约 38.81 MiB。
+
+已完成的包检查：
+
+- 只包含 `arm64-v8a`，最低 API 23，目标 API 36，Release 不开启 `debuggable`。
+- 14 个原生库均为 AArch64；44 个 ELF LOAD 段与 APK 中的原生库位置通过 16 KB 对齐检查。
+- APK v1、v2、v3 签名验证通过；包含第三方声明，无桌面 VLC、运行数据或签名私钥。
+- 合并 Manifest 包含 Application、Launcher 和 `mediaPlayback` 前台服务，以及播放、网络和通知权限。
+
+共享逻辑的 65 组默认回归通过。`document-storage` 通过真实工作区和模拟文档提供者检查嵌套曲库、TXT 标题与 Maj 哈希、保留原音频 URI、不复制音乐、封面缓存、只读授权入口、Maj JSON 导入导出和桌面选择器回退。
+
+```powershell
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- document-storage
+./Tools/Publish-Android.ps1
+```
+
+未运行 Android 真机测试：系统音频解码、后台与锁屏操作、耳机和音频焦点、实际目录提供者、Keystore 和联网登录，需要在安装后验证。

@@ -8,12 +8,16 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using MajMusic.Presentation.ViewModels;
+using MajMusic.Presentation.Storage;
 
 namespace MajMusic.Presentation.Views
 {
     /// <summary>Provides a shared music view with platform file selection at its boundary.</summary>
     public partial class MainView : UserControl
     {
+        /// <summary>Gets or sets a platform-specific directory grant resolver; null uses the standard storage-provider bookmark flow.</summary>
+        public Func<IStorageFolder, Task<string>>? DirectoryReferenceResolver { get; set; }
+
         /// <summary>Initializes the shared view.</summary>
         public MainView()
         {
@@ -123,7 +127,7 @@ namespace MajMusic.Presentation.Views
                 if (folders.Count > 0)
                 {
                     using var folder = folders[0];
-                    viewModel.DirectoryPath = folder.TryGetLocalPath() ?? throw new NotSupportedException("请选择可直接访问的本地目录。");
+                    viewModel.SetPickedDirectory(await StoragePickerBridge.GetDirectoryReferenceAsync(folder, DirectoryReferenceResolver), folder.Name);
                 }
             }
             catch (Exception exception)
@@ -159,13 +163,12 @@ namespace MajMusic.Presentation.Views
                 {
                     Title = "选择 Maj 播放列表或 MyFavorites.json",
                     AllowMultiple = false,
-                    FileTypeFilter = new[] { new FilePickerFileType("Maj JSON") { Patterns = new[] { "*.json" } } }
+                    FileTypeFilter = new[] { new FilePickerFileType("Maj JSON") { Patterns = new[] { "*.json" }, MimeTypes = ["application/json", "text/plain", "application/octet-stream"] } }
                 });
                 if (files.Count > 0)
                 {
                     using var file = files[0];
-                    var path = file.TryGetLocalPath() ?? throw new NotSupportedException("请先将列表文件保存到本地。");
-                    await viewModel.ImportCollectionAsync(path);
+                    await StoragePickerBridge.ImportAsync(viewModel, file);
                 }
             }
             catch (Exception exception)
@@ -191,13 +194,12 @@ namespace MajMusic.Presentation.Views
                     Title = "导出播放列表",
                     SuggestedFileName = viewModel.ExportFileName,
                     SuggestedStartLocation = await topLevel.StorageProvider.TryGetFolderFromPathAsync(new Uri(viewModel.DataDirectory)),
-                    DefaultExtension = "json",
-                    FileTypeChoices = new[] { new FilePickerFileType("Maj JSON") { Patterns = new[] { "*.json" } } }
+                    DefaultExtension = OperatingSystem.IsAndroid() ? null : "json",
+                    FileTypeChoices = new[] { new FilePickerFileType("Maj JSON") { Patterns = new[] { "*.json" }, MimeTypes = ["application/json"] } }
                 });
                 if (file is not null)
                 {
-                    var path = file.TryGetLocalPath() ?? throw new NotSupportedException("请选择本地导出位置。");
-                    await viewModel.ExportCollectionAsync(path);
+                    await StoragePickerBridge.ExportAsync(viewModel, file);
                 }
             }
             catch (Exception exception)

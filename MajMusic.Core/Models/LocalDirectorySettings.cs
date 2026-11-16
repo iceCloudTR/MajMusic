@@ -95,6 +95,11 @@ namespace MajMusic.Core.Models
         /// <exception cref="InvalidDataException">The path is empty, relative or invalid.</exception>
         public static string NormalizePath(string path)
         {
+            if (DocumentReference.IsContentUri(path))
+            {
+                return new Uri(path, UriKind.Absolute).AbsoluteUri;
+            }
+
             if (string.IsNullOrWhiteSpace(path) || !System.IO.Path.IsPathFullyQualified(path))
             {
                 throw new InvalidDataException("Local directory paths must be fully qualified.");

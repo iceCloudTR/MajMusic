@@ -22,6 +22,7 @@ namespace MajMusic.Tests
                 ("endpoint-cards", EndpointCardPresentationTests.RunAsync, true),
                 ("endpoint-cards-layout", EndpointCardsLayoutTests.RunAsync, true),
                 ("directory-sources", DirectorySourceTests.RunAsync, true),
+                ("document-storage", DocumentStorageTests.RunAsync, true),
                 ("directory-ui", DirectoryPresentationTests.RunAsync, true),
                 ("network", NetworkTests.RunAsync, true),
                 ("source-transport", SourceTransportTests.RunAsync, true),
