@@ -10,7 +10,7 @@ using Microsoft.Data.Sqlite;
 namespace MajMusic.Infrastructure.Application
 {
     /// <summary>Locates portable desktop data and copies a previous application-owned data set once.</summary>
-    public static class DesktopDataDirectory
+    public static partial class DesktopDataDirectory
     {
         /// <summary>Serializes in-process bootstrap before a workspace opens its database.</summary>
         private static readonly object MigrationGate = new();
@@ -312,6 +312,11 @@ namespace MajMusic.Infrastructure.Application
                             ?? throw new InvalidDataException("The legacy database contains an invalid metadata document.");
                         documents.Add((reader.GetString(0), document));
                     }
+                }
+
+                if (table == "tracks")
+                {
+                    PromoteLegacyResourceAliases(documents.Select(item => item.Document), staging, destination);
                 }
 
                 foreach (var (id, document) in documents)

@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Net;
+using MajMusic.Core.Network;
 
 namespace MajMusic.Infrastructure.Network
 {
@@ -53,6 +54,16 @@ namespace MajMusic.Infrastructure.Network
                 }
 
                 var response = await base.SendAsync(cleanRequest, lifetime.Token).ConfigureAwait(false);
+                try
+                {
+                    SourceResponseGuard.ThrowIfBrowserVerificationRequired(response);
+                }
+                catch (BrowserVerificationRequiredException)
+                {
+                    response.Dispose();
+                    throw;
+                }
+
                 if (response.StatusCode is not (HttpStatusCode.MovedPermanently or HttpStatusCode.Found or HttpStatusCode.SeeOther or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect))
                 {
                     return response;

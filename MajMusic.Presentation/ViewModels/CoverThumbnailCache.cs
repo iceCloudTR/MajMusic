@@ -86,6 +86,12 @@ namespace MajMusic.Presentation.ViewModels
             {
                 var bitmap = await entry.Loading.WaitAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
+                if (bitmap is null)
+                {
+                    Release(entry);
+                    return null;
+                }
+
                 return new Lease(this, entry, bitmap);
             }
             catch

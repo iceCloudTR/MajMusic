@@ -300,7 +300,8 @@ namespace MajMusic.Infrastructure.Application
 
             try
             {
-                var path = await GetMediaAsync(resolved, true, false, cancellationToken).ConfigureAwait(false);
+                var keepOffline = await _cache.IsKeptOfflineAsync(ScopeResourceForCache(resolved, resolved.Audio), cancellationToken).ConfigureAwait(false);
+                var path = await GetMediaAsync(resolved, true, keepOffline, cancellationToken).ConfigureAwait(false);
                 await RememberLocalResourceAsync(resolved, path, true, cancellationToken).ConfigureAwait(false);
                 return path;
             }
@@ -321,15 +322,26 @@ namespace MajMusic.Infrastructure.Application
             var operation = BeginAudioDownload(track);
             try
             {
-                var resolved = await ResolveMetadataAsync(track, false, cancellationToken).ConfigureAwait(false);
-                if (!IsOnline && resolved.RemoteId is not null && resolved.Audio.Sha256 is null
-                    && !File.Exists(resolved.Audio.LocalPath))
+                var resolved = await ResolveMetadataAsync(track, true, cancellationToken).ConfigureAwait(false);
+                var path = await _cache.TryGetCachedAsync(ScopeResourceForCache(resolved, resolved.Audio), keepOffline, cancellationToken).ConfigureAwait(false);
+                if (path is null)
                 {
-                    throw new InvalidOperationException("This source revision has not been downloaded for offline playback.");
+                    resolved = await ResolveMetadataAsync(track, false, cancellationToken).ConfigureAwait(false);
+                    if (!IsOnline && resolved.RemoteId is not null && resolved.Audio.Sha256 is null
+                        && !File.Exists(resolved.Audio.LocalPath))
+                    {
+                        throw new InvalidOperationException("This source revision has not been downloaded for offline playback.");
+                    }
+
+                    path = await GetMediaAsync(resolved, false, keepOffline, cancellationToken, operation).ConfigureAwait(false);
                 }
 
-                var path = await GetMediaAsync(resolved, false, keepOffline, cancellationToken, operation).ConfigureAwait(false);
                 await RememberLocalResourceAsync(resolved, path, false, cancellationToken).ConfigureAwait(false);
+                if (keepOffline)
+                {
+                    await PreserveOfflineCoverAsync(resolved, cancellationToken).ConfigureAwait(false);
+                }
+
                 operation.Finish(AudioDownloadState.Completed, path);
                 return path;
             }
@@ -484,7 +496,11 @@ namespace MajMusic.Infrastructure.Application
                     detailed = detailed with
                     {
                         Id = resolved.Id,
+                        EndpointId = resolved.EndpointId,
                         Revision = string.IsNullOrWhiteSpace(detailed.Revision) ? resolved.Revision : detailed.Revision,
+                        Cover = SameRevision(detailed, resolved) || string.IsNullOrWhiteSpace(detailed.Revision)
+                            ? detailed.Cover is { } detailedCover ? MergeResource(detailedCover, resolved.Cover) : resolved.Cover
+                            : detailed.Cover,
                         Duration = detailed.Duration ?? (SameRevision(detailed, resolved) || string.IsNullOrWhiteSpace(detailed.Revision) ? resolved.Duration : null),
                         AudioInfo = detailed.AudioInfo ?? (SameRevision(detailed, resolved) || string.IsNullOrWhiteSpace(detailed.Revision) ? resolved.AudioInfo : null)
                     };

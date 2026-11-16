@@ -80,6 +80,64 @@ namespace MajMusic.Infrastructure.Downloads
         public async Task<string> GetAsync(MediaResource resource, bool keepOffline = false, CancellationToken cancellationToken = default, HttpClient? downloadClient = null,
             IProgress<MediaTransferProgress>? progress = null)
         {
+            return await GetCoreAsync(resource, keepOffline, cancellationToken, downloadClient, progress, true).ConfigureAwait(false)
+                ?? throw new FileNotFoundException("The resource is not available locally or remotely.");
+        }
+
+        /// <summary>Reads or pins a completed local resource without requiring a session or allowing an HTTP request.</summary>
+        /// <param name="resource">The complete descriptor, including its revision-scoped address alias.</param>
+        /// <param name="keepOffline">Whether a managed completed object should be retained against cleanup.</param>
+        /// <param name="cancellationToken">Cancels validation and publication.</param>
+        /// <returns>The validated local path, or null when no complete valid object is cached.</returns>
+        public Task<string?> TryGetCachedAsync(MediaResource resource, bool keepOffline = false, CancellationToken cancellationToken = default)
+        {
+            return GetCoreAsync(resource, keepOffline, cancellationToken, null, null, false);
+        }
+
+        /// <summary>Checks the retention decision for an existing managed object without downloading or hashing audio again.</summary>
+        /// <param name="resource">The resource identity or stored managed local path.</param>
+        /// <param name="cancellationToken">Cancels the index read.</param>
+        /// <returns>Whether the index retains this resource's existing object as an explicit offline download.</returns>
+        public async Task<bool> IsKeptOfflineAsync(MediaResource resource, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(resource);
+            var hash = NormalizeHash(resource.Sha256);
+            if (hash is null && resource.LocalPath is { Length: > 0 } path)
+            {
+                var fileName = Path.GetFileName(path);
+                if (fileName.Length == 64 && fileName.All(Uri.IsHexDigit)
+                    && string.Equals(Path.GetFullPath(path), GetObjectPath(fileName.ToLowerInvariant()),
+                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                {
+                    hash = fileName.ToLowerInvariant();
+                }
+            }
+
+            var uriKey = GetUriKey(resource);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var index = await LoadIndexAsync(cancellationToken).ConfigureAwait(false);
+                hash ??= uriKey is null ? null : index.GetValueOrDefault(uriKey)?.ContentHash;
+                return hash is not null && File.Exists(GetObjectPath(hash)) && index.Values.Any(entry => entry.ContentHash == hash && entry.KeepOffline);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        /// <summary>Shares validation, alias identity and atomic publication between local-only reads and explicit transfers.</summary>
+        /// <param name="resource">The audio or image descriptor.</param>
+        /// <param name="keepOffline">Whether to pin a completed managed object.</param>
+        /// <param name="cancellationToken">Cancels the complete operation.</param>
+        /// <param name="downloadClient">The optional borrowed authenticated media transport.</param>
+        /// <param name="progress">The optional actual-transfer observer.</param>
+        /// <param name="allowDownload">Whether a cache miss may issue a request.</param>
+        /// <returns>The completed local path, or null for a local-only cache miss.</returns>
+        private async Task<string?> GetCoreAsync(MediaResource resource, bool keepOffline, CancellationToken cancellationToken, HttpClient? downloadClient,
+            IProgress<MediaTransferProgress>? progress, bool allowDownload)
+        {
             ArgumentNullException.ThrowIfNull(resource);
             var expectedHash = NormalizeHash(resource.Sha256);
             if (resource.LocalPath is { Length: > 0 } localPath && File.Exists(localPath))
@@ -106,17 +164,12 @@ namespace MajMusic.Infrastructure.Downloads
             }
 
             var address = resource.RemoteUri;
-            if (address is not null)
+            var uriKey = GetUriKey(resource);
+            var key = expectedHash is not null ? $"sha256:{expectedHash}" : uriKey;
+            if (key is null)
             {
-                MajNetClient.ValidateAddress(address);
+                return allowDownload ? throw new FileNotFoundException("The resource has no readable local file or remote address.") : null;
             }
-
-            var aliasContext = address is null ? null : string.IsNullOrEmpty(resource.CacheVersion)
-                ? address.AbsoluteUri
-                : string.Concat(address.AbsoluteUri, "\0", resource.CacheVersion);
-            var uriKey = aliasContext is null ? null : $"uri:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(aliasContext))).ToLowerInvariant()}";
-            var key = expectedHash is not null ? $"sha256:{expectedHash}" : uriKey
-                ?? throw new FileNotFoundException("The resource has no readable local file or remote address.");
 
             var reservation = ReserveTransfer(key, progress);
             var transfer = reservation.Transfer;
@@ -129,6 +182,11 @@ namespace MajMusic.Infrastructure.Downloads
                 if (cached is not null)
                 {
                     return cached;
+                }
+
+                if (!allowDownload)
+                {
+                    return null;
                 }
 
                 if (address is null)
@@ -197,6 +255,21 @@ namespace MajMusic.Infrastructure.Downloads
             {
                 ReleaseTransfer(key, transfer, reservation.Subscription, entered);
             }
+        }
+
+        /// <summary>Builds the same opaque revision-scoped address identity for cache reads, retention checks and transfers.</summary>
+        /// <param name="resource">The original source resource.</param>
+        /// <returns>The opaque address alias, or null when no remote route is known.</returns>
+        private static string? GetUriKey(MediaResource resource)
+        {
+            if (resource.RemoteUri is not { } address)
+            {
+                return null;
+            }
+
+            MajNetClient.ValidateAddress(address);
+            var context = string.IsNullOrEmpty(resource.CacheVersion) ? address.AbsoluteUri : string.Concat(address.AbsoluteUri, "\0", resource.CacheVersion);
+            return $"uri:{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(context)))}";
         }
 
         /// <summary>Validates a completed object without keeping unrelated requests behind its disk read.</summary>

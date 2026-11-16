@@ -320,7 +320,12 @@ namespace MajMusic.Presentation.ViewModels
                 }
             }), exception =>
             {
-                Status = "操作未完成";
+                Status = exception switch
+                {
+                    MajMusic.Core.Network.BrowserVerificationRequiredException => "接入点需要浏览器验证",
+                    HttpRequestException { StatusCode: System.Net.HttpStatusCode.Forbidden } => "接入点拒绝访问",
+                    _ => "操作未完成"
+                };
                 _owner.ReportError(exception);
             }, () => IsIdle && !_loading && (canExecute?.Invoke() ?? true));
         }

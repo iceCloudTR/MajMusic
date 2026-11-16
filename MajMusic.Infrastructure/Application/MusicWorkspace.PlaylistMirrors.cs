@@ -32,7 +32,22 @@ namespace MajMusic.Infrastructure.Application
             }
 
             EnsureCloudTarget(target, token);
-            var username = await connection.Provider.GetCurrentUsernameAsync(token).ConfigureAwait(false);
+            string username;
+            try
+            {
+                username = await connection.Provider.GetCurrentUsernameAsync(token).ConfigureAwait(false);
+            }
+            catch (HttpRequestException exception) when (exception.StatusCode != System.Net.HttpStatusCode.Unauthorized)
+            {
+                // The successful cloud snapshot remains readable without an unverified local ownership annotation.
+                return mirrors;
+            }
+            catch (JsonException)
+            {
+                // A source that cannot identify its principal cannot authorize local/cloud identity merging.
+                return mirrors;
+            }
+
             EnsureCloudTarget(target, token);
             var scope = CloudScope(target, server, username);
             var bindings = await GetCloudCollectionStore().ReadAsync(scope, token).ConfigureAwait(false);

@@ -10,6 +10,11 @@ namespace MajMusic.Infrastructure.Network
     /// <summary>Implements authenticated collection operations using the chart-ID protocol introduced in November 2026.</summary>
     public sealed partial class MajNetClient
     {
+        /// <summary>Invalidates canonical identity when this exact source session is replaced or expires.</summary>
+        private long _canonicalIdentityVersion;
+        /// <summary>Retains only a successfully verified canonical principal within its original in-memory session.</summary>
+        private CanonicalIdentity? _canonicalIdentity;
+
         /// <summary>Reads the canonical account identity of the current session without assuming the login input was a username.</summary>
         /// <param name="cancellationToken">Cancels the profile request.</param>
         /// <returns>The canonical username associated with the current session cookie.</returns>
@@ -19,11 +24,40 @@ namespace MajMusic.Infrastructure.Network
         public async Task<string> GetCurrentUsernameAsync(CancellationToken cancellationToken = default)
         {
             RequireCollectionLogin(cancellationToken);
-            using var response = await SendAsync(HttpMethod.Get, "account/profile", null, cancellationToken).ConfigureAwait(false);
+            using var lifetime = _policy.CreateRequestCancellation(cancellationToken);
+            var version = Volatile.Read(ref _canonicalIdentityVersion);
+            var cached = Volatile.Read(ref _canonicalIdentity);
+            if (cached is not null && cached.Version == version)
+            {
+                lifetime.Token.ThrowIfCancellationRequested();
+                return cached.Username;
+            }
+
+            using var response = await SendAsync(HttpMethod.Get, "account/profile", null, lifetime.Token).ConfigureAwait(false);
             EnsureSuccess(response);
-            using var document = await ReadJsonAsync(response, cancellationToken).ConfigureAwait(false);
-            return RequiredCollectionText(document.RootElement, "username");
+            using var document = await ReadJsonAsync(response, lifetime.Token).ConfigureAwait(false);
+            var username = RequiredCollectionText(document.RootElement, "username");
+            lifetime.Token.ThrowIfCancellationRequested();
+            if (!IsLoggedIn || version != Volatile.Read(ref _canonicalIdentityVersion))
+            {
+                throw new OperationCanceledException("A newer source session replaced this canonical identity read.", lifetime.Token);
+            }
+
+            Volatile.Write(ref _canonicalIdentity, new CanonicalIdentity(version, username));
+            return username;
         }
+
+        /// <summary>Retires a canonical principal without persisting it or using the caller's login input as proof.</summary>
+        private void InvalidateCanonicalIdentity()
+        {
+            Interlocked.Increment(ref _canonicalIdentityVersion);
+            Volatile.Write(ref _canonicalIdentity, null);
+        }
+
+        /// <summary>Associates one verified principal with the exact session generation that established it.</summary>
+        /// <param name="Version">The current in-memory source session generation.</param>
+        /// <param name="Username">The canonical principal returned by the source profile endpoint.</param>
+        private sealed record CanonicalIdentity(long Version, string Username);
 
         /// <summary>Reads one page of collections created by a canonical account identity.</summary>
         /// <param name="username">The canonical creator username returned by the profile API.</param>

@@ -7,6 +7,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using MajMusic.Core.Abstractions;
 using MajMusic.Core.Models;
+using MajMusic.Core.Network;
 using MajMusic.Core.Playback;
 using MajMusic.Presentation.Commands;
 
@@ -722,11 +723,12 @@ namespace MajMusic.Presentation.ViewModels
             {
                 Status = exception switch
                 {
+                    BrowserVerificationRequiredException => "接入点需要浏览器验证",
                     TimeoutException => "下载超时",
                     HttpRequestException request => request.StatusCode switch
                     {
                         System.Net.HttpStatusCode.Unauthorized => "请重新登录",
-                        System.Net.HttpStatusCode.Forbidden => "当前账号无法访问",
+                        System.Net.HttpStatusCode.Forbidden => "接入点拒绝访问",
                         System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.NotImplemented => "此接入点未提供这项功能",
                         _ => $"连接未完成：{request.Message}"
                     },

@@ -38,6 +38,7 @@ namespace MajMusic.Tests
                     await VerifyRevisionPlaceholderAsync(path);
                     await VerifyCanceledCallerAsync(path);
                     await VerifyFailedPlaceholderRetryAsync(path);
+                    await VerifyAttachedFailureRecoveryAsync(path);
                     return true;
                 }
                 finally
@@ -339,6 +340,43 @@ namespace MajMusic.Tests
             TestAssert.True(card.Cover is not null && workspace.CoverRequests == 2,
                 "A subsequent viewport activation must reuse the successfully retried cached image.");
             TestAssert.Equal(0, workspace.AudioRequests, "Retrying image placeholders cannot probe audio.");
+        }
+
+        /// <summary>Allows an attached failed card to recover the same image identity when a download refreshes its audio descriptor.</summary>
+        /// <param name="path">The generated valid image made available after the simulated source failure.</param>
+        /// <returns>A task representing retry without detaching either card or canceling a successful peer.</returns>
+        private static async Task VerifyAttachedFailureRecoveryAsync(string path)
+        {
+            var available = false;
+            var workspace = new CoverWorkspace
+            {
+                Resolve = (_, _) => available ? Task.FromResult<string?>(path)
+                    : Task.FromException<string?>(new HttpRequestException("The isolated cover is temporarily inaccessible."))
+            };
+            await using var cache = new CoverThumbnailCache(workspace, CancellationToken.None);
+            var track = Track("attached-retry", path, "unchanged-cover");
+            using var card = new SongCardViewModel(track, cache);
+            await card.ActivateAsync();
+            TestAssert.True(card.Cover is null && workspace.CoverRequests == 1,
+                "An attached card must display a placeholder after the actual cover request fails.");
+            available = true;
+            var downloaded = track with { Audio = new MediaResource { LocalPath = path } };
+            TestAssert.Equal(CoverThumbnailCache.Identity(track), CoverThumbnailCache.Identity(downloaded),
+                "The download refresh must exercise the same cover identity rather than bypassing a failed cache entry.");
+            card.UpdateTrack(downloaded);
+            await card.ResourceCompletion;
+            TestAssert.True(card.Cover is not null && workspace.CoverRequests == 2,
+                "A completed download or resource refresh must retry an attached failed cover without requiring viewport detachment.");
+            using var peer = new SongCardViewModel(track, cache);
+            await peer.ActivateAsync();
+            TestAssert.True(ReferenceEquals(card.Cover, peer.Cover) && workspace.CoverRequests == 2,
+                "Successful recovery remains shared and does not trigger another source read for a peer.");
+            card.Deactivate();
+            using (peer.Cover!.CreateScaledBitmap(new PixelSize(1, 1)))
+            {
+            }
+
+            TestAssert.Equal(0, workspace.AudioRequests, "Recovery of the same image identity cannot request audio.");
         }
 
         /// <summary>Creates a source-scoped cover descriptor with no audio-file ownership.</summary>

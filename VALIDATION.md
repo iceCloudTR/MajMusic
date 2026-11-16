@@ -54,9 +54,12 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- playback-region-mot
 
 ```sh
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- media-cache-concurrency transport-responsiveness audio-download-progress card-download-ui card-download-layout
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- offline-covers auth-boundaries
 ```
 
 覆盖慢速传输期间切歌与取消、真实字节进度、缓存命中，以及卡片由下向上的填充、完成状态和独立选中描边。
+
+`offline-covers` 检查音频和封面一并保留、清缓存后重启离线使用、接口拒绝访问时优先读取已有文件、旧播放缓存转为手动下载、多接入点缓存隔离，以及封面补取的取消与重试。`portable-data` 同时检查旧缓存的迁移与归属；`auth-boundaries` 区分接入点浏览器验证、普通访问拒绝和登录过期，并检查自动登录提示及可选账号资料读取失败时保留已经成功取得的云端歌单。
 
 ## 原生检查
 

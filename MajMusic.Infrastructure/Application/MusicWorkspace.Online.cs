@@ -248,7 +248,13 @@ namespace MajMusic.Infrastructure.Application
         private async Task<string> GetMediaAsync(MusicTrack track, bool cover, bool keepOffline, CancellationToken cancellationToken,
             IProgress<MediaTransferProgress>? progress = null)
         {
-            var resource = (cover ? track.Cover : track.Audio)!;
+            var resource = ScopeResourceForCache(track, (cover ? track.Cover : track.Audio)!);
+            var cached = await _cache.TryGetCachedAsync(resource, keepOffline, cancellationToken).ConfigureAwait(false);
+            if (cached is not null)
+            {
+                return cached;
+            }
+
             if (track.RemoteId is null || !IsOnline)
             {
                 return await _cache.GetAsync(resource, keepOffline, cancellationToken, progress: progress).ConfigureAwait(false);

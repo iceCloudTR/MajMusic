@@ -260,11 +260,12 @@ namespace MajMusic.Presentation.ViewModels
                 RestoreAccountDraft(draft);
                 await EnsureHomeRecommendationsAsync();
                 RequestCloudCollectionSync();
-                var failures = results.Count(item => !item.Succeeded && _settings.Endpoints.Any(endpoint => endpoint.Id == item.EndpointId
-                    && endpoint.SelectedAccountId == item.AccountId && endpoint.Accounts.Any(account => account.Id == item.AccountId && account.AutoLogin)));
-                if (failures > 0)
+                var failures = results.Where(item => !item.Succeeded && _settings.Endpoints.Any(endpoint => endpoint.Id == item.EndpointId
+                    && endpoint.SelectedAccountId == item.AccountId && endpoint.Accounts.Any(account => account.Id == item.AccountId && account.AutoLogin))).ToArray();
+                if (failures.Length > 0)
                 {
-                    Status = $"{failures} 个账号未能自动登录";
+                    Status = failures.Length == 1 && failures[0].Error is "接入点需要浏览器验证" or "接入点拒绝访问"
+                        ? failures[0].Error! : $"{failures.Length} 个账号未能自动登录";
                 }
             }
             catch (OperationCanceledException)

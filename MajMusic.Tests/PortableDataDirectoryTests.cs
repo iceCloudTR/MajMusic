@@ -28,6 +28,7 @@ namespace MajMusic.Tests
             try
             {
                 await ValidateCompleteMigrationAsync(Path.Combine(root, "complete"));
+                await ValidateAmbiguousLegacyAliasAsync(Path.Combine(root, "ambiguous-alias"));
                 await ValidateExistingDestinationAsync(Path.Combine(root, "existing"));
                 await ValidateInvalidLegacyAsync(Path.Combine(root, "invalid"));
                 await ValidatePublicationConflictAsync(Path.Combine(root, "publication-conflict"));
@@ -213,6 +214,50 @@ namespace MajMusic.Tests
             var retained = await File.ReadAllBytesAsync(Path.Combine(portable, "settings.json"));
             TestAssert.True(original.SequenceEqual(retained),
                 "An existing portable configuration cannot be replaced by legacy settings.");
+        }
+
+        /// <summary>Refuses to assign a legacy unknown-content address alias shared by independent source slots.</summary>
+        /// <param name="root">The generated legacy and portable fixture parent.</param>
+        /// <returns>A task representing fail-closed ownership and original-data preservation.</returns>
+        private static async Task ValidateAmbiguousLegacyAliasAsync(string root)
+        {
+            var legacy = Path.Combine(root, "legacy");
+            var portable = Path.Combine(root, "portable");
+            using var transport = new FixtureTransport();
+            using var client = new HttpClient(transport);
+            using var policy = new NetworkAccessPolicy();
+            policy.SetEnabled(true);
+            var image = new MediaResource { RemoteUri = new Uri("https://example.invalid/shared-image"), CacheVersion = "revision-1" };
+            using (var cache = new MediaCache(Path.Combine(legacy, "Cache"), client, policy))
+            {
+                await cache.GetAsync(image);
+            }
+
+            await new JsonSettingsStore(Path.Combine(legacy, "settings.json")).SaveAsync(new AppSettings());
+            var repository = new SqliteLibraryRepository(Path.Combine(legacy, "library.db"));
+            var first = Track("first-owner", new MediaResource(), image) with { SourceId = "shared-server", EndpointId = "first-slot", RemoteId = "song" };
+            var second = first with { Id = "second-owner", EndpointId = "second-slot" };
+            await repository.UpsertTracksAsync([first, second]);
+            var originalIndex = await File.ReadAllBytesAsync(Path.Combine(legacy, "Cache", "index.json"));
+            var requests = transport.Requests;
+            DesktopDataDirectory.Prepare(portable, legacy);
+            using (var workspace = new MusicWorkspace(portable, client, client, credentialStore: new RejectingCredentials()))
+            {
+                await workspace.LoadSettingsAsync();
+                var migrated = await workspace.SearchAsync(null);
+                TestAssert.True(migrated.Count == 2 && migrated.All(track => track.Cover is { Sha256: null, LocalPath: null }),
+                    "A bare legacy alias shared by distinct source slots cannot be assigned to either owner during migration.");
+                foreach (var track in migrated)
+                {
+                    TestAssert.True(await workspace.ResolveCoverAsync(track) is null,
+                        "Offline resolution cannot guess the owner of an ambiguous migrated legacy alias.");
+                }
+            }
+
+            var retainedIndex = await File.ReadAllBytesAsync(Path.Combine(legacy, "Cache", "index.json"));
+            TestAssert.True(originalIndex.SequenceEqual(retainedIndex) && (await repository.SearchAsync(null)).All(track => track.Cover!.Sha256 is null),
+                "Legacy alias promotion may modify only the portable copy, never the old index or database.");
+            TestAssert.Equal(requests, transport.Requests, "Legacy ownership checks and ambiguous offline misses must never issue HTTP.");
         }
 
         /// <summary>Leaves both old files and the destination untouched when legacy validation fails before publication.</summary>

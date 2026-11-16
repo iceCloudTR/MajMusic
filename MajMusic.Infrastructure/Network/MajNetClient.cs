@@ -1,6 +1,7 @@
 #nullable enable
 
 using MajMusic.Core.Models;
+using MajMusic.Core.Network;
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
@@ -180,6 +181,7 @@ namespace MajMusic.Infrastructure.Network
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(username);
             ArgumentException.ThrowIfNullOrWhiteSpace(password);
+            InvalidateCanonicalIdentity();
             var passwordBytes = Encoding.UTF8.GetBytes(password);
             string digest;
             try
@@ -201,6 +203,7 @@ namespace MajMusic.Infrastructure.Network
             var status = await ReadLoginStatusAsync(response, cancellationToken).ConfigureAwait(false);
             if (response.StatusCode == HttpStatusCode.Forbidden && status.Code is 0 or 60001)
             {
+                InvalidateCanonicalIdentity();
                 IsLoggedIn = true;
                 return;
             }
@@ -217,6 +220,7 @@ namespace MajMusic.Infrastructure.Network
             }
 
             EnsureSuccess(response);
+            InvalidateCanonicalIdentity();
             IsLoggedIn = true;
         }
 
@@ -373,6 +377,16 @@ namespace MajMusic.Infrastructure.Network
             }
 
             var response = await _client.SendAsync(request, HttpCompletionOption.ResponseContentRead, lifetime.Token).ConfigureAwait(false);
+            try
+            {
+                SourceResponseGuard.ThrowIfBrowserVerificationRequired(response);
+            }
+            catch (BrowserVerificationRequiredException)
+            {
+                response.Dispose();
+                throw;
+            }
+
             if (response.Headers.TryGetValues("Set-Cookie", out var cookies))
             {
                 foreach (var value in cookies)
@@ -597,6 +611,7 @@ namespace MajMusic.Infrastructure.Network
         /// <summary>Clears cookies and account state without making a request.</summary>
         private void ClearSession()
         {
+            InvalidateCanonicalIdentity();
             IsLoggedIn = false;
             foreach (Cookie cookie in _cookies.GetAllCookies())
             {
