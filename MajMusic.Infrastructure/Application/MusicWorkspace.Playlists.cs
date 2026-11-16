@@ -84,6 +84,7 @@ namespace MajMusic.Infrastructure.Application
             {
                 _metadataGate.Release();
             }
+            await DeletePortablePlaylistMirrorAsync(playlist.Id, cancellationToken).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
@@ -91,6 +92,7 @@ namespace MajMusic.Infrastructure.Application
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(playlistId);
             ArgumentNullException.ThrowIfNull(track);
+            MusicPlaylist updated;
             await _metadataGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -116,7 +118,7 @@ namespace MajMusic.Infrastructure.Application
                     }
                 }
 
-                var updated = playlist with
+                updated = playlist with
                 {
                     TrackIds = playlist.TrackIds.Where(id => !removedIds.Contains(id)).ToArray(),
                     MajCollection = playlist.MajCollection is { } definition ? definition with
@@ -132,6 +134,7 @@ namespace MajMusic.Infrastructure.Application
             {
                 _metadataGate.Release();
             }
+            await MirrorPortablePlaylistAsync(updated, cancellationToken).ConfigureAwait(false);
         }
 
         /// <inheritdoc />

@@ -14,6 +14,10 @@ namespace MajMusic.Presentation.ViewModels
         /// <param name="progress">The audio-only transfer notification marshaled to the presentation thread.</param>
         private void ApplyCardDownloadProgress(AudioDownloadProgress progress)
         {
+            if (_removedMediaOperations.Contains(progress.OperationId))
+            {
+                return;
+            }
             var matching = _cards.Values.Where(card => MatchesCardDownload(card.Track, progress)).ToArray();
             var owner = progress.SourceId is { } source
                 ? new CardDownloadOwner(progress.TrackId, source, progress.EndpointId, progress.Revision)

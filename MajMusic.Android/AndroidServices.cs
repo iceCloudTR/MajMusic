@@ -48,8 +48,9 @@ namespace MajMusic.Android
             _apiClient = CreateClient(TimeSpan.FromSeconds(100));
             _resourceClient = CreateClient(TimeSpan.FromMinutes(5));
             var documents = new AvaloniaDocumentStorage(CurrentStorageProvider, Path.Combine(directory, "DocumentCovers"));
+            var sharedStorage = new AvaloniaSharedStorageAccess(CurrentStorageProvider, RenameSharedDocumentAsync);
             _workspace = new MusicWorkspace(directory, _apiClient, _resourceClient,
-                credentialStore: new AndroidCredentialStore(context), documentStorage: documents);
+                credentialStore: new AndroidCredentialStore(context), documentStorage: documents, sharedStorageAccess: sharedStorage);
             try
             {
                 var settings = _workspace.LoadSettingsAsync().GetAwaiter().GetResult();
@@ -74,7 +75,12 @@ namespace MajMusic.Android
         /// <returns>The view belonging to the new Android activity.</returns>
         public Control CreateMainView()
         {
-            var view = new MainView { DataContext = _viewModel, DirectoryReferenceResolver = RetainDirectoryReferenceAsync };
+            var view = new MainView
+            {
+                DataContext = _viewModel,
+                DirectoryReferenceResolver = RetainDirectoryReferenceAsync,
+                SharedDirectoryReferenceResolver = RetainSharedDirectoryReferenceAsync
+            };
             TopLevel.SetAutoSafeAreaPadding(view, false);
             _currentView = new WeakReference<Control>(view);
             view.Loaded += OnViewLoaded;
@@ -158,6 +164,49 @@ namespace MajMusic.Android
                 resolver.TakePersistableUriPermission(uri, global::Android.Content.ActivityFlags.GrantReadUriPermission);
             }).ConfigureAwait(false);
             return reference;
+        }
+
+        /// <summary>Retains read and write access only for a media root explicitly selected through the shared-storage picker.</summary>
+        /// <param name="folder">The user-selected media root, independent of ordinary read-only library grants.</param>
+        /// <returns>The persisted writable document-tree URI or ordinary accessible path.</returns>
+        private static async Task<string> RetainSharedDirectoryReferenceAsync(IStorageFolder folder)
+        {
+            var reference = folder.Path.AbsoluteUri;
+            if (!DocumentReference.IsContentUri(reference))
+            {
+                return folder.TryGetLocalPath() ?? throw new NotSupportedException("无法保留所选媒体目录的读写权限。");
+            }
+
+            await Task.Run(() =>
+            {
+                using var uri = global::Android.Net.Uri.Parse(reference)
+                    ?? throw new InvalidDataException("The selected media tree reference is invalid.");
+                var resolver = global::Android.App.Application.Context.ContentResolver
+                    ?? throw new InvalidOperationException("Android document permissions are unavailable.");
+                resolver.TakePersistableUriPermission(uri,
+                    global::Android.Content.ActivityFlags.GrantReadUriPermission | global::Android.Content.ActivityFlags.GrantWriteUriPermission);
+            }).ConfigureAwait(false);
+            return reference;
+        }
+
+        /// <summary>Commits one completed temporary media object using its provider's same-parent rename operation.</summary>
+        /// <param name="reference">The caller-owned completed temporary document.</param>
+        /// <param name="name">The immutable final SHA-256 filename.</param>
+        /// <param name="cancellationToken">Cancels before the native commit begins.</param>
+        /// <returns>The renamed completed document URI.</returns>
+        private static Task<string> RenameSharedDocumentAsync(string reference, string name, CancellationToken cancellationToken)
+        {
+            return Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using var uri = global::Android.Net.Uri.Parse(reference)
+                    ?? throw new InvalidDataException("The temporary media document reference is invalid.");
+                var resolver = global::Android.App.Application.Context.ContentResolver
+                    ?? throw new InvalidOperationException("Android document permissions are unavailable.");
+                using var renamed = global::Android.Provider.DocumentsContract.RenameDocument(resolver, uri, name)
+                    ?? throw new IOException("无法提交完整的共享媒体文件。");
+                return renamed.ToString() ?? throw new IOException("文件提交未返回有效地址。");
+            }, cancellationToken);
         }
 
         /// <summary>Creates an Android-native transport whose account cookies and redirects remain application-owned.</summary>

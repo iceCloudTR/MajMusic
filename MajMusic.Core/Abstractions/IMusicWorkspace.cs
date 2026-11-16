@@ -34,7 +34,7 @@ namespace MajMusic.Core.Abstractions
         /// <returns>The matching entries.</returns>
         Task<IReadOnlyList<MusicTrack>> SearchAsync(string? query, CancellationToken cancellationToken = default);
 
-        /// <summary>Copies music and an optional cover into the managed library.</summary>
+        /// <summary>Indexes the original music and artwork without copying or changing imported files.</summary>
         /// <param name="directory">The selected source directory.</param>
         /// <param name="cancellationToken">Cancels the import.</param>
         /// <returns>The imported track.</returns>
@@ -76,7 +76,7 @@ namespace MajMusic.Core.Abstractions
         /// <returns>The complete local audio path.</returns>
         Task<string> ResolveAudioAsync(MusicTrack track, bool keepOffline, CancellationToken cancellationToken = default);
 
-        /// <summary>Removes evictable downloads while preserving imports and pinned files.</summary>
+        /// <summary>Explicitly removes managed local online media while preserving imported source files and library entries.</summary>
         /// <param name="cancellationToken">Cancels cleanup.</param>
         /// <returns>A task representing the completed cleanup.</returns>
         Task ClearCacheAsync(CancellationToken cancellationToken = default);

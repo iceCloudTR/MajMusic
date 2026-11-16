@@ -272,6 +272,11 @@ namespace MajMusic.Infrastructure.Collections
             }
 
             output["SongHashs"] = hashes;
+            if (!playlist.IsCloud && IsPortableLocalPlaylistId(playlist.Id))
+            {
+                output["MajMusicPlaylistId"] = playlist.Id;
+                output["MajMusicIsFavorite"] = playlist.IsFavorite;
+            }
             var isPlayList = playlist.IsFavorite ? true : playlist.MajCollection?.IsPlayList;
             if (isPlayList.HasValue || playlist.MajCollection is null)
             {
@@ -362,6 +367,23 @@ namespace MajMusic.Infrastructure.Collections
             var normalizedPath = OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
             var id = favorite ? FavoritesPlaylistId
                 : "majcollection:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalizedPath)));
+            if (!favorite && properties.TryGetValue("MajMusicPlaylistId", out var localId))
+            {
+                if (localId.ValueKind != JsonValueKind.String || !IsPortableLocalPlaylistId(localId.GetString()))
+                {
+                    throw new InvalidDataException("The MajMusic playlist identity is not a supported local identity.");
+                }
+                id = localId.GetString()!;
+                favorite = id == FavoritesPlaylistId;
+                if (properties.TryGetValue("MajMusicIsFavorite", out var localFavorite))
+                {
+                    if (localFavorite.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                    {
+                        throw new InvalidDataException("The MajMusic favorite flag must be a boolean.");
+                    }
+                    favorite |= localFavorite.GetBoolean();
+                }
+            }
             return new MusicPlaylist
             {
                 Id = id,
@@ -416,7 +438,27 @@ namespace MajMusic.Infrastructure.Collections
         {
             return name.Equals("Name", StringComparison.OrdinalIgnoreCase)
                 || name.Equals("SongHashs", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("IsPlayList", StringComparison.OrdinalIgnoreCase);
+                || name.Equals("IsPlayList", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("MajMusicPlaylistId", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("MajMusicIsFavorite", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Checks supported local identities without allowing a portable file to impersonate a cloud collection.</summary>
+        /// <param name="id">The original local playlist identity.</param>
+        /// <returns>Whether this identity can be restored from an application-owned portable mirror.</returns>
+        public static bool IsPortableLocalPlaylistId(string? id)
+        {
+            return id is { Length: > 0 and <= 512 } && id == id.Trim()
+                && !id.StartsWith("cloud:", StringComparison.OrdinalIgnoreCase) && !id.Any(char.IsControl);
+        }
+
+        /// <summary>Gets the collision-resistant app-owned mirror filename while leaving MyFavorites and imported sources untouched.</summary>
+        /// <param name="id">The exact local playlist identity.</param>
+        /// <returns>The generated JSON filename recognized by MajdataPlay's ordinary collection scanner.</returns>
+        public static string GetPortableFileName(string id)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(id);
+            return "MajMusic-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(id))) + ".json";
         }
 
         /// <summary>Creates a report without exposing source contents.</summary>

@@ -19,8 +19,6 @@ namespace MajMusic.Infrastructure.Application
         private readonly SqliteLibraryRepository _library;
         /// <summary>Persists non-secret preferences.</summary>
         private readonly ISettingsStore _settingsStore;
-        /// <summary>Copies imports without changing their original directory.</summary>
-        private readonly LocalMusicImporter _importer;
         /// <summary>Indexes user-selected directory trees without copying their source files.</summary>
         private readonly LocalMusicScanner _scanner = new();
         /// <summary>Reads explicitly granted provider trees before any filesystem-only operation.</summary>
@@ -34,7 +32,9 @@ namespace MajMusic.Infrastructure.Application
         /// <summary>Records whether this workspace owns the media transport.</summary>
         private readonly bool _ownsResourceClient;
         /// <summary>Stores validated resources separately from local imports.</summary>
-        private readonly MediaCache _cache;
+        private readonly MediaCache _defaultCache;
+        /// <summary>Uses the currently selected media root while keeping each active transfer's cache instance alive.</summary>
+        private MediaCache _cache => GetCurrentMediaCache();
         /// <summary>Protects current settings and explicit network choices.</summary>
         private readonly object _stateGate = new();
         /// <summary>Serializes settings operations without blocking immediate offline cancellation.</summary>
@@ -57,16 +57,17 @@ namespace MajMusic.Infrastructure.Application
         /// <param name="settingsStore">An optional host-supplied non-secret preference store.</param>
         /// <param name="credentialStore">An optional system-vault adapter; tests may inject an isolated store.</param>
         /// <param name="documentStorage">An optional read-only provider-tree adapter for mobile local sources.</param>
+        /// <param name="sharedStorageAccess">An optional read/write adapter for an explicitly granted shared document tree.</param>
         public MusicWorkspace(string? dataDirectory = null, HttpClient? apiClient = null,
             HttpClient? resourceClient = null, ISettingsStore? settingsStore = null, ICredentialStore? credentialStore = null,
-            IReadOnlyDocumentStorage? documentStorage = null)
+            IReadOnlyDocumentStorage? documentStorage = null, ISharedStorageAccess? sharedStorageAccess = null)
         {
             DataDirectory = Path.GetFullPath(dataDirectory ?? GetDefaultDataDirectory());
             _library = new SqliteLibraryRepository(Path.Combine(DataDirectory, "library.db"));
             _settingsStore = settingsStore ?? new JsonSettingsStore(Path.Combine(DataDirectory, "settings.json"));
             _credentialStore = credentialStore ?? CredentialStoreFactory.Create();
             _documentStorage = documentStorage;
-            _importer = new LocalMusicImporter(Path.Combine(DataDirectory, "Library"));
+            _sharedStorageAccess = sharedStorageAccess;
             _apiClient = apiClient;
             _ownsResourceClient = resourceClient is null;
             _resourceClient = resourceClient ?? SourceHttpTransportFactory.CreateAnonymousClient();
@@ -74,7 +75,8 @@ namespace MajMusic.Infrastructure.Application
             {
                 _resourceClient.Timeout = TimeSpan.FromMinutes(5);
             }
-            _cache = new MediaCache(Path.Combine(DataDirectory, "Cache"), _resourceClient, _networkPolicy);
+            _defaultCache = new MediaCache(Path.Combine(DataDirectory, "Cache"), _resourceClient, _networkPolicy,
+                indexDirectory: Path.Combine(DataDirectory, "Runtime", "MajMusicCache"));
         }
 
         /// <inheritdoc />
@@ -127,6 +129,7 @@ namespace MajMusic.Infrastructure.Application
             try
             {
                 JsonSettingsStore.Validate(settings);
+                ValidateMediaStorageLocation(settings);
                 settings = NormalizeAccountAddressChanges(settings);
                 JsonSettingsStore.Validate(settings);
                 await RemoveUnusedCredentialsAsync(settings, cancellationToken).ConfigureAwait(false);
@@ -159,9 +162,8 @@ namespace MajMusic.Infrastructure.Application
         /// <inheritdoc />
         public async Task<MusicTrack> ImportDirectoryAsync(string directory, CancellationToken cancellationToken = default)
         {
-            var track = await _importer.ImportDirectoryAsync(directory, cancellationToken);
-            await _library.UpsertTracksAsync(new[] { track }, cancellationToken);
-            return track;
+            var indexed = await IndexDirectoryAsync(directory, cancellationToken).ConfigureAwait(false);
+            return indexed.Tracks.FirstOrDefault() ?? throw new FileNotFoundException("目录中没有可读取的音乐。");
         }
 
         /// <inheritdoc />
@@ -248,6 +250,7 @@ namespace MajMusic.Infrastructure.Application
             {
                 _metadataGate.Release();
             }
+            await MirrorPortablePlaylistAsync(playlist, cancellationToken).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
@@ -276,7 +279,10 @@ namespace MajMusic.Infrastructure.Application
                             {
                                 Audio = MergeResource(track.Audio, previous.Audio),
                                 Cover = track.Cover is null ? null : MergeResource(track.Cover, previous.Cover),
+                                Chart = track.Chart is null ? previous.Chart : MergeResource(track.Chart, previous.Chart),
                                 Duration = track.Duration ?? previous.Duration,
+                                LocalMediaSavedAt = previous.LocalMediaSavedAt,
+                                MajInfoJson = track.MajInfoJson ?? previous.MajInfoJson,
                                 AudioInfo = MergeStreamInfo(track.AudioInfo, previous.AudioInfo),
                                 AudioMetadataLength = previous.AudioMetadataLength,
                                 AudioMetadataLastWriteUtcTicks = previous.AudioMetadataLastWriteUtcTicks
@@ -308,6 +314,7 @@ namespace MajMusic.Infrastructure.Application
         /// <inheritdoc />
         public async Task<string?> ResolveCoverAsync(MusicTrack track, CancellationToken cancellationToken = default)
         {
+            var mediaVersion = LocalMediaVersion(track);
             var resolved = await ResolveMetadataAsync(track, true, cancellationToken).ConfigureAwait(false);
             if (DocumentReference.IsContentUri(resolved.Cover?.LocalPath))
             {
@@ -323,9 +330,18 @@ namespace MajMusic.Infrastructure.Application
             try
             {
                 var keepOffline = await _cache.IsKeptOfflineAsync(ScopeResourceForCache(resolved, resolved.Audio), cancellationToken).ConfigureAwait(false);
-                var path = await GetMediaAsync(resolved, true, keepOffline, cancellationToken).ConfigureAwait(false);
-                await RememberLocalResourceAsync(resolved, path, true, cancellationToken).ConfigureAwait(false);
-                return path;
+                var original = await GetMediaAsync(resolved, true, keepOffline, cancellationToken).ConfigureAwait(false);
+                var path = await PublishSharedMediaAsync(resolved, true, original, cancellationToken, mediaVersion).ConfigureAwait(false);
+                await RememberLocalResourceAsync(resolved, path, true, cancellationToken, mediaVersion).ConfigureAwait(false);
+                EnsureLocalMediaVersion(track, mediaVersion);
+                if (path != original)
+                {
+                    await ReleasePrivateTransferAsync(resolved, true, original, resolved.Cover.Sha256, cancellationToken).ConfigureAwait(false);
+                }
+                return DocumentReference.IsContentUri(path)
+                    ? await (_documentStorage ?? throw new NotSupportedException("文档封面访问不可用。"))
+                        .ResolveCoverAsync(resolved.Cover with { LocalPath = path }, cancellationToken).ConfigureAwait(false)
+                    : path;
             }
             catch (InvalidOperationException) when (!IsOnline)
             {
@@ -341,19 +357,26 @@ namespace MajMusic.Infrastructure.Application
         public async Task<string> ResolveAudioAsync(MusicTrack track, bool keepOffline, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(track);
+            var mediaVersion = LocalMediaVersion(track);
             var operation = BeginAudioDownload(track);
             try
             {
-                var resolved = await ResolveMetadataAsync(track, true, cancellationToken).ConfigureAwait(false);
+                var resolved = await ResolveMetadataAsync(track, !keepOffline, cancellationToken).ConfigureAwait(false);
+                string? path = null;
                 if (DocumentReference.IsContentUri(resolved.Audio.LocalPath))
                 {
-                    var reference = await (_documentStorage ?? throw new NotSupportedException("此宿主未提供文档音乐访问。"))
+                    path = await (_documentStorage ?? throw new NotSupportedException("此宿主未提供文档音乐访问。"))
                         .ResolveAudioAsync(resolved.Audio.LocalPath!, cancellationToken).ConfigureAwait(false);
-                    operation.Finish(AudioDownloadState.Completed, reference);
-                    return reference;
+                    if (resolved.RemoteId is null)
+                    {
+                        operation.Finish(AudioDownloadState.Completed, path);
+                        return path;
+                    }
                 }
 
-                var path = await _cache.TryGetCachedAsync(ScopeResourceForCache(resolved, resolved.Audio), keepOffline, cancellationToken).ConfigureAwait(false);
+                path ??= await TryResolveSharedMediaAsync(resolved, false, cancellationToken).ConfigureAwait(false)
+                    ?? await _cache.TryGetCachedAsync(ScopeResourceForCache(resolved, resolved.Audio), true, cancellationToken).ConfigureAwait(false)
+                    ?? await _defaultCache.TryGetCachedAsync(ScopeResourceForCache(resolved, resolved.Audio), true, cancellationToken).ConfigureAwait(false);
                 if (path is null)
                 {
                     resolved = await ResolveMetadataAsync(track, false, cancellationToken).ConfigureAwait(false);
@@ -366,10 +389,21 @@ namespace MajMusic.Infrastructure.Application
                     path = await GetMediaAsync(resolved, false, keepOffline, cancellationToken, operation).ConfigureAwait(false);
                 }
 
-                await RememberLocalResourceAsync(resolved, path, false, cancellationToken).ConfigureAwait(false);
+                var original = path;
+                path = await PublishSharedMediaAsync(resolved, false, path, cancellationToken, mediaVersion).ConfigureAwait(false);
+                await RememberLocalResourceAsync(resolved, path, false, cancellationToken, mediaVersion).ConfigureAwait(false);
+                EnsureLocalMediaVersion(track, mediaVersion);
+                var registered = await RegisterSharedTrackAsync(resolved, cancellationToken).ConfigureAwait(false);
                 if (keepOffline)
                 {
                     await PreserveOfflineCoverAsync(resolved, cancellationToken).ConfigureAwait(false);
+                    await PreserveSharedChartAsync(resolved, cancellationToken).ConfigureAwait(false);
+                }
+                registered = await RegisterSharedTrackAsync(resolved, cancellationToken).ConfigureAwait(false);
+                EnsureLocalMediaVersion(track, mediaVersion);
+                if (path != original && registered)
+                {
+                    await ReleasePrivateTransferAsync(resolved, false, original, resolved.Audio.Sha256, cancellationToken).ConfigureAwait(false);
                 }
 
                 operation.Finish(AudioDownloadState.Completed, path);
@@ -388,9 +422,11 @@ namespace MajMusic.Infrastructure.Application
         }
 
         /// <inheritdoc />
-        public Task ClearCacheAsync(CancellationToken cancellationToken = default)
+        public async Task ClearCacheAsync(CancellationToken cancellationToken = default)
         {
-            return _cache.ClearCacheAsync(cancellationToken);
+            var tracks = (await _library.SearchAsync(null, cancellationToken).ConfigureAwait(false))
+                .Where(track => track.RemoteId is not null && track.Audio.LocalPath is not null).ToArray();
+            await RemoveTrackMediaBatchAsync(tracks, cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>Releases services after the host has canceled and drained their active operations.</summary>
@@ -409,7 +445,7 @@ namespace MajMusic.Infrastructure.Application
 
             DisposeCloudCollectionSync();
             DisposeOnlineSessions();
-            _cache.Dispose();
+            DisposeMediaStorage();
             if (_ownsResourceClient)
             {
                 _resourceClient.Dispose();
@@ -511,7 +547,7 @@ namespace MajMusic.Infrastructure.Application
                     resolved = await _library.FindTrackAsync(GetOfflineCopyId(requested), cancellationToken).ConfigureAwait(false) ?? resolved;
                 }
 
-                if (!cover && IsOnline && resolved.RemoteId is not null && resolved.Audio.Sha256 is null)
+                if (!cover && IsOnline && resolved.RemoteId is not null && (resolved.Audio.Sha256 is null || resolved.Chart?.Sha256 is null))
                 {
                     var endpoint = GetEndpointForTrack(resolved);
                     var connection = GetConnection(endpoint);
@@ -526,6 +562,7 @@ namespace MajMusic.Infrastructure.Application
                     detailed = detailed with
                     {
                         Id = resolved.Id,
+                        LocalMediaSavedAt = SameRevision(detailed, resolved) ? resolved.LocalMediaSavedAt : null,
                         EndpointId = resolved.EndpointId,
                         Revision = string.IsNullOrWhiteSpace(detailed.Revision) ? resolved.Revision : detailed.Revision,
                         Cover = SameRevision(detailed, resolved) || string.IsNullOrWhiteSpace(detailed.Revision)
@@ -558,14 +595,15 @@ namespace MajMusic.Infrastructure.Application
         /// <param name="path">The validated completed local file.</param>
         /// <param name="cover">Whether the resource is a cover rather than audio.</param>
         /// <param name="cancellationToken">Cancels hashing or persistence.</param>
+        /// <param name="mediaVersion">The removal generation captured before resolution, or null for an unguarded metadata update.</param>
         /// <returns>A task representing the metadata update.</returns>
-        private async Task RememberLocalResourceAsync(MusicTrack track, string path, bool cover, CancellationToken cancellationToken)
+        private async Task RememberLocalResourceAsync(MusicTrack track, string path, bool cover, CancellationToken cancellationToken, long? mediaVersion = null)
         {
             var resource = (cover ? track.Cover : track.Audio)!;
             var digest = resource.Sha256;
             if (digest is null)
             {
-                await using var stream = File.OpenRead(path);
+                await using var stream = await OpenMediaReadAsync(path, cancellationToken).ConfigureAwait(false);
                 digest = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
             }
 
@@ -574,6 +612,10 @@ namespace MajMusic.Infrastructure.Application
             await _metadataGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (mediaVersion is { } version)
+                {
+                    EnsureLocalMediaVersion(track, version);
+                }
                 var current = await _library.FindTrackAsync(track.Id, cancellationToken).ConfigureAwait(false);
                 var updates = new List<MusicTrack>();
                 if (current is not null && !SameRevision(current, completed))
@@ -583,7 +625,7 @@ namespace MajMusic.Infrastructure.Application
                 else
                 {
                     var metadata = current ?? completed;
-                    updates.Add(cover ? metadata with { Cover = local } : metadata with { Audio = local });
+                    updates.Add(cover ? metadata with { Cover = local } : metadata with { Audio = local, LocalMediaSavedAt = metadata.LocalMediaSavedAt ?? DateTimeOffset.UtcNow });
                 }
 
                 await _library.UpsertTracksAsync(updates, cancellationToken).ConfigureAwait(false);
@@ -603,6 +645,7 @@ namespace MajMusic.Infrastructure.Application
             return previous is null ? incoming : incoming with
             {
                 Sha256 = incoming.Sha256 ?? previous.Sha256,
+                Md5 = incoming.Md5 ?? previous.Md5,
                 Length = incoming.Length ?? previous.Length,
                 LocalPath = incoming.LocalPath ?? previous.LocalPath
             };
@@ -611,11 +654,20 @@ namespace MajMusic.Infrastructure.Application
         /// <summary>Retains only a real downloaded audio version before its source revision changes.</summary>
         /// <param name="updates">The pending transaction entries.</param>
         /// <param name="previous">The replaced source version.</param>
-        private static void AddOfflineCopy(List<MusicTrack> updates, MusicTrack previous)
+        private void AddOfflineCopy(List<MusicTrack> updates, MusicTrack previous)
         {
-            if (previous.Audio.Sha256 is null || previous.Audio.LocalPath is not { } path || !File.Exists(path))
+            if (previous.Audio.Sha256 is null)
             {
                 return;
+            }
+            var path = previous.Audio.LocalPath;
+            if (path is null || !DocumentReference.IsContentUri(path) && !File.Exists(path))
+            {
+                path = _defaultCache.GetManagedObjectPath(previous.Audio.Sha256);
+                if (!File.Exists(path))
+                {
+                    return;
+                }
             }
 
             updates.Add(previous with
@@ -626,8 +678,8 @@ namespace MajMusic.Infrastructure.Application
                 EndpointId = null,
                 SourceName = "本地",
                 RemoteId = null,
-                Audio = previous.Audio with { RemoteUri = null },
-                Cover = previous.Cover?.LocalPath is { } coverPath && File.Exists(coverPath)
+                Audio = previous.Audio with { RemoteUri = null, LocalPath = path },
+                Cover = previous.Cover?.LocalPath is { } coverPath && (DocumentReference.IsContentUri(coverPath) || File.Exists(coverPath))
                     ? previous.Cover with { RemoteUri = null } : null
             });
         }

@@ -135,31 +135,48 @@
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="MobileDirectoriesTemplate" x:DataType="vm:MainViewModel">
-            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                    <arcm:Button Content="新增目录" Command="{Binding NewDirectoryCommand}" />
-                    <arcm:Button Grid.Column="1" Content="读取全部" Variant="Tinted" Command="{Binding RescanCommand}" />
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+                    <Border Classes="mobilePanel" Padding="10">
+                        <StackPanel Spacing="8">
+                            <Grid ColumnDefinitions="80,*" ColumnSpacing="8">
+                                <TextBlock Text="媒体储存" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <arc:Select x:Name="MobileMediaStorageModePicker" Grid.Column="1" Size="Medium" Height="44" ItemsSource="{Binding MediaStorageModes}"
+                                            TextSelector="{x:Static converters:MusicSelectLabels.MediaStorageMode}"
+                                            SelectedItem="{Binding SelectedMediaStorageMode, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="*,44,88" ColumnSpacing="8">
+                                <arcm:TextField x:Name="MobileMediaStoragePathBox" Text="{Binding MediaStoragePath, Mode=TwoWay}" PlaceholderText="媒体目录" IsEnabled="{Binding IsIdle}" />
+                                <arcm:Button Grid.Column="1" Content="…" Variant="Tinted" Click="OnMediaStorageBrowseClicked" IsEnabled="{Binding IsIdle}" AutomationProperties.Name="选择媒体目录" />
+                                <arcm:Button Grid.Column="2" Content="保存读取" Command="{Binding SaveMediaStorageCommand}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <arcm:Button Content="新增目录" Command="{Binding NewDirectoryCommand}" />
+                        <arcm:Button Grid.Column="1" Content="读取全部" Variant="Tinted" Command="{Binding RescanCommand}" />
+                    </Grid>
+                    <ListBox x:Name="MobileDirectoriesList" Grid.Row="2" MinHeight="120" MaxHeight="220" Classes="mobileList" ItemsSource="{Binding DirectorySources}" SelectedItem="{Binding SelectedDirectory}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                    </ListBox>
+                    <Border Grid.Row="3" Classes="mobilePanel" Padding="10">
+                        <StackPanel Spacing="8">
+                            <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.DirectoryKind}" ItemsSource="{Binding DirectoryKinds}" SelectedItem="{Binding SelectedDirectoryKind}" />
+                            <Grid ColumnDefinitions="*,44" ColumnSpacing="8">
+                                <arcm:TextField Text="{Binding DirectoryPath, Mode=TwoWay}" PlaceholderText="目录路径" />
+                                <arcm:Button Grid.Column="1" Content="…" Variant="Tinted" Click="OnDirectoryBrowseClicked" AutomationProperties.Name="选择目录" />
+                            </Grid>
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
+                                <arcm:Button Content="保存读取" Command="{Binding SaveDirectoryCommand}" />
+                                <arcm:Button Grid.Column="1" Content="重读" Variant="Tinted" Command="{Binding ScanDirectoryCommand}" />
+                                <arcm:Button Grid.Column="2" Content="移除" Variant="Plain" Command="{Binding RemoveDirectoryCommand}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
                 </Grid>
-                <ListBox x:Name="MobileDirectoriesList" Grid.Row="1" Classes="mobileList" ItemsSource="{Binding DirectorySources}" SelectedItem="{Binding SelectedDirectory}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
-                    <ListBox.ItemsPanel>
-                        <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
-                    </ListBox.ItemsPanel>
-                </ListBox>
-                <Border Grid.Row="2" Classes="mobilePanel" Padding="10">
-                    <StackPanel Spacing="8">
-                        <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.DirectoryKind}" ItemsSource="{Binding DirectoryKinds}" SelectedItem="{Binding SelectedDirectoryKind}" />
-                        <Grid ColumnDefinitions="*,44" ColumnSpacing="8">
-                            <arcm:TextField Text="{Binding DirectoryPath, Mode=TwoWay}" PlaceholderText="目录路径" />
-                            <arcm:Button Grid.Column="1" Content="…" Variant="Tinted" Click="OnDirectoryBrowseClicked" AutomationProperties.Name="选择目录" />
-                        </Grid>
-                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
-                            <arcm:Button Content="保存读取" Command="{Binding SaveDirectoryCommand}" />
-                            <arcm:Button Grid.Column="1" Content="重读" Variant="Tinted" Command="{Binding ScanDirectoryCommand}" />
-                            <arcm:Button Grid.Column="2" Content="移除" Variant="Plain" Command="{Binding RemoveDirectoryCommand}" />
-                        </Grid>
-                    </StackPanel>
-                </Border>
-            </Grid>
+                </ScrollViewer>
         </DataTemplate>
         <DataTemplate x:Key="MobileAccountsTemplate" x:DataType="vm:MainViewModel">
             <Grid RowDefinitions="Auto,*" RowSpacing="12">
@@ -257,9 +274,12 @@
                     </Border>
                     <Border Classes="mobilePanel">
                         <StackPanel Spacing="12">
-                            <TextBlock Text="缓存" FontSize="17" FontWeight="SemiBold" />
+                            <TextBlock Text="本地音乐" FontSize="17" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding DataDirectory}" Classes="mobileLabel" TextWrapping="Wrap" />
-                            <arcm:Button Content="清理缓存" Variant="Tinted" Command="{Binding ClearCacheCommand}" />
+                            <arc:Select x:Name="MobileLocalMediaCleanupPicker" Size="Medium" Height="44" ItemsSource="{Binding LocalMediaCleanupChoices}"
+                                        TextSelector="{x:Static converters:MusicSelectLabels.LocalMediaCleanup}"
+                                        SelectedItem="{Binding SelectedLocalMediaCleanup, Mode=TwoWay}" />
+                            <arcm:Button Content="清理本地音乐" Variant="Tinted" Command="{Binding CleanupLocalMediaCommand}" />
                         </StackPanel>
                     </Border>
                 </StackPanel>

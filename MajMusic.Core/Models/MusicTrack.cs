@@ -41,11 +41,20 @@ namespace MajMusic.Core.Models
         /// <summary>Gets the UTC last-write ticks associated with the cached local audio metadata.</summary>
         public long? AudioMetadataLastWriteUtcTicks { get; init; }
 
+        /// <summary>Gets when this source revision's complete audio first became locally available.</summary>
+        public DateTimeOffset? LocalMediaSavedAt { get; init; }
+
         /// <summary>Gets the remote resource identifier, independent of the audio digest.</summary>
         public string? RemoteId { get; init; }
 
         /// <summary>Gets the source revision used to refresh resource metadata.</summary>
         public string? Revision { get; init; }
+
+        /// <summary>Gets the server's original metadata timestamp for cross-client revision ordering.</summary>
+        public string? SourceTimestamp { get; init; }
+
+        /// <summary>Gets the original public detailed chart response used to register complete MajdataPlay resource metadata.</summary>
+        public string? MajInfoJson { get; init; }
 
         /// <summary>Gets the Base64 MD5 of the original maidata bytes used by Maj collection references.</summary>
         /// <remarks>This compatibility identity is independent of the audio content and the local path identity.</remarks>
@@ -56,5 +65,8 @@ namespace MajMusic.Core.Models
 
         /// <summary>Gets the optional cover resource.</summary>
         public MediaResource? Cover { get; init; }
+
+        /// <summary>Gets the optional original maidata resource retained for compatible predownloads without chart preview.</summary>
+        public MediaResource? Chart { get; init; }
     }
 }

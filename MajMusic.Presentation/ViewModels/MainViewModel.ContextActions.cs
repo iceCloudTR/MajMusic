@@ -104,7 +104,7 @@ namespace MajMusic.Presentation.ViewModels
 
                 await _workspace.ResolveAudioAsync(track, true, _lifetime.Token);
                 await ReloadLibraryCoreAsync(_lifetime.Token, preservePage: true);
-                Status = $"已保存离线：{track.Title}";
+                Status = $"已在本地：{track.Title}";
             });
         }
 

@@ -107,6 +107,14 @@ namespace MajMusic.Infrastructure.Storage
         /// <exception cref="InvalidDataException">A preference or endpoint is invalid.</exception>
         internal static void Validate(AppSettings settings)
         {
+            foreach (var root in new[] { settings.MajdataPlayDirectory, settings.MediaStorageDirectory })
+            {
+                if (root is not null && (root.Length > 16384 || root.Contains('\0')
+                    || !DocumentReference.IsContentUri(root) && !Path.IsPathFullyQualified(root)))
+                {
+                    throw new InvalidDataException("Media storage requires an absolute directory or granted document-tree reference.");
+                }
+            }
             if (!Enum.IsDefined(settings.Appearance))
             {
                 throw new InvalidDataException("The appearance preference must be light, dark or system.");

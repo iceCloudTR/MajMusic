@@ -20,7 +20,7 @@ namespace MajMusic.Presentation.Converters
                         ? duration.TotalHours >= 1 ? $"{(long)duration.TotalHours}:{duration.Minutes:00}:{duration.Seconds:00}"
                             : $"{(long)duration.TotalMinutes:00}:{duration.Seconds:00}" : "--:--",
                     "audio" => AudioLabel(track),
-                    "source" => track.RemoteId is null ? "本地" : track.SourceName ?? "在线谱面",
+                    "source" => track.RemoteId is null ? "本地" : track.SourceName ?? "云端",
                     _ => string.Empty
                 };
             }
@@ -68,7 +68,7 @@ namespace MajMusic.Presentation.Converters
                 parts.Add($"{rate / 1000d:0.##} kHz");
             }
 
-            return parts.Count > 0 ? string.Join(" · ", parts) : track.RemoteId is not null ? "在线谱面" : "—";
+            return parts.Count > 0 ? string.Join(" · ", parts) : track.RemoteId is not null ? "云端" : "—";
         }
     }
 }

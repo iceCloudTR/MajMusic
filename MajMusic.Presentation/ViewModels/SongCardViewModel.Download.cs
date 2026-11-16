@@ -32,16 +32,16 @@ namespace MajMusic.Presentation.ViewModels
             Transfer: { TotalBytes: > 0 } transfer
         } ? Math.Clamp(transfer.ReceivedBytes * 100d / transfer.TotalBytes.Value, 0, 100) : 0;
         /// <summary>Gets whether the online song is preparing or receiving audio bytes.</summary>
-        public bool IsDownloading => _track.RemoteId is not null && !DocumentReference.IsContentUri(_track.Audio.LocalPath) && !_downloadState.IsAvailable
+        public bool IsDownloading => _track.RemoteId is not null && !_downloadState.IsAvailable
             && _downloadState.Progress?.State is AudioDownloadState.Preparing or AudioDownloadState.Downloading;
         /// <summary>Gets whether this online song has a complete available audio file.</summary>
-        public bool IsDownloaded => _track.RemoteId is not null && !DocumentReference.IsContentUri(_track.Audio.LocalPath) && _downloadState.IsAvailable;
+        public bool IsDownloaded => _track.RemoteId is not null && _downloadState.IsAvailable;
         /// <summary>Gets whether an active transfer has no usable total length.</summary>
         public bool IsDownloadIndeterminate => IsDownloading && _downloadState.Progress?.Transfer?.TotalBytes is not > 0;
         /// <summary>Gets whether the information half displays a transfer or completed-download label.</summary>
         public bool HasDownloadStatus => IsDownloading || IsDownloaded;
         /// <summary>Gets a short card-local download label.</summary>
-        public string DownloadStatus => IsDownloaded ? "下载完成" : IsDownloading
+        public string DownloadStatus => IsDownloaded ? "已在本地" : IsDownloading
             ? _downloadState.Progress?.State == AudioDownloadState.Preparing ? "准备下载" : "正在下载" : string.Empty;
         /// <summary>Gets measured byte counts and receive speed without querying the filesystem.</summary>
         public string DownloadDetails
@@ -145,13 +145,13 @@ namespace MajMusic.Presentation.ViewModels
 
             var state = _downloadState;
             var path = state.LocalPath ?? track.Audio.LocalPath;
-            if (string.IsNullOrWhiteSpace(path) || DocumentReference.IsContentUri(path))
+            if (string.IsNullOrWhiteSpace(path))
             {
                 return;
             }
 
             var version = state.Version;
-            var available = await Task.Run(() => File.Exists(path), token);
+            var available = DocumentReference.IsContentUri(path) || await Task.Run(() => File.Exists(path), token);
             token.ThrowIfCancellationRequested();
             if (!_disposed && _attachments > 0 && generation == _generation && ReferenceEquals(state, _downloadState)
                 && version == state.Version && state.Progress?.State != AudioDownloadState.Downloading)

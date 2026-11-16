@@ -64,6 +64,10 @@ namespace MajMusic.Presentation.Views
                 () => owner.ToggleTrackFavoriteFromMenuAsync(track), () => owner.IsIdle && owner.HasFavorites, ArcIcons.Heart));
             menu.Items.Add(Action("下载", owner, () => owner.DownloadTrackFromMenuAsync(track),
                 () => owner.OnlineEnabled && track.RemoteId is not null, ArcIcons.Download));
+            var removeLocal = Action("删除本地文件", owner, () => owner.RemoveTrackMediaFromMenuAsync(track),
+                () => owner.CanRemoveTrackMediaForMenu(track), ArcIcons.Trash2);
+            removeLocal.HasSeparatorBefore = true;
+            menu.Items.Add(removeLocal);
             if (owner.BrowsedPlaylistForMenu is { } browsed)
             {
                 var remove = Action("从当前歌单移除", owner, () => owner.RemoveTrackFromPlaylistFromMenuAsync(track, browsed),

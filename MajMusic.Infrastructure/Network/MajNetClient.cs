@@ -163,6 +163,8 @@ namespace MajMusic.Infrastructure.Network
             return track with
             {
                 Audio = audio with { CacheVersion = track.Revision },
+                MajInfoJson = root.GetRawText(),
+                Chart = ReadResource(resources, "maidata", new Uri(_apiRoot, $"maichart/{routeId}/chart")),
                 Cover = cover is null ? null : cover with { CacheVersion = track.Revision },
                 Duration = track.Duration ?? ReadDuration(root) ?? ReadDuration(resources.GetProperty("track")),
                 AudioInfo = MergeAudioInfo(track.AudioInfo, ReadAudioInfo(resources.GetProperty("track"), audio.Length))
@@ -483,6 +485,7 @@ namespace MajMusic.Infrastructure.Network
                 SourceName = _endpoint.Name,
                 RemoteId = id,
                 Revision = GetText(metadata, "hash"),
+                SourceTimestamp = GetText(metadata, "timestamp"),
                 Duration = ReadDuration(metadata),
                 AudioInfo = metadata.TryGetProperty("audioInfo", out var info) ? ReadAudioInfo(info, null) : ReadAudioInfo(metadata, null),
                 Audio = new MediaResource { RemoteUri = new Uri(_apiRoot, $"maichart/{routeId}/track"), CacheVersion = GetText(metadata, "hash") },
@@ -647,6 +650,7 @@ namespace MajMusic.Infrastructure.Network
             {
                 RemoteUri = address,
                 Sha256 = string.IsNullOrWhiteSpace(sha256) ? null : sha256.ToLowerInvariant(),
+                Md5 = string.IsNullOrWhiteSpace(GetText(resource, "md5")) ? null : GetText(resource, "md5"),
                 Length = resource.TryGetProperty("length", out var length) && length.ValueKind == JsonValueKind.Number && length.TryGetInt64(out var bytes) && bytes >= 0 ? bytes : null
             };
         }

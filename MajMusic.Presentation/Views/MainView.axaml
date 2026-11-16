@@ -169,8 +169,19 @@
                 </Grid>
             </TabItem>
             <TabItem x:Name="DirectoriesTab" Header="目录">
-                <Grid Margin="0" RowDefinitions="38,*,Auto" RowSpacing="8">
-                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,32,32" ColumnSpacing="6">
+                <Grid Margin="0" RowDefinitions="Auto,38,*,Auto" RowSpacing="8">
+                    <Border Classes="card" Padding="10">
+                        <Grid ColumnDefinitions="Auto,150,*,32,Auto" ColumnSpacing="6">
+                            <TextBlock Text="媒体储存" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <arc:Select x:Name="MediaStorageModePicker" Grid.Column="1" ItemsSource="{Binding MediaStorageModes}"
+                                        TextSelector="{x:Static converters:MusicSelectLabels.MediaStorageMode}"
+                                        SelectedItem="{Binding SelectedMediaStorageMode, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" />
+                            <arc:Input x:Name="MediaStoragePathBox" Grid.Column="2" Text="{Binding MediaStoragePath, Mode=TwoWay}" Placeholder="媒体目录" IsEnabled="{Binding IsIdle}" />
+                            <arc:Button Grid.Column="3" Classes="icon" Content="…" Click="OnMediaStorageBrowseClicked" IsEnabled="{Binding IsIdle}" ToolTip.Tip="选择媒体目录" />
+                            <arc:Button Grid.Column="4" Content="保存读取" Command="{Binding SaveMediaStorageCommand}" />
+                        </Grid>
+                    </Border>
+                    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto,32,32" ColumnSpacing="6">
                         <TextBlock Text="本地目录" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
                         <arc:Button Grid.Column="1" Content="新增" Command="{Binding NewDirectoryCommand}" />
                         <arc:Button Grid.Column="2" Content="读取全部" Command="{Binding RescanCommand}" />
@@ -178,10 +189,10 @@
                         <arc:Button Grid.Column="4" Classes="icon" Content="‹" FontSize="20" Command="{Binding PreviousDirectoryPageCommand}" ToolTip.Tip="上一页" />
                         <arc:Button Grid.Column="5" Classes="icon" Content="›" FontSize="20" Command="{Binding NextDirectoryPageCommand}" ToolTip.Tip="下一页" />
                     </Grid>
-                    <Border Grid.Row="1" Classes="card" Padding="6">
+                    <Border Grid.Row="2" Classes="card" Padding="6">
                         <ListBox x:Name="DirectoryList" ItemsSource="{Binding VisibleDirectorySources}" SelectedItem="{Binding SelectedDirectory}" IsEnabled="{Binding IsIdle}" SizeChanged="OnDirectoryViewportSizeChanged" ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
                     </Border>
-                    <Border Grid.Row="2" Classes="card" Padding="10">
+                    <Border Grid.Row="3" Classes="card" Padding="10">
                         <StackPanel Spacing="6">
                             <Grid ColumnDefinitions="130,*,32" ColumnSpacing="6">
                                 <arc:Select x:Name="DirectoryKindPicker" ItemsSource="{Binding DirectoryKinds}" TextSelector="{x:Static converters:MusicSelectLabels.DirectoryKind}" SelectedItem="{Binding SelectedDirectoryKind}" HorizontalAlignment="Stretch" IsEnabled="{Binding IsIdle}" />
@@ -253,10 +264,13 @@
                         </Grid>
                     </Border>
                     <Border x:Name="CacheSettingsPanel" Classes="card" Padding="10">
-                        <Grid RowDefinitions="Auto,32" RowSpacing="8" ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                            <TextBlock Text="缓存" FontWeight="SemiBold" />
-                            <TextBlock Grid.Row="1" Text="{Binding DataDirectory}" Classes="muted" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DataDirectory}" />
-                            <arc:Button Grid.Row="1" Grid.Column="1" Content="清理缓存" Command="{Binding ClearCacheCommand}" />
+                        <Grid RowDefinitions="Auto,Auto,38" RowSpacing="8" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <TextBlock Text="本地音乐" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding DataDirectory}" Classes="muted" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DataDirectory}" />
+                            <arc:Select x:Name="LocalMediaCleanupPicker" Grid.Row="2" ItemsSource="{Binding LocalMediaCleanupChoices}"
+                                        TextSelector="{x:Static converters:MusicSelectLabels.LocalMediaCleanup}"
+                                        SelectedItem="{Binding SelectedLocalMediaCleanup, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                            <arc:Button Grid.Row="2" Grid.Column="1" Content="清理本地音乐" Command="{Binding CleanupLocalMediaCommand}" />
                         </Grid>
                     </Border>
                 </StackPanel>

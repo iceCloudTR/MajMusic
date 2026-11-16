@@ -11,10 +11,13 @@ using System.Text.Json;
 namespace MajMusic.Infrastructure.Downloads
 {
     /// <summary>Publishes validated audio and covers atomically, separating evictable cache entries from pinned downloads.</summary>
-    public sealed class MediaCache : IDisposable
+    public sealed partial class MediaCache : IDisposable
     {
         /// <summary>Stores managed objects and an index containing no resource addresses or credentials.</summary>
         private readonly string _root;
+
+        /// <summary>Keeps MajMusic's private aliases beside its own application data when media is shared.</summary>
+        private readonly string _indexRoot;
 
         /// <summary>Transports explicit downloads; its ownership stays with the composition root.</summary>
         private readonly HttpClient _client;
@@ -48,14 +51,16 @@ namespace MajMusic.Infrastructure.Downloads
         /// <param name="client">An anonymous or endpoint-isolated media client; the caller owns it.</param>
         /// <param name="policy">The shared online/offline gate.</param>
         /// <param name="bodyIdleTimeout">The maximum response-read idle interval, or null for thirty seconds.</param>
+        /// <param name="indexDirectory">The private alias directory, or null to retain the original cache-local index.</param>
         /// <exception cref="ArgumentException">The directory is empty.</exception>
         /// <exception cref="ArgumentOutOfRangeException">The idle interval is not positive.</exception>
-        public MediaCache(string root, HttpClient client, NetworkAccessPolicy policy, TimeSpan? bodyIdleTimeout = null)
+        public MediaCache(string root, HttpClient client, NetworkAccessPolicy policy, TimeSpan? bodyIdleTimeout = null, string? indexDirectory = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(root);
             ArgumentNullException.ThrowIfNull(client);
             ArgumentNullException.ThrowIfNull(policy);
             _root = Path.GetFullPath(root);
+            _indexRoot = Path.GetFullPath(indexDirectory ?? root);
             _client = client;
             _policy = policy;
             _bodyIdleTimeout = bodyIdleTimeout ?? TimeSpan.FromSeconds(30);
@@ -140,10 +145,11 @@ namespace MajMusic.Infrastructure.Downloads
         {
             ArgumentNullException.ThrowIfNull(resource);
             var expectedHash = NormalizeHash(resource.Sha256);
+            keepOffline = true;
             if (resource.LocalPath is { Length: > 0 } localPath && File.Exists(localPath))
             {
                 var absolutePath = Path.GetFullPath(localPath);
-                var objectRoot = Path.Combine(_root, "objects") + Path.DirectorySeparatorChar;
+                var objectRoot = Path.Combine(_root, "Objects") + Path.DirectorySeparatorChar;
                 if (!absolutePath.StartsWith(objectRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
                 {
                     await ValidateFileAsync(absolutePath, expectedHash, resource.Length, cancellationToken).ConfigureAwait(false);
@@ -653,7 +659,11 @@ namespace MajMusic.Infrastructure.Downloads
                 return _index;
             }
 
-            var indexPath = Path.Combine(_root, "index.json");
+            var indexPath = Path.Combine(_indexRoot, "index.json");
+            if (!File.Exists(indexPath) && File.Exists(Path.Combine(_root, "index.json")))
+            {
+                indexPath = Path.Combine(_root, "index.json");
+            }
             if (!File.Exists(indexPath))
             {
                 _index = new Dictionary<string, CacheEntry>(StringComparer.Ordinal);
@@ -728,8 +738,8 @@ namespace MajMusic.Infrastructure.Downloads
         /// <returns>A task representing the completed index publication.</returns>
         private async Task SaveIndexAsync(Dictionary<string, CacheEntry> candidate, CancellationToken cancellationToken)
         {
-            Directory.CreateDirectory(_root);
-            var temporary = Path.Combine(_root, $"index.{Guid.NewGuid():N}.tmp");
+            Directory.CreateDirectory(_indexRoot);
+            var temporary = Path.Combine(_indexRoot, $"index.{Guid.NewGuid():N}.tmp");
             try
             {
                 await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous))
@@ -738,7 +748,7 @@ namespace MajMusic.Infrastructure.Downloads
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                File.Move(temporary, Path.Combine(_root, "index.json"), true);
+                File.Move(temporary, Path.Combine(_indexRoot, "index.json"), true);
                 _index = candidate;
             }
             finally
@@ -753,7 +763,9 @@ namespace MajMusic.Infrastructure.Downloads
         private string GetObjectPath(string hash)
         {
             var normalized = NormalizeHash(hash) ?? throw new InvalidDataException("A cache object requires a SHA-256 digest.");
-            return Path.Combine(_root, "objects", normalized[..2], normalized);
+            var canonical = Path.Combine(_root, "Objects", normalized[..2], normalized);
+            var legacy = Path.Combine(_root, "objects", normalized[..2], normalized);
+            return !File.Exists(canonical) && File.Exists(legacy) ? legacy : canonical;
         }
 
         /// <summary>Validates a digest without allowing it to become a filesystem path fragment.</summary>

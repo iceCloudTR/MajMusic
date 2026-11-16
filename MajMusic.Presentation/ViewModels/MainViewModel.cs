@@ -141,6 +141,7 @@ namespace MajMusic.Presentation.ViewModels
             InitializePanelPagingCommands();
             InitializePlaybackModeCommands();
             InitializePlaylistManagementCommands();
+            InitializeLocalMediaCleanupCommands();
             _playback.StateChanged += OnPlaybackStateChanged;
         }
 
@@ -394,6 +395,7 @@ namespace MajMusic.Presentation.ViewModels
                 await PrepareAppearanceSettingsAsync();
                 await PrepareCardLayoutSettingsAsync();
                 _settings = LocalDirectorySettings.Normalize(await _workspace.LoadSettingsAsync(_lifetime.Token));
+                InitializeMajdataPlaySettings();
                 _lifetime.Token.ThrowIfCancellationRequested();
                 RestoreAppearanceSettings(_settings.Appearance);
                 RestoreCardLayoutSettings(_settings.CardLayout);
@@ -402,6 +404,17 @@ namespace MajMusic.Presentation.ViewModels
                     ?? _settings.Endpoints.FirstOrDefault();
                 ReloadEndpointProfiles(endpoint?.Id);
                 ReloadDirectorySources();
+                if (_workspace is IMajdataPlayWorkspace mediaStorage)
+                {
+                    try
+                    {
+                        await mediaStorage.RefreshMajdataPlayAsync(_lifetime.Token);
+                    }
+                    catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException or System.Data.Common.DbException)
+                    {
+                        System.Diagnostics.Trace.TraceWarning("The selected media directory could not be refreshed: {0}", exception.GetType().Name);
+                    }
+                }
                 OnPropertyChanged(nameof(LocalDirectoriesText));
                 await ReloadPlaylistsAsync();
                 InitializeHomeState();
@@ -1364,17 +1377,23 @@ namespace MajMusic.Presentation.ViewModels
                     RefreshVisibleTracks();
                 }
 
-                Status = $"已保存离线：{track.Title}";
+                Status = $"已在本地：{track.Title}";
             }
         }
 
-        /// <summary>Clears evictable resources without removing imports or pinned downloads.</summary>
+        /// <summary>Explicitly removes managed local music without changing imported source directories.</summary>
         /// <returns>A task representing cleanup.</returns>
         private async Task ClearCacheAsync()
         {
+            if (_workspace is ITrackMediaRemovalWorkspace)
+            {
+                await CleanupLocalMediaCoreAsync(null);
+                return;
+            }
+
             await _workspace.ClearCacheAsync(_lifetime.Token);
             await ResetCardDownloadProgress();
-            Status = "缓存已清理";
+            Status = "本地音乐已清理";
         }
 
         /// <summary>Resumes the loaded resource or starts the selected track when nothing is paused.</summary>
@@ -1507,13 +1526,13 @@ namespace MajMusic.Presentation.ViewModels
         private void RefreshCommands()
         {
             foreach (var command in new[] { SearchCommand, CreatePlaylistCommand, AddToPlaylistCommand, OpenPlaylistCommand, ShowAllCommand, SaveSettingsCommand,
-                SynchronizeCommand, DownloadCommand, ClearCacheCommand, PlayCommand, PauseCommand, NextCommand, PreviousCommand,
+                SynchronizeCommand, DownloadCommand, ClearCacheCommand, CleanupLocalMediaCommand, PlayCommand, PauseCommand, NextCommand, PreviousCommand,
                 ToggleFavoriteCommand, OpenFavoritesCommand, RescanCommand, NewEndpointCommand, RemoveEndpointCommand,
                 LoginCommand, GuestCommand, SynchronizeAllCommand, RefreshCloudPlaylistsCommand, RecommendationsCommand,
                 MoreRecommendationsCommand, PreviousRecommendationPageCommand, NextRecommendationPageCommand,
                 PreviousLibraryPageCommand, NextLibraryPageCommand, NewAccountCommand,
                 SaveAccountCommand, RemoveAccountCommand, NewDirectoryCommand, SaveDirectoryCommand, ScanDirectoryCommand, RemoveDirectoryCommand,
-                RefreshOutputDevicesCommand, SaveAudioSettingsCommand, TogglePlayPauseCommand,
+                RefreshOutputDevicesCommand, SaveAudioSettingsCommand, SaveMediaStorageCommand, TogglePlayPauseCommand,
                 ToggleShuffleCommand, CycleRepeatModeCommand,
                 PreviousPlaylistPageCommand, NextPlaylistPageCommand, PreviousDirectoryPageCommand, NextDirectoryPageCommand,
                 ShowRecommendationsModeCommand, ShowPlaylistsModeCommand, ShowLibraryModeCommand, BeginSearchCommand, CancelSearchCommand })

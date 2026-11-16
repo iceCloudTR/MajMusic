@@ -226,6 +226,8 @@ namespace MajMusic.Infrastructure.Application
                 var merged = current with
                 {
                     Duration = track.Duration ?? current.Duration,
+                            LocalMediaSavedAt = current.LocalMediaSavedAt,
+                            MajInfoJson = track.MajInfoJson ?? current.MajInfoJson,
                     AudioInfo = MergeStreamInfo(track.AudioInfo, current.AudioInfo),
                     AudioMetadataLength = track.AudioMetadataLength ?? current.AudioMetadataLength,
                     AudioMetadataLastWriteUtcTicks = track.AudioMetadataLastWriteUtcTicks ?? current.AudioMetadataLastWriteUtcTicks
@@ -249,7 +251,9 @@ namespace MajMusic.Infrastructure.Application
             IProgress<MediaTransferProgress>? progress = null)
         {
             var resource = ScopeResourceForCache(track, (cover ? track.Cover : track.Audio)!);
-            var cached = await _cache.TryGetCachedAsync(resource, keepOffline, cancellationToken).ConfigureAwait(false);
+            var cached = await TryResolveSharedMediaAsync(track, cover, cancellationToken).ConfigureAwait(false)
+                ?? await _cache.TryGetCachedAsync(resource, true, cancellationToken).ConfigureAwait(false)
+                ?? await _defaultCache.TryGetCachedAsync(resource, true, cancellationToken).ConfigureAwait(false);
             if (cached is not null)
             {
                 return cached;
@@ -268,7 +272,7 @@ namespace MajMusic.Infrastructure.Application
                 return await _cache.GetAsync(resource with { RemoteUri = null }, keepOffline, lifetime.Token, progress: progress).ConfigureAwait(false);
             }
 
-            return await _cache.GetAsync(resource, keepOffline, lifetime.Token, connection.MediaClient, progress).ConfigureAwait(false);
+            return await _cache.GetAsync(resource, true, lifetime.Token, connection.MediaClient, progress).ConfigureAwait(false);
         }
 
         /// <summary>Persists a recommendation page while retaining already parsed or downloaded data for its revision.</summary>
@@ -295,7 +299,10 @@ namespace MajMusic.Infrastructure.Application
                         {
                             Audio = MergeResource(track.Audio, current.Audio),
                             Cover = track.Cover is null ? null : MergeResource(track.Cover, current.Cover),
+                            Chart = track.Chart is null ? current.Chart : MergeResource(track.Chart, current.Chart),
                             Duration = track.Duration ?? current.Duration,
+                            LocalMediaSavedAt = current.LocalMediaSavedAt,
+                            MajInfoJson = track.MajInfoJson ?? current.MajInfoJson,
                             AudioInfo = MergeStreamInfo(track.AudioInfo, current.AudioInfo),
                             AudioMetadataLength = current.AudioMetadataLength,
                             AudioMetadataLastWriteUtcTicks = current.AudioMetadataLastWriteUtcTicks
