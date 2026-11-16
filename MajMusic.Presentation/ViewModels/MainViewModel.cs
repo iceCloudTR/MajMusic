@@ -1008,6 +1008,8 @@ namespace MajMusic.Presentation.ViewModels
             _libraryPageIndex = preservePage ? Math.Clamp(_libraryPageIndex, 0, Math.Max(0, (Tracks.Count - 1) / LibraryPageSize)) : 0;
             RefreshVisibleTracks();
             OnPropertyChanged(nameof(LibrarySummary));
+            _presentedBrowseVersion = _homeVersion;
+            OnPropertyChanged(nameof(IsBrowsePlaceholderVisible));
         }
 
         /// <summary>Refreshes local playlists while preserving the selected identity.</summary>

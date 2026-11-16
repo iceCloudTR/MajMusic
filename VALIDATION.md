@@ -29,6 +29,7 @@ Arc 界面检查：
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- headless alignment endpoint-cards-layout card-download-layout arc-responsive
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- arc-motion
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- surface-motion browse-loading appearance
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- browse-placeholder-lifecycle source-transport
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- cover-preload browse-entry catalog-read-ordering
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- recommendation-paging recommendation-paging-layout recommendation-playback card-feedback
 dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- playback-region-motion playlist-mirrors context-actions context-menus-layout
@@ -39,6 +40,8 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- playback-region-mot
 布局检查关闭动画以固定截图。`arc-motion` 使用应用默认的完整动效，逐帧检查按钮按压与恢复、模式滑块、页面横向位移，以及搜索框从右侧图标展开、收起时的宽度、锚点与菜单对齐；同时验证快速反转和窗口缩放后的布局。中间帧保存在 `.work/ui-arc-motion-*.png`。
 
 `surface-motion` 用 Arc 可控时钟检查横向推移、缓入缓出速度、像素尺寸、快切、中断与快照释放；`browse-loading` 检查真实点击后立即出现有限骨架、慢请求隔离及首屏卡片懒创建，加载完成直接替换占位；`appearance` 检查三种外观的即时应用、保存、重启恢复及深浅渲染。
+
+`browse-placeholder-lifecycle` 逐帧检查慢加载、失败和空推荐时保留完整占位、刷新时保留已有内容，以及横移时新面板不透出旧封面、切换结束后不残留旧内容。`source-transport` 使用本机监听验证实际请求 UA、登录 Cookie、重定向隔离与取消；Windows 同时检查系统 WinHTTP 的连接策略。
 
 `cover-preload` 检查有限封面预热、共享请求、超时、取消和独立图片引用；`browse-entry` 在真实卡片和横移中延迟查询及封面，检查动画中占位保持、首次入场已有封面、返回时复用、过期结果隔离，以及顶部导航的滑块和页面使用缓入缓出节奏。
 

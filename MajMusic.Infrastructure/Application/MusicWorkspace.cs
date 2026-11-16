@@ -64,7 +64,11 @@ namespace MajMusic.Infrastructure.Application
             _importer = new LocalMusicImporter(Path.Combine(DataDirectory, "Library"));
             _apiClient = apiClient;
             _ownsResourceClient = resourceClient is null;
-            _resourceClient = resourceClient ?? new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+            _resourceClient = resourceClient ?? SourceHttpTransportFactory.CreateAnonymousClient();
+            if (_ownsResourceClient)
+            {
+                _resourceClient.Timeout = TimeSpan.FromMinutes(5);
+            }
             _cache = new MediaCache(Path.Combine(DataDirectory, "Cache"), _resourceClient, _networkPolicy);
         }
 

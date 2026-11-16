@@ -23,6 +23,7 @@
 - 切歌时封面和底部歌曲信息平滑衔接，播放、暂停图标在原位置过渡。
 - 已同步到 MajNet 的“我喜欢”共用同一入口，保留已有本地与在线歌曲。
 - 提前准备推荐、歌单和曲库的首屏歌曲与封面；加载较慢时保持卡片占位，横移结束后再更新，只创建实际浏览到的歌曲卡片。
+- 推荐加载失败或暂无内容时保留卡片占位，重新加载已有内容时保留原歌曲。
 - 深色、浅色与跟随系统外观，在设置中即时切换并保存。
 
 ## 开发运行
@@ -35,6 +36,8 @@ dotnet run --project MajMusic/MajMusic.csproj
 ```
 
 Windows 构建自带 LibVLC；Linux 和 macOS 需要安装对应的 LibVLC 运行库。当前桌面开发验证环境为 Windows，移动端宿主仍在开发计划中。
+
+Windows 网络请求使用系统 WinHTTP，其他平台使用对应的 .NET 网络接口；兼容请求使用 `MajdataPlay/2.1.0` UA，各接入点独立管理登录会话。
 
 界面采用 TKCode.Arc 1.1.0 和 Avalonia 12.1.5，共享现有 ViewModel、命令与服务。窄屏界面已使用 Arc.Mobile 组件适配安全区、软键盘和触摸区域；Android/iOS 应用宿主、后台音频服务和系统媒体控制仍需接入。[上游移动支持状态](https://github.com/AIDotNet/TKCode.Arc#status-and-compatibility)目前也区分了桌面手机框预览与实机验证。
 

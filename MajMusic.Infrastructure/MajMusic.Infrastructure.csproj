@@ -2,5 +2,6 @@
     <ItemGroup>
         <ProjectReference Include="../MajMusic.Core/MajMusic.Core.csproj" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.15" />
+        <PackageReference Include="System.Net.Http.WinHttpHandler" Version="10.0.15" />
     </ItemGroup>
 </Project>

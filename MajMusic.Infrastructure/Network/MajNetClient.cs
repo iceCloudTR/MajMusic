@@ -60,7 +60,7 @@ namespace MajMusic.Infrastructure.Network
             _apiRoot = new Uri(endpoint.BaseUri.AbsoluteUri.TrimEnd('/') + "/");
             _policy = policy;
             _ownsClient = client is null;
-            _client = client ?? new HttpClient(CreateAnonymousTransport());
+            _client = client ?? SourceHttpTransportFactory.CreateAnonymousClient();
         }
 
         /// <summary>Reads server identity, falling back to the configured identity on an older server's 404.</summary>
@@ -315,7 +315,8 @@ namespace MajMusic.Infrastructure.Network
         /// <returns>A client owned and disposed by the caller.</returns>
         public HttpClient CreateMediaClient(HttpMessageHandler? transport = null)
         {
-            return new HttpClient(new EndpointSessionHandler(_apiRoot, _cookies, _policy, transport ?? CreateAnonymousTransport()));
+            return new HttpClient(new EndpointSessionHandler(_apiRoot, _cookies, _policy, transport ?? CreateAnonymousTransport(),
+                transport is null ? SourceHttpTransportFactory.UserAgent : null));
         }
 
         /// <summary>Creates an isolated media client around a caller-owned test transport.</summary>
@@ -354,7 +355,7 @@ namespace MajMusic.Infrastructure.Network
         /// <returns>The isolated transport.</returns>
         private static HttpMessageHandler CreateAnonymousTransport()
         {
-            return new HttpClientHandler { UseCookies = false, AllowAutoRedirect = false };
+            return SourceHttpTransportFactory.CreateAnonymousHandler();
         }
 
         /// <summary>Sends one API request within the current online generation.</summary>

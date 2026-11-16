@@ -80,12 +80,12 @@
     <theme:MusicSurfaceHost x:Name="BrowseSurfaceTransition" ChangeVersion="{Binding BrowseTransitionVersion}"
                             SlideDirection="{Binding BrowseTransitionDirection}"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-        <Grid x:Name="BrowseSurface" SizeChanged="OnBrowseSizeChanged" ClipToBounds="True">
-            <Grid x:Name="BrowseContentPresentation" IsVisible="{Binding !IsBrowseLoading}"
-                              IsHitTestVisible="{Binding !IsBrowseLoading}" IsEnabled="{Binding !IsBrowseLoading}">
+        <Grid x:Name="BrowseSurface" SizeChanged="OnBrowseSizeChanged" ClipToBounds="True" Background="{arc:ArcDesignTokenResource Surface}">
+            <Grid x:Name="BrowseContentPresentation" IsVisible="{Binding !IsBrowsePlaceholderVisible}"
+                              IsHitTestVisible="{Binding !IsBrowsePlaceholderVisible}" IsEnabled="{Binding !IsBrowsePlaceholderVisible}">
                 <Grid>
                     <ListBox x:Name="CardRowsList" Classes="browseList" ItemsSource="{Binding PresentationRows, RelativeSource={RelativeSource AncestorType=views:BrowseTracksView}}" Focusable="True" AutoScrollToSelectedItem="False"
-                             IsVisible="{Binding !IsBrowseLoading}"
+                             IsVisible="{Binding !IsBrowsePlaceholderVisible}"
                              ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -95,8 +95,8 @@
                     </ListBox>
                 </Grid>
             </Grid>
-            <Grid x:Name="BrowseSkeletonPresentation" IsVisible="{Binding IsBrowseLoading}" IsHitTestVisible="False">
-                <views:BrowseSkeletonView x:Name="BrowseSkeletonSurface" VerticalAlignment="Top" />
+            <Grid x:Name="BrowseSkeletonPresentation" IsVisible="{Binding IsBrowsePlaceholderVisible}" IsHitTestVisible="False" ClipToBounds="True">
+                <views:BrowseSkeletonView x:Name="BrowseSkeletonSurface" />
             </Grid>
         </Grid>
     </theme:MusicSurfaceHost>

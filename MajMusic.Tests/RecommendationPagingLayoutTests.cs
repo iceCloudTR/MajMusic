@@ -87,7 +87,6 @@ namespace MajMusic.Tests
                 Pump(window);
                 var browser = view.GetVisualDescendants().OfType<BrowseTracksView>().Single();
                 var list = browser.FindControl<ListBox>("CardRowsList")!;
-                var scroll = list.GetVisualDescendants().OfType<ScrollViewer>().Single(item => ReferenceEquals(item.TemplatedParent, list));
                 var surface = browser.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!;
                 var viewport = browser.Bounds;
                 var requests = workspace.RecommendationRequests.Count;
@@ -105,6 +104,7 @@ namespace MajMusic.Tests
                 TestAssert.True(list.Items.Count == model.BrowseRows.Count + 1 && list.Items[^1] is RecommendationFooterRow
                     && !browser.GetVisualDescendants().OfType<Grid>().Any(item => item.Name == "RecommendationPagination"),
                     "A multipage recommendation footer must be the actual final scrolling item, outside the initial viewport.");
+                var scroll = list.GetVisualDescendants().OfType<ScrollViewer>().Single(item => ReferenceEquals(item.TemplatedParent, list));
                 var footer = ScrollToFooter(window, browser, list);
                 TestAssert.True(scroll.Offset.Y > 0 && browser.Bounds == viewport,
                     "Reaching the footer must scroll music content without reducing the browser viewport.");

@@ -156,12 +156,12 @@ namespace MajMusic.Presentation.Views
             {
                 ResetNavigationOffset();
             }
-            else if (e.PropertyName is nameof(MainViewModel.IsBrowseLoading) or nameof(MainViewModel.BrowseColumns))
+            else if (e.PropertyName is nameof(MainViewModel.IsBrowsePlaceholderVisible) or nameof(MainViewModel.BrowseColumns))
             {
                 UpdateSkeletonViewport();
             }
 
-            if (e.PropertyName is nameof(MainViewModel.IsBrowseLoading) or nameof(MainViewModel.CardTracks)
+            if (e.PropertyName is nameof(MainViewModel.IsBrowsePlaceholderVisible) or nameof(MainViewModel.CardTracks)
                 or nameof(MainViewModel.HasRecommendationPages) or nameof(MainViewModel.RecommendationCurrentPageTrackCount)
                 or nameof(MainViewModel.IsRecommendationsMode))
             {
@@ -173,7 +173,7 @@ namespace MajMusic.Presentation.Views
         private void UpdateRecommendationFooter()
         {
             var owner = _browseOwner;
-            _rowsPresentation?.SetFooterVisible(owner is { HasRecommendationPages: true, IsBrowseLoading: false }
+            _rowsPresentation?.SetFooterVisible(owner is { HasRecommendationPages: true, IsBrowsePlaceholderVisible: false }
                 && owner.CardTracks.Count == owner.RecommendationCurrentPageTrackCount
                 && this.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!.TransitionProgress >= 1);
         }
@@ -228,7 +228,7 @@ namespace MajMusic.Presentation.Views
         /// <summary>Creates placeholders only for an actively loading viewport.</summary>
         private void UpdateSkeletonViewport()
         {
-            if (TopLevel.GetTopLevel(this) is not null && _browseOwner is { IsBrowseLoading: true } owner)
+            if (TopLevel.GetTopLevel(this) is not null && _browseOwner is { IsBrowsePlaceholderVisible: true } owner)
             {
                 this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.SetViewport(_browseViewport, owner.BrowseColumns);
             }
@@ -301,7 +301,7 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The navigation key pressed in the list or one of its cards.</param>
         private async void OnBrowseKeyDown(object? sender, KeyEventArgs e)
         {
-            if (DataContext is not MainViewModel owner || owner.IsBrowseLoading || owner.CardTracks.Count == 0 || e.KeyModifiers != KeyModifiers.None
+            if (DataContext is not MainViewModel owner || owner.IsBrowsePlaceholderVisible || owner.CardTracks.Count == 0 || e.KeyModifiers != KeyModifiers.None
                 || e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End))
             {
                 return;

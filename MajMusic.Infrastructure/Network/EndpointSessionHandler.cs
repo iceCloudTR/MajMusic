@@ -16,18 +16,22 @@ namespace MajMusic.Infrastructure.Network
 
         /// <summary>Applies the user's online choice to every redirect hop.</summary>
         private readonly NetworkAccessPolicy _policy;
+        /// <summary>Identifies only production-owned media requests without rewriting a supplied test transport's headers.</summary>
+        private readonly string? _userAgent;
 
         /// <summary>Constructs a redirect-aware isolated media transport.</summary>
         /// <param name="apiRoot">The configured API root.</param>
         /// <param name="cookies">The endpoint's isolated cookie container.</param>
         /// <param name="policy">The shared online gate.</param>
         /// <param name="innerHandler">An anonymous transport without automatic redirects or cookies.</param>
-        public EndpointSessionHandler(Uri apiRoot, CookieContainer cookies, NetworkAccessPolicy policy, HttpMessageHandler innerHandler)
+        /// <param name="userAgent">The application identity for owned transports, or null for a caller-supplied transport.</param>
+        public EndpointSessionHandler(Uri apiRoot, CookieContainer cookies, NetworkAccessPolicy policy, HttpMessageHandler innerHandler, string? userAgent = null)
             : base(innerHandler)
         {
             _apiRoot = apiRoot;
             _cookies = cookies;
             _policy = policy;
+            _userAgent = userAgent;
         }
 
         /// <summary>Sends a clean media GET and follows validated redirects without forwarding credentials.</summary>
@@ -44,6 +48,11 @@ namespace MajMusic.Infrastructure.Network
             {
                 MajNetClient.ValidateAddress(address);
                 using var cleanRequest = new HttpRequestMessage(HttpMethod.Get, address);
+                if (_userAgent is not null)
+                {
+                    cleanRequest.Headers.UserAgent.ParseAdd(_userAgent);
+                }
+
                 if (IsSameOrigin(address, _apiRoot))
                 {
                     var cookie = _cookies.GetCookieHeader(address);

@@ -43,6 +43,8 @@ namespace MajMusic.Presentation.ViewModels
         private long _browseLoadOwner;
         /// <summary>Retains the current target's loading state independently of the displayed catalog.</summary>
         private bool _isBrowseLoading;
+        /// <summary>Identifies the browsing intent whose complete content has actually been published.</summary>
+        private long _presentedBrowseVersion = -1;
         /// <summary>Preserves finite feeds separately for each source/account choice during this view lifetime.</summary>
         private readonly Dictionary<string, RecommendationSnapshot> _homeSnapshots = new(StringComparer.Ordinal);
         /// <summary>Identifies the account whose cached feed is currently attached.</summary>
@@ -100,6 +102,9 @@ namespace MajMusic.Presentation.ViewModels
         public Task HomeUpdate => _homeUpdate;
         /// <summary>Gets whether the latest browsing target is still preparing its content.</summary>
         public bool IsBrowseLoading => _isBrowseLoading;
+        /// <summary>Gets whether the current target still needs placeholders rather than old or unavailable content.</summary>
+        public bool IsBrowsePlaceholderVisible => _presentedBrowseVersion != _homeVersion
+            || IsRecommendationsMode && CardTracks.Count == 0;
         /// <summary>Gets the transition generation published immediately when the user chooses new content.</summary>
         public long BrowseTransitionVersion => _browseTransitionVersion;
         /// <summary>Gets the horizontal direction of the latest home navigation, positive for forward.</summary>
@@ -162,6 +167,7 @@ namespace MajMusic.Presentation.ViewModels
             var wasSearching = IsSearching;
             var playlistId = mode == HomeBrowseMode.Playlists ? SelectedPlaylist?.Id : null;
             var contentChanged = previousMode != mode || wasSearching || _activePlaylistId != playlistId;
+            var retainPresentedContent = !contentChanged && _presentedBrowseVersion == _homeVersion && CardTracks.Count > 0;
             _changingHomeState = true;
             try
             {
@@ -177,6 +183,11 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             _homeVersion++;
+            if (retainPresentedContent)
+            {
+                _presentedBrowseVersion = _homeVersion;
+            }
+
             _homeUpdateCancellation?.Cancel();
             var loadingOwner = BeginBrowseLoad(contentChanged, wasSearching ? -1 : Math.Sign((int)mode - (int)previousMode));
             TryPublishPreparedPreview(loadingOwner);
@@ -306,6 +317,7 @@ namespace MajMusic.Presentation.ViewModels
                 OnPropertyChanged(nameof(IsBrowseLoading));
             }
 
+            OnPropertyChanged(nameof(IsBrowsePlaceholderVisible));
             return owner;
         }
 
