@@ -2,13 +2,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:theme="using:MajMusic.Presentation.Theme"
+             xmlns:views="using:MajMusic.Presentation.Views"
              x:Class="MajMusic.Presentation.Views.SongCardSkeleton"
              IsHitTestVisible="False" Focusable="False">
     <UserControl.Styles>
         <Style Selector="Grid.skeletonInformation">
             <Setter Property="Margin" Value="12" />
         </Style>
-        <Style Selector="UserControl.small Grid.skeletonInformation">
+        <Style Selector="views|SongCardSkeleton.small Grid.skeletonInformation">
             <Setter Property="Margin" Value="4" />
         </Style>
     </UserControl.Styles>

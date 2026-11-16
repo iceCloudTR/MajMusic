@@ -5,6 +5,7 @@
              xmlns:ac="using:Avalonia.Data.Converters"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:theme="using:MajMusic.Presentation.Theme"
+             xmlns:views="using:MajMusic.Presentation.Views"
              x:Class="MajMusic.Presentation.Views.SongCard"
              x:Name="CardRoot"
              x:DataType="vm:SongCardViewModel">
@@ -47,6 +48,7 @@
         <Style Selector="Grid.cardMetadata">
             <Setter Property="Margin" Value="6" />
             <Setter Property="RowSpacing" Value="2" />
+            <Setter Property="ClipToBounds" Value="True" />
         </Style>
         <Style Selector="TextBlock.cardTitle">
             <Setter Property="FontSize" Value="13" />
@@ -56,47 +58,108 @@
         </Style>
         <Style Selector="TextBlock.cardSource, TextBlock.cardDuration, TextBlock.cardDownloadStatus">
             <Setter Property="FontSize" Value="10" />
+            <Setter Property="LineHeight" Value="12" />
+            <Setter Property="MaxHeight" Value="12" />
+            <Setter Property="MaxLines" Value="1" />
         </Style>
         <Style Selector="TextBlock.cardArtist">
             <Setter Property="FontSize" Value="11" />
+            <Setter Property="LineHeight" Value="14" />
+            <Setter Property="MaxHeight" Value="14" />
+            <Setter Property="MaxLines" Value="1" />
         </Style>
-        <Style Selector="UserControl.compact TextBlock.cardTitle">
+        <Style Selector="Grid.cardDownloadRow">
+            <Setter Property="MinHeight" Value="14" />
+            <Setter Property="ColumnSpacing" Value="4" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+        <Style Selector="theme|DownloadCompletionCue.cardDownloadCue">
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
+        </Style>
+        <Style Selector="Grid.cardAudio">
+            <Setter Property="MaxHeight" Value="12" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+        <Style Selector="Grid.cardAudio TextBlock">
+            <Setter Property="LineHeight" Value="12" />
+            <Setter Property="MaxLines" Value="1" />
+        </Style>
+        <Style Selector="Grid.cardFooter">
+            <Setter Property="ColumnSpacing" Value="6" />
+            <Setter Property="MaxHeight" Value="12" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+        <Style Selector="views|SongCard.compact TextBlock.cardTitle">
             <Setter Property="MaxHeight" Value="16" />
             <Setter Property="MaxLines" Value="1" />
         </Style>
-        <Style Selector="UserControl.compact.tight TextBlock.cardArtist, UserControl.compact.tight Grid.cardAudio">
+        <Style Selector="views|SongCard.compact.tight TextBlock.cardArtist, views|SongCard.compact.tight Grid.cardAudio">
             <Setter Property="IsVisible" Value="False" />
         </Style>
-        <Style Selector="UserControl.small Grid.cardMetadata">
+        <Style Selector="views|SongCard.compact.tight Grid.cardMetadata">
             <Setter Property="Margin" Value="4" />
             <Setter Property="RowSpacing" Value="1" />
         </Style>
-        <Style Selector="UserControl.small TextBlock.cardTitle">
+        <Style Selector="views|SongCard.small Grid.cardMetadata">
+            <Setter Property="Margin" Value="4" />
+            <Setter Property="RowSpacing" Value="1" />
+        </Style>
+        <Style Selector="views|SongCard.small TextBlock.cardTitle">
             <Setter Property="FontSize" Value="11" />
             <Setter Property="LineHeight" Value="14" />
             <Setter Property="MaxHeight" Value="28" />
         </Style>
-        <Style Selector="UserControl.small.tight TextBlock.cardTitle">
+        <Style Selector="views|SongCard.small.tight TextBlock.cardTitle">
             <Setter Property="FontSize" Value="10" />
             <Setter Property="LineHeight" Value="13" />
             <Setter Property="MaxHeight" Value="13" />
             <Setter Property="MaxLines" Value="1" />
         </Style>
-        <Style Selector="UserControl.small TextBlock.cardArtist">
+        <Style Selector="views|SongCard.small TextBlock.cardArtist">
             <Setter Property="FontSize" Value="9" />
             <Setter Property="LineHeight" Value="11" />
             <Setter Property="MaxHeight" Value="11" />
         </Style>
-        <Style Selector="UserControl.small.tiny TextBlock.cardArtist, UserControl.small Grid.cardAudio">
+        <Style Selector="views|SongCard.small.tiny TextBlock.cardArtist, views|SongCard.small Grid.cardAudio">
             <Setter Property="IsVisible" Value="False" />
         </Style>
-        <Style Selector="UserControl.small TextBlock.cardSource, UserControl.small TextBlock.cardDuration, UserControl.small TextBlock.cardDownloadStatus">
+        <Style Selector="views|SongCard.small TextBlock.cardSource, views|SongCard.small TextBlock.cardDuration, views|SongCard.small TextBlock.cardDownloadStatus">
             <Setter Property="FontSize" Value="9" />
         </Style>
+        <Style Selector="views|SongCard.small.tight Grid.cardFooter, views|SongCard.compact.tight Grid.cardFooter">
+            <Setter Property="ColumnSpacing" Value="3" />
+        </Style>
+        <Style Selector="views|SongCard.tiny Grid.cardMetadata">
+            <Setter Property="Margin" Value="3" />
+            <Setter Property="RowSpacing" Value="0" />
+        </Style>
+        <Style Selector="views|SongCard.tiny TextBlock.cardTitle">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="LineHeight" Value="13" />
+            <Setter Property="MaxHeight" Value="13" />
+            <Setter Property="MaxLines" Value="1" />
+        </Style>
+        <Style Selector="views|SongCard.tiny TextBlock.cardArtist, views|SongCard.tiny Grid.cardAudio">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="views|SongCard.tiny Grid.cardDownloadRow">
+            <Setter Property="MinHeight" Value="12" />
+            <Setter Property="ColumnSpacing" Value="2" />
+        </Style>
+        <Style Selector="views|SongCard.tiny theme|DownloadCompletionCue.cardDownloadCue">
+            <Setter Property="Width" Value="12" />
+            <Setter Property="Height" Value="12" />
+        </Style>
+        <Style Selector="views|SongCard.tiny TextBlock.cardSource, views|SongCard.tiny TextBlock.cardDuration, views|SongCard.tiny TextBlock.cardDownloadStatus">
+            <Setter Property="FontSize" Value="9" />
+            <Setter Property="LineHeight" Value="11" />
+            <Setter Property="MaxHeight" Value="11" />
+        </Style>
     </UserControl.Styles>
-    <Grid>
+    <Grid ClipToBounds="True">
         <arc:Button x:Name="SongTile" Variant="Ghost" IsPressScaleEnabled="False" Classes="songTile" Classes.selected="{Binding IsSelected}" Click="OnSelectClicked"
-                DoubleTapped="OnPlayDoubleTapped" ToolTip.Tip="{Binding Track.Title}" AutomationProperties.Name="{Binding Track.Title}">
+                ToolTip.Tip="{Binding Track.Title}" AutomationProperties.Name="{Binding Track.Title}">
             <Border Width="{Binding CardContentWidth, ElementName=CardRoot}" CornerRadius="10.75" ClipToBounds="True">
                 <Grid ClipToBounds="True">
                     <Grid x:Name="CardArtGrid" ColumnDefinitions="*,*">
@@ -117,19 +180,19 @@
                                 </Grid.RowDefinitions>
                                 <Border x:Name="CardDownloadFill" Grid.Row="1" Background="{DynamicResource MusicDownloadBrush}" />
                             </Grid>
-                            <Grid Classes="cardMetadata" RowDefinitions="Auto,Auto,*,Auto,Auto">
+                            <Grid Classes="cardMetadata" RowDefinitions="Auto,Auto,*,Auto,Auto,Auto">
                                 <TextBlock Classes="cardTitle" Text="{Binding Track.Title}" FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
                                 <TextBlock Grid.Row="1" Text="{Binding Track.Artist}" Classes="secondary cardArtist" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Track.Artist}" />
-                                <Grid Grid.Row="2" ColumnDefinitions="14,*" ColumnSpacing="4" IsVisible="{Binding HasDownloadStatus}" VerticalAlignment="Bottom" MinHeight="14">
-                                    <theme:DownloadCompletionCue x:Name="CardCompletionCue" Width="14" Height="14" IsCompleted="{Binding IsDownloaded}"
+                                <Grid Grid.Row="3" Classes="cardDownloadRow" ColumnDefinitions="Auto,*" IsVisible="{Binding HasDownloadStatus}" VerticalAlignment="Bottom">
+                                    <theme:DownloadCompletionCue x:Name="CardCompletionCue" Classes="cardDownloadCue" IsCompleted="{Binding IsDownloaded}"
                                                                  IsDownloading="{Binding IsDownloading}" Accent="{DynamicResource MusicAccentBrush}" />
-                                    <TextBlock x:Name="CardDownloadStatus" Classes="cardDownloadStatus" Grid.Column="1" Text="{Binding DownloadStatus}" MinHeight="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock x:Name="CardDownloadStatus" Classes="cardDownloadStatus" Grid.Column="1" Text="{Binding DownloadStatus}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                 </Grid>
-                                <Grid Grid.Row="3" Classes="cardAudio">
+                                <Grid Grid.Row="4" Classes="cardAudio">
                                     <TextBlock Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=audio}" IsVisible="{Binding !IsDownloading}" FontSize="10" Classes="secondary" TextTrimming="CharacterEllipsis" />
                                     <TextBlock x:Name="CardDownloadDetails" Text="{Binding DownloadDetails}" IsVisible="{Binding IsDownloading}" FontSize="10" Classes="secondary" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DownloadDetails}" />
                                 </Grid>
-                                <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <Grid Grid.Row="5" Classes="cardFooter" ColumnDefinitions="*,Auto">
                                     <TextBlock Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=source}" Classes="secondary cardSource" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Grid.Column="1" Text="{Binding Track, Converter={StaticResource CardDisplay}, ConverterParameter=duration}" Classes="secondary cardDuration" />
                                 </Grid>
@@ -139,7 +202,12 @@
                 </Grid>
             </Border>
         </arc:Button>
-        <theme:CardFeedbackBorder x:Name="CardFeedback" IsHovered="{Binding IsPointerOver, ElementName=SongTile}" IsSelected="{Binding IsSelected}"
+        <theme:CardFeedbackBorder x:Name="CardFeedback" IsHovered="{Binding IsPointerOver, ElementName=CardRoot}" IsSelected="{Binding IsSelected}"
                                   HasDownloadStatus="{Binding HasDownloadStatus}" Accent="{DynamicResource MusicAccentBrush}" />
+        <theme:CoverPlayGesture x:Name="CardQuickPlay" CoverFraction="{Binding CoverFraction, ElementName=CardRoot}"
+                                Accent="{DynamicResource MusicAccentBrush}" SurfaceBrush="{DynamicResource MusicPanelBrush}"
+                                GlyphBrush="{DynamicResource MusicTextBrush}"
+                                IsEnabled="{Binding IsBrowsingActive, ElementName=CardRoot}"
+                                PlayRequested="OnCoverPlayRequested" AutomationProperties.Name="播放这首" />
     </Grid>
 </UserControl>

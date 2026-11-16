@@ -334,7 +334,7 @@
             </Grid>
         </arcm:Page.Footer>
         <arcm:Page.Overlay>
-            <arcm:Sheet x:Name="MobileTrackSheet" Title="{Binding SelectedTitle}" MaxHeightFraction="0.94">
+            <theme:InterruptibleSongSheet x:Name="MobileTrackSheet" Title="{Binding SelectedTitle}" MaxHeightFraction="0.94">
                 <StackPanel Spacing="12" Margin="4,0,4,8">
                     <Border Width="144" Height="144" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}" HorizontalAlignment="Center" ClipToBounds="True">
                         <theme:CoverTransition Source="{Binding Cover}" Stretch="UniformToFill" />
@@ -365,7 +365,7 @@
                     </Grid>
                     <arcm:Button Content="从歌单移除" Variant="Plain" Command="{Binding RemoveFromPlaylistCommand}" IsVisible="{Binding IsLocalPlaylistView}" />
                 </StackPanel>
-            </arcm:Sheet>
+            </theme:InterruptibleSongSheet>
         </arcm:Page.Overlay>
         <theme:MusicSurfaceHost x:Name="MobileSectionHost" ChangeVersion="{Binding SelectedSectionIndex, ElementName=MobileRoot}" Margin="12,8,12,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
     </arcm:Page>

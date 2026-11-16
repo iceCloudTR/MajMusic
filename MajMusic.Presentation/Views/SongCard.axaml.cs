@@ -24,8 +24,13 @@ namespace MajMusic.Presentation.Views
         /// <summary>Constrains Arc's animated label slot to the actual card content width.</summary>
         public static readonly DirectProperty<SongCard, double> CardContentWidthProperty = AvaloniaProperty.RegisterDirect<SongCard, double>(
             nameof(CardContentWidth), card => card.CardContentWidth);
+        /// <summary>Identifies the artwork fraction used by the shared quick-play gesture.</summary>
+        public static readonly DirectProperty<SongCard, double> CoverFractionProperty = AvaloniaProperty.RegisterDirect<SongCard, double>(
+            nameof(CoverFraction), card => card.CoverFraction);
         /// <summary>Stores the finite width shared by the card's cover and information columns.</summary>
         private double _cardContentWidth;
+        /// <summary>Retains the artwork proportion independently of each recycled song's metadata.</summary>
+        private double _coverFraction = .5;
         /// <summary>Retains the width used by the latest proportional height calculation.</summary>
         private double _measuredCardWidth;
         /// <summary>Cancels optional metadata when the item leaves the viewport.</summary>
@@ -82,6 +87,8 @@ namespace MajMusic.Presentation.Views
 
         /// <summary>Gets the finite content width after the card's shared outline.</summary>
         public double CardContentWidth => _cardContentWidth;
+        /// <summary>Gets the square artwork's share of the horizontal card.</summary>
+        public double CoverFraction => _coverFraction;
 
         /// <inheritdoc />
         protected override async void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -126,6 +133,7 @@ namespace MajMusic.Presentation.Views
         /// <summary>Updates the existing two-column template without replacing controls or their artwork leases.</summary>
         private void UpdateCardLayout()
         {
+            SetAndRaise(CoverFractionProperty, ref _coverFraction, EffectiveLayout == SongCardLayout.Compact ? 1d / 3 : .5);
             Classes.Set("compact", EffectiveLayout == SongCardLayout.Compact);
             Classes.Set("small", EffectiveLayout == SongCardLayout.Small);
             if (this.FindControl<Grid>("CardArtGrid") is { } grid)
@@ -247,6 +255,21 @@ namespace MajMusic.Presentation.Views
             }
         }
 
+        /// <summary>Starts this card after its explicit quick-play gesture finishes without opening the inspector.</summary>
+        /// <param name="sender">The overlay that completed its click or committed rightward drag.</param>
+        /// <param name="e">The completed gesture notification.</param>
+        private async void OnCoverPlayRequested(object? sender, EventArgs e)
+        {
+            var owner = this.FindAncestorOfType<MainView>()?.DataContext as MainViewModel
+                ?? this.FindAncestorOfType<MobileMusicView>()?.DataContext as MainViewModel;
+            if (!_attached || !IsBrowsingActive || !IsEffectivelyVisible || DataContext is not SongCardViewModel card || owner is null)
+            {
+                return;
+            }
+
+            await owner.PlayTrackFromMenuAsync(card.Track);
+        }
+
         /// <summary>Opens the current card's captured actions without using the inspector's older selected song.</summary>
         /// <param name="sender">The artwork card.</param>
         /// <param name="e">The actual pointer or keyboard context request.</param>
@@ -300,17 +323,5 @@ namespace MajMusic.Presentation.Views
             return true;
         }
 
-        /// <summary>Starts the chosen song using the existing playback queue action.</summary>
-        /// <param name="sender">The double-tapped song button.</param>
-        /// <param name="e">The pointer gesture.</param>
-        private async void OnPlayDoubleTapped(object? sender, TappedEventArgs e)
-        {
-            if (DataContext is SongCardViewModel card && this.FindAncestorOfType<MainView>()?.DataContext is MainViewModel owner)
-            {
-                owner.SelectedTrack = card.Track;
-                await owner.PlaySelectedAsync();
-                e.Handled = true;
-            }
-        }
     }
 }

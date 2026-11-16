@@ -10,6 +10,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
 using TKCode.Arc.Mobile;
 using ArcSlider = TKCode.Arc.Slider;
@@ -74,7 +75,7 @@ namespace MajMusic.Presentation.Views
         {
             if (DataContext is MainViewModel { SelectedTrack: not null })
             {
-                this.FindControl<Sheet>("MobileTrackSheet")!.IsOpen = true;
+                this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!.IsOpen = true;
             }
         }
 
@@ -110,7 +111,7 @@ namespace MajMusic.Presentation.Views
                 _owner = null;
             }
 
-            this.FindControl<Sheet>("MobileTrackSheet")!.IsOpen = false;
+            this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!.IsOpen = false;
             base.OnDetachedFromVisualTree(e);
         }
 
@@ -395,7 +396,7 @@ namespace MajMusic.Presentation.Views
         {
             if (DataContext is MainViewModel owner)
             {
-                this.FindControl<Sheet>("MobileTrackSheet")!.IsOpen = false;
+                this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!.IsOpen = false;
                 await owner.PlaySelectedAsync();
             }
         }
