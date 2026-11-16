@@ -90,6 +90,7 @@ namespace MajMusic.Presentation.Views
         {
             if (DataContext is MainViewModel { SelectedTrack: not null })
             {
+                UpdateSheetViewport();
                 this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!.IsOpen = true;
             }
         }
@@ -100,6 +101,8 @@ namespace MajMusic.Presentation.Views
             base.OnPropertyChanged(change);
             if (change.Property == SelectedSectionIndexProperty && _attached)
             {
+                ReleaseMiniPlayerGesture();
+                this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!.IsOpen = false;
                 PresentSection();
             }
         }
@@ -109,14 +112,17 @@ namespace MajMusic.Presentation.Views
         {
             base.OnAttachedToVisualTree(e);
             _attached = true;
+            LayoutUpdated += OnMobileLayoutUpdated;
             ObserveOwner();
             PresentSection();
+            UpdateSheetViewport();
         }
 
         /// <inheritdoc />
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             _attached = false;
+            LayoutUpdated -= OnMobileLayoutUpdated;
             ReleaseMiniPlayerGesture();
             ReleaseSection();
             if (_owner is not null)
@@ -207,7 +213,35 @@ namespace MajMusic.Presentation.Views
         private void OnMobileSizeChanged(object? sender, SizeChangedEventArgs e)
         {
             ReleaseMiniPlayerGesture();
+            UpdateSheetViewport();
             UpdateBrowseViewport();
+        }
+
+        /// <summary>Keeps the sheet's clipped bottom on the actual navigation bar after safe-area or footer layout changes.</summary>
+        /// <param name="sender">The laid-out mobile shell.</param>
+        /// <param name="e">The completed layout notification.</param>
+        private void OnMobileLayoutUpdated(object? sender, EventArgs e)
+        {
+            UpdateSheetViewport();
+        }
+
+        /// <summary>Measures the navigation bar in the overlay parent's coordinates without using a fixed bar height.</summary>
+        private void UpdateSheetViewport()
+        {
+            var sheet = this.FindControl<InterruptibleSongSheet>("MobileTrackSheet");
+            var navigation = this.FindControl<Tabbar>("MobileNavigationBar");
+            if (!_attached || sheet?.GetVisualParent() is not Visual overlay || navigation is null ||
+                overlay.Bounds.Height <= 0 || navigation.Bounds.Height <= 0 ||
+                navigation.TranslatePoint(default, overlay) is not { } top || !double.IsFinite(top.Y))
+            {
+                return;
+            }
+
+            var inset = Math.Clamp(overlay.Bounds.Height - top.Y, 0, overlay.Bounds.Height);
+            if (Math.Abs(sheet.BottomInset - inset) > 0.1)
+            {
+                sheet.BottomInset = inset;
+            }
         }
 
         /// <summary>Tracks a tap or drag only when it begins on the bottom player's noninteractive information area.</summary>
@@ -276,6 +310,7 @@ namespace MajMusic.Presentation.Views
                 }
 
                 owner.SelectedTrack = _miniPlayerTrack;
+                UpdateSheetViewport();
                 if (!sheet.BeginInteractiveOpen())
                 {
                     ReleaseMiniPlayerGesture();
@@ -330,8 +365,9 @@ namespace MajMusic.Presentation.Views
             }
 
             var isTap = Math.Abs(movement.X) <= 8 && Math.Abs(movement.Y) <= 8;
+            var isUpwardSwipe = movement.Y <= -8 && -movement.Y >= Math.Abs(movement.X) * 1.5;
             ReleaseMiniPlayerGesture();
-            if (!isTap)
+            if (!isTap && !isUpwardSwipe)
             {
                 return;
             }

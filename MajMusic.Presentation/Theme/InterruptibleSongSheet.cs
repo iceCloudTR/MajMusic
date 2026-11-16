@@ -15,6 +15,9 @@ namespace MajMusic.Presentation.Theme
     /// <remarks>The song details use the content-sized sheet; multiple resting detents are not used.</remarks>
     public sealed class InterruptibleSongSheet : Sheet
     {
+        /// <summary>Reserves the measured navigation area below the sheet's own clipped viewport.</summary>
+        public static readonly StyledProperty<double> BottomInsetProperty = AvaloniaProperty.Register<InterruptibleSongSheet, double>(
+            nameof(BottomInset), coerce: (_, value) => double.IsFinite(value) ? Math.Max(0, value) : 0);
         /// <summary>Keeps the closed panel's outline beyond the viewport.</summary>
         private const double ClosedGap = 24;
         /// <summary>Applies the shared position to the official panel without changing its layout.</summary>
@@ -49,6 +52,19 @@ namespace MajMusic.Presentation.Theme
         private double _interactiveOriginOffset;
         /// <summary>Retains the previous resting target for an interrupted external pull.</summary>
         private bool _interactiveOriginOpen;
+
+        /// <summary>Creates an overlay whose moving content cannot paint or catch touches below its viewport.</summary>
+        public InterruptibleSongSheet()
+        {
+            ClipToBounds = true;
+        }
+
+        /// <summary>Gets or sets the measured distance from the overlay's bottom to the navigation bar's top.</summary>
+        public double BottomInset
+        {
+            get => GetValue(BottomInsetProperty);
+            set => SetValue(BottomInsetProperty, value);
+        }
 
         /// <summary>Gets the displayed opening progress, from zero when closed to one when fully open.</summary>
         public double TransitionProgress => _progress;
@@ -107,8 +123,8 @@ namespace MajMusic.Presentation.Theme
             _interactiveOpening = false;
             _dragging = false;
             var distance = _interactiveOriginOffset - PanelOffset;
-            var open = cancelled ? _interactiveOriginOpen : upwardVelocity >= -500 &&
-                (_progress >= 0.5 || distance >= 48 || upwardVelocity > 500 && distance >= 8);
+            var open = cancelled ? _interactiveOriginOpen : distance >= 8 ||
+                _progress >= 0.5 || upwardVelocity > 500 && distance >= 6;
             if (IsOpen == open)
             {
                 TransitionToTarget();
@@ -157,6 +173,19 @@ namespace MajMusic.Presentation.Theme
             }
 
             base.OnPropertyChanged(change);
+            if (change.Property == BottomInsetProperty)
+            {
+                SetCurrentValue(MarginProperty, new Thickness(Margin.Left, Margin.Top, Margin.Right, BottomInset));
+                if (BottomInset > 0)
+                {
+                    SetCurrentValue(SafeAreaBottomProperty, 0d);
+                }
+                else
+                {
+                    ClearValue(SafeAreaBottomProperty);
+                }
+            }
+
             if (change.Property == BoundsProperty || change.Property == MaxHeightFractionProperty)
             {
                 UpdatePanelSize();

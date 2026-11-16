@@ -41,12 +41,14 @@ namespace MajMusic.Presentation.Theme
         };
         /// <summary>Keeps the resting button's ambient shadow centered so its two edge clearances remain equal.</summary>
         private static readonly BoxShadows ButtonShadow = new(new BoxShadow { Blur = 8, Color = Color.FromArgb(42, 0, 0, 0) });
+        /// <summary>Speeds up the complete trajectory while retaining the same continuous path and physical limit.</summary>
+        private const double PlaybackSpeedMultiplier = 3.2;
         /// <summary>Caps the actual speed of both the moving center and growing button edges in logical pixels per second.</summary>
-        private const double MaximumEdgeSpeed = 420;
+        private const double MaximumEdgeSpeed = 420 * PlaybackSpeedMultiplier;
         /// <summary>Prevents small cards from traversing the complete path too quickly.</summary>
-        private const double MaximumProgressSpeed = .9;
+        private const double MaximumProgressSpeed = .9 * PlaybackSpeedMultiplier;
         /// <summary>Accelerates gradually from rest without adding spring overshoot.</summary>
-        private const double ProgressAcceleration = 1.8;
+        private const double ProgressAcceleration = 1.8 * PlaybackSpeedMultiplier * PlaybackSpeedMultiplier;
         /// <summary>Defines the deliberate horizontal travel required before a release commits playback.</summary>
         private const double CommitProgress = .62;
         /// <summary>Defines the travel before a pending press becomes a horizontal or vertical gesture.</summary>
