@@ -615,7 +615,7 @@ namespace MajMusic.Presentation.ViewModels
                 token.ThrowIfCancellationRequested();
                 if (path is not null)
                 {
-                    candidate = new Bitmap(path);
+                    candidate = await Task.Run(() => CoverThumbnailDecoder.DecodeSelected(path), token);
                 }
 
                 lock (_coverGate)

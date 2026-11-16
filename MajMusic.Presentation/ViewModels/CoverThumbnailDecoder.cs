@@ -16,16 +16,45 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A bitmap with both dimensions at most 256 pixels, or null for an unsupported header.</returns>
         public static Bitmap? Decode(string path)
         {
+            return Decode(path, MaximumEdge, false);
+        }
+
+        /// <summary>Decodes selected artwork only to the maximum resolution already retained by its transition control.</summary>
+        /// <param name="path">The complete original cover path, opened read-only.</param>
+        /// <returns>An owned image with a long edge of at most 512 pixels and its original aspect ratio.</returns>
+        /// <exception cref="InvalidDataException">The image cannot be decoded.</exception>
+        public static Bitmap DecodeSelected(string path)
+        {
+            return Decode(path, 512, true) ?? throw new InvalidDataException("The selected artwork cannot be decoded.");
+        }
+
+        /// <summary>Decodes recognized headers directly at their target size while preserving existing support for other image codecs.</summary>
+        /// <param name="path">The original read-only image.</param>
+        /// <param name="maximumEdge">The maximum retained dimension.</param>
+        /// <param name="allowOtherFormats">Whether an unknown header uses Avalonia's ordinary decoder before making a bounded owned image.</param>
+        /// <returns>The owned bounded image, or null when an unsupported thumbnail header is intentionally omitted.</returns>
+        private static Bitmap? Decode(string path, int maximumEdge, bool allowOtherFormats)
+        {
             using var stream = File.OpenRead(path);
             if (!TryReadSize(stream, out var width, out var height) || width <= 0 || height <= 0)
             {
-                return null;
+                if (!allowOtherFormats)
+                {
+                    return null;
+                }
+
+                stream.Position = 0;
+                using var original = new Bitmap(stream);
+                var size = original.PixelSize;
+                var ratio = Math.Min(1, maximumEdge / (double)Math.Max(size.Width, size.Height));
+                return original.CreateScaledBitmap(new Avalonia.PixelSize(Math.Max(1, (int)Math.Round(size.Width * ratio)),
+                    Math.Max(1, (int)Math.Round(size.Height * ratio))), BitmapInterpolationMode.MediumQuality);
             }
 
             stream.Position = 0;
             return width >= height
-                ? Bitmap.DecodeToWidth(stream, Math.Min(width, MaximumEdge), BitmapInterpolationMode.MediumQuality)
-                : Bitmap.DecodeToHeight(stream, Math.Min(height, MaximumEdge), BitmapInterpolationMode.MediumQuality);
+                ? Bitmap.DecodeToWidth(stream, Math.Min(width, maximumEdge), BitmapInterpolationMode.MediumQuality)
+                : Bitmap.DecodeToHeight(stream, Math.Min(height, maximumEdge), BitmapInterpolationMode.MediumQuality);
         }
 
         /// <summary>Reads PNG, JPEG, GIF, BMP and WebP dimensions without decoding original-size pixels.</summary>

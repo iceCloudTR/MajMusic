@@ -39,6 +39,8 @@ Windows 构建自带 LibVLC；Linux 和 macOS 需要安装对应的 LibVLC 运�
 
 Windows 网络请求使用系统 WinHTTP，其他平台使用对应的 .NET 网络接口；兼容请求使用 `MajdataPlay/2.1.0` UA，各接入点独立管理登录会话。
 
+Windows 分发使用 [发布脚本](Tools/README.md)：默认生成自带 .NET 运行时的 x64 ZIP，也可生成依赖已安装运行时的较小版本。发布包只包含对应架构，保留完整音频插件。
+
 界面采用 TKCode.Arc 1.1.0 和 Avalonia 12.1.5，共享现有 ViewModel、命令与服务。窄屏界面已使用 Arc.Mobile 组件适配安全区、软键盘和触摸区域；Android/iOS 应用宿主、后台音频服务和系统媒体控制仍需接入。[上游移动支持状态](https://github.com/AIDotNet/TKCode.Arc#status-and-compatibility)目前也区分了桌面手机框预览与实机验证。
 
 Arc 的 MIT 许可证和随包第三方声明保留在 [ThirdPartyNotices](ThirdPartyNotices/)，构建和发布时会一同复制。

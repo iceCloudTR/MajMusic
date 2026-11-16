@@ -13,9 +13,9 @@ namespace MajMusic.Presentation.ViewModels
         private const int PreviewCapacity = 6;
         /// <summary>Bounds one foreground or background cover preparation without waiting for unresponsive sources.</summary>
         private static readonly TimeSpan CoverPreparationDeadline = TimeSpan.FromMilliseconds(400);
-        /// <summary>Reuses metadata already read for playlist classification.</summary>
+        /// <summary>Retains only the library's first-screen descriptors already read for playlist classification.</summary>
         private MusicTrack[] _previewLibrary = [];
-        /// <summary>Locates saved playlist members without reading the catalog again.</summary>
+        /// <summary>Locates each saved playlist's bounded first screen without retaining the complete catalog.</summary>
         private Dictionary<string, MusicTrack> _previewLibraryById = new(StringComparer.Ordinal);
         /// <summary>Retains first-screen data and its independently pinned ready covers.</summary>
         private readonly Dictionary<PreviewKey, PreparedPreview> _browsePreviews = new();
@@ -76,8 +76,27 @@ namespace MajMusic.Presentation.ViewModels
         /// <param name="library">The ordered library already read for playlist classification.</param>
         private void UpdatePreviewLibrary(IReadOnlyDictionary<string, MusicTrack> library)
         {
-            _previewLibrary = library.Values.ToArray();
-            _previewLibraryById = new Dictionary<string, MusicTrack>(library, StringComparer.Ordinal);
+            _previewLibrary = library.Values.Take(PreviewTrackLimit).ToArray();
+            var playlistPreviews = new Dictionary<string, MusicTrack>(StringComparer.Ordinal);
+            foreach (var playlist in Playlists)
+            {
+                var count = 0;
+                foreach (var id in playlist.TrackIds)
+                {
+                    if (!library.TryGetValue(id, out var track))
+                    {
+                        continue;
+                    }
+
+                    playlistPreviews[id] = track;
+                    if (++count == PreviewTrackLimit)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            _previewLibraryById = playlistPreviews;
             foreach (var key in _browsePreviews.Keys.Where(key => key.Mode != HomeBrowseMode.Recommendations).ToArray())
             {
                 _browsePreviews[key].Dispose();

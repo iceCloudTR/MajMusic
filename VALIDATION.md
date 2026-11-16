@@ -9,6 +9,14 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj
 
 默认回归覆盖数据存储、目录类型、收藏夹格式、账号选择与自动登录、网络与缓存、播放队列、音频设置，以及界面交互。
 
+内存回归可单独运行：
+
+```sh
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- catalog-memory presentation-retention
+```
+
+覆盖大曲库首屏预览的持有范围、重复刷新后旧曲库的回收、4K 与窄长封面限尺寸解码，以及快速切换、清除封面后的资源释放。
+
 云端收藏夹的接口与同步检查使用隔离的模拟服务，覆盖私有歌单创建、账号收藏订阅、增删曲目、离线补传和账号隔离。
 
 ```sh
@@ -83,3 +91,22 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -- native-vault
 音频控制检查使用内存输出；`desktop-output` 单独运行时会播放测试音。
 
 当前原生验证环境为 Windows x64。macOS、Linux 和实际设备切换需在对应环境验证。
+
+## 内存与发布测量
+
+2026-11-16，Windows x64 Release，同一份 21,554 首曲库的离线副本。测量仅创建共享 ViewModel，各阶段等待操作完成并收集后读取托管存活量与进程私有内存，未创建窗口或音频引擎。
+
+| 场景 | 指标 | 修改前 | 修改后 |
+| --- | --- | ---: | ---: |
+| 初始化推荐页 | 托管存活量 | 44.43 MiB | 2.41 MiB |
+| 打开曲库 | 托管存活量 | 88.38 MiB | 46.36 MiB |
+| 连续刷新曲库 4 次 | 进程私有内存 | 246.52 MiB | 156.63 MiB |
+
+原开发 Release 目录约 918.52 MiB；单平台发布实测如下，均包含全部 321 个 x64 VLC 插件：
+
+| 发布方式 | 程序目录 | ZIP |
+| --- | ---: | ---: |
+| 自带 .NET 运行时 | 231.54 MiB | 101.89 MiB |
+| 使用已安装的 .NET 10 x64 运行时 | 155.07 MiB | 66.81 MiB |
+
+两包均检查了架构、依赖清单、符号和本地数据，并分别从发布目录加载原生 VLC，完成生成 WAV/MP3 的解码、暂停、进度拖动与切歌检查，使用静音测试输出。

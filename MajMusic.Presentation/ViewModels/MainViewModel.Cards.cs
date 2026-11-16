@@ -229,9 +229,9 @@ namespace MajMusic.Presentation.ViewModels
         private sealed class CardSlice : IReadOnlyList<SongCardViewModel>
         {
             /// <summary>Retains the catalog behind this row.</summary>
-            private readonly IReadOnlyList<SongCardViewModel> _source;
+            private IReadOnlyList<SongCardViewModel> _source;
             /// <summary>Identifies the first descriptor in the catalog.</summary>
-            private readonly int _start;
+            private int _start;
 
             /// <summary>Creates an indexed row segment without touching its presentations.</summary>
             /// <param name="source">The lazy catalog.</param>
@@ -273,6 +273,15 @@ namespace MajMusic.Presentation.ViewModels
                 }
 
                 return true;
+            }
+
+            /// <summary>Retains the current catalog after an unchanged row is reused instead of keeping an obsolete full catalog alive.</summary>
+            /// <param name="source">The current lazy catalog whose matching descriptors were checked.</param>
+            /// <param name="start">The matching first descriptor in that catalog.</param>
+            public void Rebind(IReadOnlyList<SongCardViewModel> source, int start)
+            {
+                _source = source;
+                _start = start;
             }
 
             /// <summary>Enumerates the presentations requested by this realized row.</summary>

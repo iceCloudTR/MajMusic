@@ -65,6 +65,8 @@ namespace MajMusic.Tests
                 ("browse-placeholder-lifecycle", BrowsePlaceholderLifecycleTests.RunAsync, true),
                 ("cover-preload", CoverPreloadTests.RunAsync, true),
                 ("browse-entry", BrowseEntryPreparationTests.RunAsync, true),
+                ("catalog-memory", CatalogMemoryTests.RunAsync, true),
+                ("presentation-retention", PresentationRetentionTests.RunAsync, true),
                 ("catalog-read-ordering", CatalogReadOrderingTests.RunAsync, true),
                 ("recommendation-paging", RecommendationPagingTests.RunAsync, true),
                 ("recommendation-paging-layout", RecommendationPagingLayoutTests.RunAsync, true),

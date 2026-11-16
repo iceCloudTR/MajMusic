@@ -83,6 +83,7 @@ namespace MajMusic.Presentation.ViewModels
                 if (index < BrowseRows.Count && BrowseRows[index].Columns == _browseColumns
                     && BrowseRows[index].Tracks is CardSlice previous && previous.Matches(CardTracks, start, length))
                 {
+                    previous.Rebind(CardTracks, start);
                     rows[index] = BrowseRows[index];
                     continue;
                 }
