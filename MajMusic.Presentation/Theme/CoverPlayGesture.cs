@@ -26,7 +26,23 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Exposes the real reversible paint progress without changing layout.</summary>
         public static readonly DirectProperty<CoverPlayGesture, double> ProgressProperty = AvaloniaProperty.RegisterDirect<CoverPlayGesture, double>(nameof(Progress), control => control.Progress);
         /// <summary>Retains a centered play shape on this control's dispatcher without allocating during an animation.</summary>
-        private readonly Geometry _playGlyph = Geometry.Parse("M -3,-5 L 5,0 L -3,5 Z");
+        private readonly Geometry _playGlyph = Geometry.Parse("M -2.7,-4.55 C -3.15,-4.8 -3.65,-4.5 -3.65,-3.98 L -3.65,3.98 C -3.65,4.5 -3.15,4.8 -2.7,4.55 L 4.35,.65 C 4.86,.36 4.86,-.36 4.35,-.65 Z");
+        /// <summary>Provides a restrained diagonal glass highlight without per-frame brush allocation.</summary>
+        private readonly LinearGradientBrush _glassHighlight = new()
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+            GradientStops = new GradientStops
+            {
+                new(Color.FromArgb(58, 255, 255, 255), 0),
+                new(Color.FromArgb(10, 255, 255, 255), .55),
+                new(Colors.Transparent, 1)
+            }
+        };
+        /// <summary>Keeps the resting button's ambient shadow centered so its two edge clearances remain equal.</summary>
+        private static readonly BoxShadows ButtonShadow = new(new BoxShadow { Blur = 8, Color = Color.FromArgb(42, 0, 0, 0) });
+        /// <summary>Defines the slower complete corner-to-center-to-exit animation.</summary>
+        private const double FullTravelMilliseconds = 820;
         /// <summary>Defines the deliberate horizontal travel required before a release commits playback.</summary>
         private const double CommitProgress = .62;
         /// <summary>Defines the travel before a pending press becomes a horizontal or vertical gesture.</summary>
@@ -53,9 +69,9 @@ namespace MajMusic.Presentation.Theme
         private bool _attached;
         /// <summary>Retains the effective Arc motion preference used for the current paint.</summary>
         private ArcMotionLevel _level;
-        /// <summary>Caches the accent outline independently of frame-by-frame geometry.</summary>
-        private Pen? _accentPen;
-        /// <summary>Caches the quiet focus outline independently of frame-by-frame geometry.</summary>
+        /// <summary>Caches the glass edge independently of frame-by-frame geometry.</summary>
+        private Pen? _edgePen;
+        /// <summary>Caches the keyboard focus outline independently of frame-by-frame geometry.</summary>
         private Pen? _focusPen;
         /// <summary>Exposes the currently observed completion or rollback.</summary>
         private Task _transitionUpdate = Task.CompletedTask;
@@ -90,7 +106,7 @@ namespace MajMusic.Presentation.Theme
             get => GetValue(AccentProperty);
             set => SetValue(AccentProperty, value);
         }
-        /// <summary>Gets or sets the current theme's play-circle surface.</summary>
+        /// <summary>Gets or sets the current theme's translucent play-button surface.</summary>
         public IBrush? SurfaceBrush
         {
             get => GetValue(SurfaceBrushProperty);
@@ -107,7 +123,7 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Gets completion of the current click, committed drag or rollback.</summary>
         public Task TransitionUpdate => _transitionUpdate;
 
-        /// <summary>Limits hit testing to the original corner circle, including a modest minimum touch target.</summary>
+        /// <summary>Limits hit testing to the rounded corner button, including a modest minimum touch target.</summary>
         /// <param name="point">The point relative to this full-card overlay.</param>
         /// <returns>Whether this point belongs to the initial play affordance.</returns>
         public bool HitTest(Point point)
@@ -117,10 +133,14 @@ namespace MajMusic.Presentation.Theme
                 return false;
             }
 
-            var (center, radius) = InitialCircle();
+            var (center, halfSize) = InitialButton();
             var delta = point - center;
-            var hitRadius = Math.Max(18, radius);
-            return new Rect(Bounds.Size).Contains(point) && delta.X * delta.X + delta.Y * delta.Y <= hitRadius * hitRadius;
+            var hitHalfSize = Math.Max(18, halfSize);
+            var corner = hitHalfSize * .56;
+            var cornerX = Math.Max(0, Math.Abs(delta.X) - (hitHalfSize - corner));
+            var cornerY = Math.Max(0, Math.Abs(delta.Y) - (hitHalfSize - corner));
+            return new Rect(Bounds.Size).Contains(point) && Math.Abs(delta.X) <= hitHalfSize && Math.Abs(delta.Y) <= hitHalfSize
+                && cornerX * cornerX + cornerY * cornerY <= corner * corner;
         }
 
         /// <inheritdoc />
@@ -223,7 +243,7 @@ namespace MajMusic.Presentation.Theme
 
             e.Handled = true;
             e.PreventGestureRecognition();
-            var (center, _) = InitialCircle();
+            var (center, _) = InitialButton();
             var travel = Math.Max(72, Bounds.Width - center.X);
             _motion?.Jump(Math.Clamp(distance.X / travel, 0, 1));
         }
@@ -298,7 +318,7 @@ namespace MajMusic.Presentation.Theme
                 return;
             }
 
-            var (start, initialRadius) = InitialCircle();
+            var (start, initialRadius) = InitialButton();
             var center = start;
             var radius = initialRadius;
             var opacity = IsEffectivelyEnabled ? 1 : .4;
@@ -320,44 +340,48 @@ namespace MajMusic.Presentation.Theme
             using (context.PushClip(new RoundedRect(new Rect(Bounds.Size), 12)))
             using (context.PushOpacity(opacity))
             {
-                using (context.PushOpacity(.76))
+                var rect = new Rect(center.X - radius, center.Y - radius, radius * 2, radius * 2);
+                var shape = new RoundedRect(rect, radius * .56);
+                using (context.PushOpacity(.58 + _progress * .1))
                 {
-                    context.DrawEllipse(SurfaceBrush, null, center, radius, radius);
+                    context.DrawRectangle(SurfaceBrush, null, shape, ButtonShadow);
                 }
 
-                using (context.PushOpacity(.12 + _progress * .12))
+                context.DrawRectangle(_glassHighlight, null, shape);
+                using (context.PushOpacity(.04 + _progress * .05))
                 {
-                    context.DrawEllipse(Accent, null, center, radius, radius);
+                    context.DrawRectangle(Accent, null, shape);
                 }
 
-                using (context.PushOpacity(.45 + _progress * .35))
+                using (context.PushOpacity(.22 + _progress * .12))
                 {
-                    context.DrawEllipse(null, _accentPen, center, radius, radius);
+                    context.DrawRectangle(null, _edgePen, new RoundedRect(rect.Deflate(.375), Math.Max(0, radius * .56 - .375)));
                 }
 
-                if (IsFocused && _progress == 0)
+                if (IsFocused && Classes.Contains(":focus-visible") && _progress == 0)
                 {
-                    context.DrawEllipse(null, _focusPen, center, radius + 2, radius + 2);
+                    context.DrawRectangle(null, _focusPen, new RoundedRect(rect.Inflate(2), radius * .56 + 2));
                 }
 
-                var scale = radius / 9;
-                using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(center.X + scale * .3, center.Y)))
+                var scale = radius / 10;
+                using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(center.X + scale * .65, center.Y)))
                 {
                     context.DrawGeometry(GlyphBrush, null, _playGlyph);
                 }
             }
         }
 
-        /// <summary>Calculates the original affordance inside the cover's lower-right corner.</summary>
-        /// <returns>The circle center and radius in card-local logical pixels.</returns>
-        private (Point Center, double Radius) InitialCircle()
+        /// <summary>Places the button with identical right and bottom clearances inside the actual square artwork.</summary>
+        /// <returns>The button center and half its side length in card-local logical pixels.</returns>
+        private (Point Center, double HalfSize) InitialButton()
         {
             var fraction = double.IsFinite(CoverFraction) ? Math.Clamp(CoverFraction, .1, 1) : .5;
-            var cover = Math.Max(1, Math.Min(Bounds.Height, Bounds.Width * fraction) - MusicGeometry.OutlineWidth * 2);
-            var radius = Math.Max(7, cover / 6);
-            var inset = Math.Clamp(cover * .045, 4, 8) + MusicGeometry.OutlineWidth;
-            return (new Point(Math.Max(radius, cover + MusicGeometry.OutlineWidth - inset - radius),
-                Math.Max(radius, Bounds.Height - inset - radius)), radius);
+            var outline = MusicGeometry.OutlineWidth;
+            var edge = Math.Max(1, Math.Min(Bounds.Height - outline * 2, (Bounds.Width - outline * 2) * fraction));
+            var cover = new Rect(outline, outline, edge, edge);
+            var halfSize = edge / 6;
+            var inset = Math.Clamp(edge * .06, 4, 10);
+            return (new Point(cover.Right - inset - halfSize, cover.Bottom - inset - halfSize), halfSize);
         }
 
         /// <summary>Completes or reverses the current path and emits playback only for the same committed card.</summary>
@@ -377,7 +401,7 @@ namespace MajMusic.Presentation.Theme
             _commitPending = commit;
             _level = ArcMotion.GetEffectiveLevel(this);
             var target = commit ? 1d : 0;
-            var duration = TimeSpan.FromMilliseconds(_level == ArcMotionLevel.Reduced ? 90 : Math.Max(90, 480 * Math.Abs(target - _progress)));
+            var duration = TimeSpan.FromMilliseconds(_level == ArcMotionLevel.Reduced ? 120 : Math.Max(180, FullTravelMilliseconds * Math.Abs(target - _progress)));
             try
             {
                 if (await motion.AnimateTo(target, _level == ArcMotionLevel.Off ? MotionSpec.Instant : MotionSpec.Tween(duration, MusicMotion.InOut))
@@ -434,8 +458,8 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Rebuilds theme-dependent pens only when their source brushes change.</summary>
         private void RefreshPens()
         {
-            _accentPen = Accent is { } accent ? new Pen(accent, 1.25) : null;
-            _focusPen = GlyphBrush is { } glyph ? new Pen(glyph, 1) : null;
+            _edgePen = GlyphBrush is { } glyph ? new Pen(glyph, .75) : null;
+            _focusPen = Accent is { } accent ? new Pen(accent, 1.25) : null;
         }
 
         /// <summary>Cancels any pending action when a virtualized overlay is assigned another song.</summary>

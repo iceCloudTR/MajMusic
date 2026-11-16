@@ -91,15 +91,21 @@
             <Setter Property="ClipToBounds" Value="True" />
         </Style>
         <Style Selector="views|SongCard.compact TextBlock.cardTitle">
-            <Setter Property="MaxHeight" Value="16" />
-            <Setter Property="MaxLines" Value="1" />
+            <Setter Property="MaxHeight" Value="32" />
+            <Setter Property="MaxLines" Value="2" />
         </Style>
-        <Style Selector="views|SongCard.compact.tight TextBlock.cardArtist, views|SongCard.compact.tight Grid.cardAudio">
+        <Style Selector="views|SongCard.compact.tight TextBlock.cardArtist, views|SongCard.compact Grid.cardAudio">
             <Setter Property="IsVisible" Value="False" />
         </Style>
-        <Style Selector="views|SongCard.compact.tight Grid.cardMetadata">
+        <Style Selector="views|SongCard.compact Grid.cardMetadata">
             <Setter Property="Margin" Value="4" />
             <Setter Property="RowSpacing" Value="1" />
+        </Style>
+        <Style Selector="views|SongCard.compact.tight TextBlock.cardTitle">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="LineHeight" Value="13" />
+            <Setter Property="MaxHeight" Value="26" />
+            <Setter Property="MaxLines" Value="2" />
         </Style>
         <Style Selector="views|SongCard.small Grid.cardMetadata">
             <Setter Property="Margin" Value="4" />
@@ -113,15 +119,15 @@
         <Style Selector="views|SongCard.small.tight TextBlock.cardTitle">
             <Setter Property="FontSize" Value="10" />
             <Setter Property="LineHeight" Value="13" />
-            <Setter Property="MaxHeight" Value="13" />
-            <Setter Property="MaxLines" Value="1" />
+            <Setter Property="MaxHeight" Value="26" />
+            <Setter Property="MaxLines" Value="2" />
         </Style>
         <Style Selector="views|SongCard.small TextBlock.cardArtist">
             <Setter Property="FontSize" Value="9" />
             <Setter Property="LineHeight" Value="11" />
             <Setter Property="MaxHeight" Value="11" />
         </Style>
-        <Style Selector="views|SongCard.small.tiny TextBlock.cardArtist, views|SongCard.small Grid.cardAudio">
+        <Style Selector="views|SongCard.small.tight TextBlock.cardArtist, views|SongCard.small Grid.cardAudio">
             <Setter Property="IsVisible" Value="False" />
         </Style>
         <Style Selector="views|SongCard.small TextBlock.cardSource, views|SongCard.small TextBlock.cardDuration, views|SongCard.small TextBlock.cardDownloadStatus">
@@ -137,8 +143,8 @@
         <Style Selector="views|SongCard.tiny TextBlock.cardTitle">
             <Setter Property="FontSize" Value="10" />
             <Setter Property="LineHeight" Value="13" />
-            <Setter Property="MaxHeight" Value="13" />
-            <Setter Property="MaxLines" Value="1" />
+            <Setter Property="MaxHeight" Value="26" />
+            <Setter Property="MaxLines" Value="2" />
         </Style>
         <Style Selector="views|SongCard.tiny TextBlock.cardArtist, views|SongCard.tiny Grid.cardAudio">
             <Setter Property="IsVisible" Value="False" />
@@ -155,6 +161,30 @@
             <Setter Property="FontSize" Value="9" />
             <Setter Property="LineHeight" Value="11" />
             <Setter Property="MaxHeight" Value="11" />
+        </Style>
+        <Style Selector="views|SongCard.compact.tiny Grid.cardMetadata">
+            <Setter Property="Margin" Value="2,1" />
+            <Setter Property="RowSpacing" Value="0" />
+        </Style>
+        <Style Selector="views|SongCard.compact.tiny TextBlock.cardTitle">
+            <Setter Property="FontSize" Value="9" />
+            <Setter Property="LineHeight" Value="11" />
+            <Setter Property="MaxHeight" Value="22" />
+            <Setter Property="MaxLines" Value="2" />
+        </Style>
+        <Style Selector="views|SongCard.compact.tiny Grid.cardDownloadRow">
+            <Setter Property="MinHeight" Value="10" />
+        </Style>
+        <Style Selector="views|SongCard.compact.tiny theme|DownloadCompletionCue.cardDownloadCue">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+        </Style>
+        <Style Selector="views|SongCard.compact.tiny TextBlock.cardSource, views|SongCard.compact.tiny TextBlock.cardDuration, views|SongCard.compact.tiny TextBlock.cardDownloadStatus">
+            <Setter Property="LineHeight" Value="10" />
+            <Setter Property="MaxHeight" Value="10" />
+        </Style>
+        <Style Selector="views|SongCard.compact.tiny Grid.cardFooter">
+            <Setter Property="MaxHeight" Value="10" />
         </Style>
     </UserControl.Styles>
     <Grid ClipToBounds="True">
