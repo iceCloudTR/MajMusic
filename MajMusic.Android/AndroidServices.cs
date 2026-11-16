@@ -9,6 +9,7 @@ using MajMusic.Android.Audio;
 using MajMusic.Android.Network;
 using MajMusic.Android.Security;
 using MajMusic.Android.Services;
+using MajMusic.Android.Storage;
 using MajMusic.Core.Models;
 using MajMusic.Core.Playback;
 using MajMusic.Infrastructure.Application;
@@ -68,6 +69,9 @@ namespace MajMusic.Android
             var collections = new MajCollectionExchange(_workspace, documentStorage: documents);
             var directories = new LocalDirectoryService(_workspace, collections);
             _viewModel = new MainViewModel(_workspace, _playback, collections: collections, metadata: metadata, directories: directories);
+            _viewModel.EnsureFileAccessAsync = AndroidStorageAccess.Instance.EnsureAccessAsync;
+            _viewModel.RequestAllFilesAccessAsync = AndroidStorageAccess.Instance.RequestAllFilesAccessAsync;
+            _viewModel.ResolveFileSystemPath = AndroidStorageAccess.Instance.ResolveFileSystemPath;
             PlaybackMediaService.Connect(_playback);
         }
 
@@ -144,6 +148,11 @@ namespace MajMusic.Android
         /// <exception cref="NotSupportedException">The picker did not return an accessible local directory or content tree.</exception>
         private static async Task<string> RetainDirectoryReferenceAsync(IStorageFolder folder)
         {
+            var converted = AndroidStorageAccess.Instance.ResolveFileSystemPath(folder.Path.AbsoluteUri);
+            if (!DocumentReference.IsContentUri(converted) && Path.IsPathFullyQualified(converted))
+            {
+                return converted;
+            }
             if (folder.TryGetLocalPath() is { } localPath)
             {
                 return localPath;
@@ -172,6 +181,11 @@ namespace MajMusic.Android
         private static async Task<string> RetainSharedDirectoryReferenceAsync(IStorageFolder folder)
         {
             var reference = folder.Path.AbsoluteUri;
+            var converted = AndroidStorageAccess.Instance.ResolveFileSystemPath(reference);
+            if (!DocumentReference.IsContentUri(converted) && Path.IsPathFullyQualified(converted))
+            {
+                return converted;
+            }
             if (!DocumentReference.IsContentUri(reference))
             {
                 return folder.TryGetLocalPath() ?? throw new NotSupportedException("无法保留所选媒体目录的读写权限。");

@@ -72,9 +72,9 @@ Arc 的 MIT 许可证和随包第三方声明保留在 [ThirdPartyNotices](Third
 
 在 Play 登录同一接入点和账号，再刷新在线收藏夹，即可读取同步的歌单。[MajNet 的歌单说明](https://github.com/TeamMajdata/MajdataDocs/blob/main/src/majdatanet/feature/collection.md)介绍了私有歌单与收藏的对应关系。
 
-PC 版的 `settings.json`、`library.db`、`cloud-collections.db`、音频索引与凭据引用保存在 exe 所在目录。媒体目录在“目录 → 媒体储存”中选择“独立储存”或“共享 MajdataPlay”，两种模式分别记住路径；独立模式默认使用程序目录。
+PC 版的 `settings.json`、`library.db`、`cloud-collections.db`、音频索引与凭据引用保存在 exe 所在目录。媒体目录在“目录 → 媒体储存”中选择“独立储存”或“共享 MajdataPlay”，两种模式分别记住路径；独立模式默认使用程序目录。选择目录后立即保存并扫描，“读取全部”也会重读共享曲库；设置分别显示已生效的媒体目录与配置目录。
 
-共享模式的 Windows 建议目录为 `%LOCALAPPDATA%\Majdata Hub\game`，Android 建议目录为 `/storage/emulated/0/Documents/MajdataPlay`。Android 外部目录需要通过系统目录选择器授权读写。独立和共享模式使用相同的媒体层级：
+共享模式的 Windows 建议目录为 `%LOCALAPPDATA%\Majdata Hub\game`，Android 建议目录为 `/storage/emulated/0/Documents/MajdataPlay`。Android 优先使用普通文件路径；点击“文件权限”取得所有文件访问权限，返回后自动应用并扫描当前目录。“…”提供系统目录选择器（SAF）作为备选。独立和共享模式使用相同的媒体层级：
 
 | 路径 | 内容 |
 | --- | --- |
@@ -83,9 +83,9 @@ PC 版的 `settings.json`、`library.db`、`cloud-collections.db`、音频索引
 | `Cache/Objects/xx/<SHA256>` | 完整音乐、封面和预取的谱面资源，与新版 Play 的对象路径一致。 |
 | `Runtime/runtime.db` | 文件系统模式下 Play 的公共在线曲目与资源引用。 |
 
-在线缓存按接入点、曲目 ID、谱面版本和资源哈希匹配，保持在线身份；已有旧版 `Cache/Net` 文件也按校验结果复用。Play 重启后会重新索引新对象。Android 当前 Play 的 Net 缓存和数据库位于其私有目录，共享的是授权公开目录中的文件；iOS 尚未接入，Linux 可选择路径。
+在线缓存按接入点、曲目 ID、谱面版本和资源哈希匹配，保持在线身份。已有旧版 `Cache/Net` 文件也可复用；没有 SHA sidecar 时先核对 `maidata.txt` 的 MD5 与谱面版本，再计算媒体 SHA-256，接入点显示名不同也能定位同一谱面。搜索和可见卡片会检查新完成的共享文件，Play 后来下载的歌曲无需重启 Music 或先播放，就能显示“已在本地”。Play 重启后会重新索引新对象。Android 当前 Play 的 Net 缓存和数据库位于其私有目录，共享的是授权公开目录中的文件；iOS 尚未接入，Linux 可选择路径。
 
-Android 在“目录”页选择系统授权的曲库或收藏夹目录，递归读取原文件，保留目录权限；导入音乐不复制。配置与索引保存在应用私有目录，媒体优先使用选定目录，图片解码所需的小型副本保留在应用内。记住的密码由 Android Keystore 加密，音频输出跟随系统当前设备。
+Android 在“目录”页填写曲库或收藏夹路径，也可通过备选选择器保留目录权限；递归读取原文件，导入音乐不复制。配置与索引保存在应用私有目录，媒体优先使用选定目录，图片解码所需的小型副本保留在应用内。记住的密码由 Android Keystore 加密，音频输出跟随系统当前设备。
 
 手机点击底部播放器的歌曲信息区域，或轻轻上滑后松手，可打开当前播放歌曲的详情；面板从底部导航栏上沿展开，拖动时跟随手指。下载完成后自动读取音频时长、码率与采样率，直接更新当前卡片和详情。Android 界面延伸至系统栏区域，并按状态栏与屏幕缺口保留操作空间。
 

@@ -39,6 +39,17 @@ namespace MajMusic.Presentation.ViewModels
             _lifetime = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
         }
 
+        /// <summary>Looks up shared local files for one visible song without starting an audio transfer.</summary>
+        /// <param name="track">The currently attached source revision.</param>
+        /// <param name="cancellationToken">Cancels lookup when this card leaves the viewport.</param>
+        /// <returns>The locally refreshed descriptor, or the unchanged entry when unsupported.</returns>
+        internal Task<MusicTrack> ResolveLocalTrackAsync(MusicTrack track, CancellationToken cancellationToken)
+        {
+            return _workspace is ILocalTrackMediaResolver resolver
+                ? resolver.ResolveLocalTrackAsync(track, cancellationToken)
+                : Task.FromResult(track);
+        }
+
         /// <summary>Gets a cover identity unaffected by audio metadata changes.</summary>
         /// <param name="track">The entry carrying a cover descriptor.</param>
         /// <returns>The resource identity, including source ownership and sparse-descriptor fallback.</returns>

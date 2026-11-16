@@ -264,13 +264,20 @@
                         </Grid>
                     </Border>
                     <Border x:Name="CacheSettingsPanel" Classes="card" Padding="10">
-                        <Grid RowDefinitions="Auto,Auto,38" RowSpacing="8" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <Grid RowDefinitions="Auto,Auto,Auto,38" RowSpacing="8" ColumnDefinitions="*,Auto" ColumnSpacing="12">
                             <TextBlock Text="本地音乐" FontWeight="SemiBold" />
-                            <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding DataDirectory}" Classes="muted" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DataDirectory}" />
-                            <arc:Select x:Name="LocalMediaCleanupPicker" Grid.Row="2" ItemsSource="{Binding LocalMediaCleanupChoices}"
+                            <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="64,*" ColumnSpacing="8">
+                                <TextBlock Text="媒体目录" Classes="muted" FontSize="12" />
+                                <TextBlock Grid.Column="1" Text="{Binding AppliedMediaStoragePath}" Classes="muted" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AppliedMediaStoragePath}" />
+                            </Grid>
+                            <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="64,*" ColumnSpacing="8">
+                                <TextBlock Text="配置目录" Classes="muted" FontSize="12" />
+                                <TextBlock Grid.Column="1" Text="{Binding DataDirectory}" Classes="muted" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DataDirectory}" />
+                            </Grid>
+                            <arc:Select x:Name="LocalMediaCleanupPicker" Grid.Row="3" ItemsSource="{Binding LocalMediaCleanupChoices}"
                                         TextSelector="{x:Static converters:MusicSelectLabels.LocalMediaCleanup}"
                                         SelectedItem="{Binding SelectedLocalMediaCleanup, Mode=TwoWay}" HorizontalAlignment="Stretch" />
-                            <arc:Button Grid.Row="2" Grid.Column="1" Content="清理本地音乐" Command="{Binding CleanupLocalMediaCommand}" />
+                            <arc:Button Grid.Row="3" Grid.Column="1" Content="清理本地音乐" Command="{Binding CleanupLocalMediaCommand}" />
                         </Grid>
                     </Border>
                 </StackPanel>

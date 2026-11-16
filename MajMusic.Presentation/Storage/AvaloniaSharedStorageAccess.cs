@@ -153,7 +153,7 @@ namespace MajMusic.Presentation.Storage
                 throw new ArgumentException("A granted shared document tree is required.", nameof(root));
             }
             var provider = await ProviderAsync(token).ConfigureAwait(false);
-            var current = await provider.TryGetFolderFromPathAsync(new Uri(root)).ConfigureAwait(false)
+            var current = await AvaloniaDocumentStorage.OpenGrantedFolderAsync(provider, root, token).ConfigureAwait(false)
                 ?? throw new DirectoryNotFoundException("共享目录不可访问，请重新浏览并选择目录。");
             try
             {

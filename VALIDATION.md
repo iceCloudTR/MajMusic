@@ -171,3 +171,19 @@ Android 共享树使用独立的读写授权；普通曲库仍只读。对象先
 本轮检查范围为桌面 Release 编译、Android ARM64 发布检查、覆盖安装与启动界面。按要求未运行详细功能、批量删除、双进程读写或其他桌面平台的运行测试。
 
 结果：桌面 Release 为 0 警告、0 错误；最终 Android 包 38.89 MiB，无 C# 编译警告，通过发布包检查。覆盖安装 `Success`，冷启动 `Status: ok`、约 1.93 秒；截图确认主页、封面与“已在本地”状态显示。
+
+## 共享目录刷新与 PC 实测
+
+2026-11-17，Windows PC 的 `shared-play-storage` 与显式 `shared-play-storage-live` 均通过。合成回归先启动 Music 并保留云端卡片，再由外部写入不同接入点目录名下的旧版 `maidata.txt` 与音频，不提供 SHA sidecar；再次搜索即附加本地文件，原卡片更新为“已在本地”，在线曲目身份保持不变。旧文件先按 maidata MD5、谱面版本与目录哈希确认归属，再检查完整文件并计算媒体 SHA-256；已有资源摘要时严格比对。错误 maidata、未完成分片和匿名来源音频冲突均被拒绝，已知正确摘要可消歧。搜索刷新只读公共元数据，文件校验限于初始批次与可见卡片。
+
+真实数据验证只读提取公开接入点信息与目标歌曲，清空账号后写入隔离工作区，禁止 HTTP 与凭据访问；音频、maidata、原设置、Music 数据库和 Play 公共数据库的前后指纹一致。桌面实际界面搜索“讲数学”后，`“人民叫师”讲数学` 显示“已在本地”及 `05:24`。
+
+```sh
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- directory-sources document-storage directory-ui shared-play-storage
+```
+
+`shared-play-storage-live` 不在默认回归中，需明确提供 `MAJMUSIC_SHARED_PLAY_ROOT`、`MAJMUSIC_SHARED_PLAY_SETTINGS`、`MAJMUSIC_SHARED_PLAY_LIBRARY`、`MAJMUSIC_SHARED_PLAY_AUDIO`、`MAJMUSIC_SHARED_PLAY_CHART_HASH` 与 `MAJMUSIC_SHARED_PLAY_AUDIO_SHA256`；摘要写入 `artifacts/shared-play-live/`，不记录账号或凭据。
+
+最终运行上述四组与显式 live 组，五组全部通过；文档目录卡片断言同步为“在云端／已在本地”的状态语义。桌面 Debug、Release 均为 0 警告、0 错误。
+
+本轮 Android 存储改为普通路径与“文件权限”主入口，授权返回后在原操作中保存并扫描；SAF 选择器保留为备选，选目录后也立即应用。设置区分生效的媒体目录与私有配置目录，“读取全部”包含共享曲库。ARM64 最终包位于 `artifacts/android-arm64-20261117-062123-892e2957/`，38.91 MiB，无 C# 编译警告，通过签名、单 ARM64 ABI 和 16 KB 原生库对齐检查。按用户要求，本轮未安装或进行设备验证。

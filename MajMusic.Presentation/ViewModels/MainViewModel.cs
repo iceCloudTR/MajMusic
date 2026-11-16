@@ -129,7 +129,7 @@ namespace MajMusic.Presentation.ViewModels
             PreviousCommand = CreateTransportCommand(() => _playback.PreviousAsync(_lifetime.Token), () => CanPlay && _playback.Queue.Tracks.Count > 0);
             ToggleFavoriteCommand = CreateCommand(ToggleFavoriteAsync, () => HasFavorites && SelectedTrack is not null);
             OpenFavoritesCommand = CreateCommand(OpenFavoritesAsync, () => HasFavorites);
-            RescanCommand = CreateCommand(RescanAsync, () => _settings.LocalDirectorySources.Count > 0);
+            RescanCommand = CreateCommand(RescanAsync, () => _workspace is IMajdataPlayWorkspace || _settings.LocalDirectorySources.Count > 0);
             InitializeSourceCommands();
             InitializeMetadataCommands();
             InitializeAccountCommands();
@@ -395,6 +395,7 @@ namespace MajMusic.Presentation.ViewModels
                 await PrepareAppearanceSettingsAsync();
                 await PrepareCardLayoutSettingsAsync();
                 _settings = LocalDirectorySettings.Normalize(await _workspace.LoadSettingsAsync(_lifetime.Token));
+                await PrepareMediaStorageSettingsAsync();
                 InitializeMajdataPlaySettings();
                 _lifetime.Token.ThrowIfCancellationRequested();
                 RestoreAppearanceSettings(_settings.Appearance);
@@ -1532,7 +1533,7 @@ namespace MajMusic.Presentation.ViewModels
                 MoreRecommendationsCommand, PreviousRecommendationPageCommand, NextRecommendationPageCommand,
                 PreviousLibraryPageCommand, NextLibraryPageCommand, NewAccountCommand,
                 SaveAccountCommand, RemoveAccountCommand, NewDirectoryCommand, SaveDirectoryCommand, ScanDirectoryCommand, RemoveDirectoryCommand,
-                RefreshOutputDevicesCommand, SaveAudioSettingsCommand, SaveMediaStorageCommand, TogglePlayPauseCommand,
+                RefreshOutputDevicesCommand, SaveAudioSettingsCommand, SaveMediaStorageCommand, RequestFileAccessCommand, TogglePlayPauseCommand,
                 ToggleShuffleCommand, CycleRepeatModeCommand,
                 PreviousPlaylistPageCommand, NextPlaylistPageCommand, PreviousDirectoryPageCommand, NextDirectoryPageCommand,
                 ShowRecommendationsModeCommand, ShowPlaylistsModeCommand, ShowLibraryModeCommand, BeginSearchCommand, CancelSearchCommand })

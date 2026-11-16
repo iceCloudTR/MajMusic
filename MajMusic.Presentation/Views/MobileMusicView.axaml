@@ -139,16 +139,17 @@
                 <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
                     <Border Classes="mobilePanel" Padding="10">
                         <StackPanel Spacing="8">
-                            <Grid ColumnDefinitions="80,*" ColumnSpacing="8">
+                            <Grid ColumnDefinitions="80,*,88" ColumnSpacing="8">
                                 <TextBlock Text="媒体储存" FontWeight="SemiBold" VerticalAlignment="Center" />
                                 <arc:Select x:Name="MobileMediaStorageModePicker" Grid.Column="1" Size="Medium" Height="44" ItemsSource="{Binding MediaStorageModes}"
                                             TextSelector="{x:Static converters:MusicSelectLabels.MediaStorageMode}"
                                             SelectedItem="{Binding SelectedMediaStorageMode, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" />
+                                <arcm:Button Grid.Column="2" Content="文件权限" Variant="Tinted" Command="{Binding RequestFileAccessCommand}" />
                             </Grid>
                             <Grid ColumnDefinitions="*,44,88" ColumnSpacing="8">
                                 <arcm:TextField x:Name="MobileMediaStoragePathBox" Text="{Binding MediaStoragePath, Mode=TwoWay}" PlaceholderText="媒体目录" IsEnabled="{Binding IsIdle}" />
-                                <arcm:Button Grid.Column="1" Content="…" Variant="Tinted" Click="OnMediaStorageBrowseClicked" IsEnabled="{Binding IsIdle}" AutomationProperties.Name="选择媒体目录" />
-                                <arcm:Button Grid.Column="2" Content="保存读取" Command="{Binding SaveMediaStorageCommand}" />
+                                <arcm:Button Grid.Column="1" Content="…" Variant="Tinted" Click="OnMediaStorageBrowseClicked" IsEnabled="{Binding IsIdle}" AutomationProperties.Name="系统目录选择器" />
+                                <arcm:Button Grid.Column="2" Content="应用" Command="{Binding SaveMediaStorageCommand}" />
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -275,6 +276,9 @@
                     <Border Classes="mobilePanel">
                         <StackPanel Spacing="12">
                             <TextBlock Text="本地音乐" FontSize="17" FontWeight="SemiBold" />
+                            <TextBlock Text="媒体目录" Classes="mobileLabel" />
+                            <TextBlock Text="{Binding AppliedMediaStoragePath}" Classes="mobileLabel" TextWrapping="Wrap" />
+                            <TextBlock Text="配置目录" Classes="mobileLabel" />
                             <TextBlock Text="{Binding DataDirectory}" Classes="mobileLabel" TextWrapping="Wrap" />
                             <arc:Select x:Name="MobileLocalMediaCleanupPicker" Size="Medium" Height="44" ItemsSource="{Binding LocalMediaCleanupChoices}"
                                         TextSelector="{x:Static converters:MusicSelectLabels.LocalMediaCleanup}"

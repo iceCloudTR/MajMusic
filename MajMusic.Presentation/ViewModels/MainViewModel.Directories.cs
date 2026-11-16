@@ -120,7 +120,13 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A task representing configuration and one source scan.</returns>
         private async Task SaveDirectoryAsync()
         {
-            var path = LocalDirectorySettings.NormalizePath(DirectoryPath.Trim());
+            var requested = LocalDirectorySettings.NormalizePath(DirectoryPath.Trim());
+            if (EnsureFileAccessAsync is { } authorize && !await authorize(requested))
+            {
+                return;
+            }
+            var path = LocalDirectorySettings.NormalizePath(ResolveFileSystemPath?.Invoke(requested) ?? requested);
+            DirectoryPath = path;
             var source = new LocalDirectorySource
             {
                 Id = SelectedDirectory?.Id ?? Guid.NewGuid().ToString("N"),
@@ -134,9 +140,13 @@ namespace MajMusic.Presentation.ViewModels
 
         /// <summary>Rereads the selected saved configuration instead of unsaved editor values.</summary>
         /// <returns>A task representing one configured source read.</returns>
-        private Task ScanSelectedDirectoryAsync()
+        private async Task ScanSelectedDirectoryAsync()
         {
-            return SelectedDirectory is { } source ? ScanAndRefreshDirectoryAsync(source) : Task.CompletedTask;
+            if (SelectedDirectory is not { } source || EnsureFileAccessAsync is { } authorize && !await authorize(source.Path))
+            {
+                return;
+            }
+            await ScanAndRefreshDirectoryAsync(source);
         }
 
         /// <summary>Removes a configuration while retaining indexed music and locally edited lists.</summary>
@@ -275,24 +285,68 @@ namespace MajMusic.Presentation.ViewModels
             var tracks = 0;
             var lists = 0;
             var issues = 0;
-            foreach (var source in _settings.LocalDirectorySources.OrderBy(item => item.Kind).ToArray())
+            var media = _workspace as IMajdataPlayWorkspace;
+            if (media is not null && EnsureFileAccessAsync is { } authorize && !await authorize(AppliedMediaStoragePath))
             {
-                try
+                return;
+            }
+            InvalidateMediaStorageBrowse(false);
+            try
+            {
+                if (media is not null)
                 {
-                    var result = await ScanDirectorySourceAsync(source);
-                    tracks += result.TrackCount;
-                    lists += result.PlaylistCount;
+                    var result = await media.RefreshMajdataPlayAsync(_lifetime.Token);
+                    tracks += result.Tracks.Count;
                     issues += result.Issues.Count;
                 }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                foreach (var source in _settings.LocalDirectorySources.OrderBy(item => item.Kind).ToArray())
                 {
-                    issues++;
+                    if (media is not null && IsMediaStorageChartsSource(source.Path))
+                    {
+                        continue;
+                    }
+                    try
+                    {
+                        if (EnsureFileAccessAsync is { } ensure && !await ensure(source.Path))
+                        {
+                            return;
+                        }
+                        var result = await ScanDirectorySourceAsync(source);
+                        tracks += result.TrackCount;
+                        lists += result.PlaylistCount;
+                        issues += result.Issues.Count;
+                    }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                    {
+                        issues++;
+                    }
                 }
             }
-
-            await ReloadPlaylistsAsync();
-            await ReloadLibraryAsync();
+            finally
+            {
+                if (!_lifetime.IsCancellationRequested)
+                {
+                    await ReloadPlaylistsAsync();
+                    await ReloadLibraryAsync();
+                }
+            }
             Status = $"已更新 {tracks} 首音乐、{lists} 个列表" + (issues > 0 ? $"，跳过 {issues} 项" : string.Empty);
+        }
+
+        /// <summary>Avoids reading an ordinary charts subtree a second time after the media-root scan.</summary>
+        /// <param name="path">The independently configured source path.</param>
+        /// <returns>Whether the current media scan already covers this ordinary source subtree.</returns>
+        private bool IsMediaStorageChartsSource(string path)
+        {
+            var root = AppliedMediaStoragePath;
+            if (DocumentReference.IsContentUri(root) || DocumentReference.IsContentUri(path))
+            {
+                return false;
+            }
+            var charts = Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.Combine(root, "MaiCharts")));
+            var candidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+            return string.Equals(charts, candidate, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
+                || IsWithinDirectory(candidate, charts);
         }
 
         /// <summary>Formats an operation result without exposing implementation policy in the interface.</summary>

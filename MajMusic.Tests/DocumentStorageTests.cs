@@ -105,8 +105,8 @@ namespace MajMusic.Tests
             {
                 card.RestoreDownloadState(new SongDownloadState { IsAvailable = true, LocalPath = track.Audio.LocalPath });
                 await card.ActivateAsync();
-                TestAssert.True(card.Cover is not null && !card.HasDownloadStatus,
-                    "Provider music must load its real cover independently of filesystem-only online-download availability and never claim to be a managed download.");
+                TestAssert.True(card.Cover is not null && card.IsDownloaded && card.DownloadStatus == "已在本地",
+                    "An online entry backed by an existing document file retains its real cover and the same local-availability state as native files.");
             }
 
             var exchange = new MajCollectionExchange(workspace, documents);

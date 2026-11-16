@@ -37,6 +37,26 @@ namespace MajMusic.Infrastructure.Shared
             return Path.Combine("Cache", "Objects", digest[..2], digest);
         }
 
+        /// <summary>Reads only public source metadata without opening or hashing any media object.</summary>
+        /// <param name="endpoints">The configured source identities allowed to own returned charts.</param>
+        /// <param name="cancellationToken">Cancels the short SQLite read.</param>
+        /// <returns>Online descriptors whose local resources can be checked when their cards become visible.</returns>
+        /// <exception cref="SqliteException">The existing runtime database cannot be read.</exception>
+        /// <exception cref="OperationCanceledException">The operation is cancelled.</exception>
+        public async Task<IReadOnlyList<MusicTrack>> ReadMetadataOnlyAsync(IReadOnlyList<EndpointConfiguration> endpoints, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(endpoints);
+            cancellationToken.ThrowIfCancellationRequested();
+            var database = Path.Combine(_root, "Runtime", "runtime.db");
+            if (!File.Exists(database) || endpoints.Count == 0)
+            {
+                return Array.Empty<MusicTrack>();
+            }
+
+            var entries = await ReadMetadataAsync(database, endpoints, cancellationToken).ConfigureAwait(false);
+            return entries.Select(entry => entry.Track).ToArray();
+        }
+
         /// <summary>Reads chart metadata scoped to explicitly configured endpoints and attaches only verified shared files.</summary>
         /// <param name="endpoints">Existing MajMusic endpoint identities; no accounts or sessions are opened.</param>
         /// <param name="cancellationToken">Cancels catalog reads and file hashing.</param>
@@ -261,7 +281,7 @@ namespace MajMusic.Infrastructure.Shared
             return result;
         }
 
-        /// <summary>Resolves canonical content first, then completed legacy files verified against a digest or sidecar.</summary>
+        /// <summary>Resolves canonical content first, then stable legacy files bound to the exact original chart bytes.</summary>
         /// <param name="track">The owning chart and revision.</param>
         /// <param name="endpoint">The configured legacy directory name.</param>
         /// <param name="resource">The resource's known content digest.</param>
@@ -280,40 +300,78 @@ namespace MajMusic.Infrastructure.Shared
                 }
             }
 
-            var directory = LegacyDirectory(endpoint, track.Revision);
-            if (directory is null)
+            var candidates = LegacyCandidates(endpoint, track.Revision);
+            VerifiedFile? selected = null;
+            foreach (var candidate in candidates)
             {
-                return null;
-            }
-
-            foreach (var name in legacyNames)
-            {
-                var path = Path.Combine(directory, name);
-                var digest = expected ?? await ReadSidecarAsync(path + ".sha256", token).ConfigureAwait(false);
-                if (digest is not null && await VerifyAsync(path, digest, token).ConfigureAwait(false) is { } file)
+                token.ThrowIfCancellationRequested();
+                var chart = await VerifyAsync(Path.Combine(candidate.Directory, "maidata.txt"), null, token).ConfigureAwait(false);
+                if (chart is null || Convert.ToBase64String(Convert.FromHexString(chart.Md5)) != track.Revision ||
+                    !Path.GetFileName(candidate.Directory).Equals(BitConverter.ToString(Convert.FromHexString(chart.Md5)), StringComparison.OrdinalIgnoreCase))
                 {
-                    return resource with { LocalPath = file.Path, Sha256 = file.Sha256, Md5 = file.Md5, Length = file.Length };
+                    continue;
                 }
+
+                VerifiedFile? resourceFile = null;
+                foreach (var name in legacyNames)
+                {
+                    var path = Path.Combine(candidate.Directory, name);
+                    var sidecar = path + ".sha256";
+                    var digest = expected ?? await ReadSidecarAsync(sidecar, token).ConfigureAwait(false);
+                    if (expected is null && File.Exists(sidecar) && digest is null)
+                    {
+                        continue;
+                    }
+
+                    var file = await VerifyAsync(path, digest, token).ConfigureAwait(false);
+                    if (file is not null && (resource.Length is not > 0 || resource.Length == file.Length) &&
+                        (NormalizeMd5(resource.Md5) is not { } md5 || md5 == file.Md5))
+                    {
+                        resourceFile = file;
+                        break;
+                    }
+                }
+
+                if (resourceFile is null)
+                {
+                    continue;
+                }
+
+                if (candidate.ExactEndpoint || expected is not null)
+                {
+                    return resource with { LocalPath = resourceFile.Path, Sha256 = resourceFile.Sha256, Md5 = resourceFile.Md5, Length = resourceFile.Length };
+                }
+
+                if (selected is not null && selected.Sha256 != resourceFile.Sha256)
+                {
+                    // A matching chart alone cannot choose between different anonymous servers' audio or artwork.
+                    return null;
+                }
+
+                selected = resourceFile;
             }
 
-            return null;
+            return selected is null ? null : resource with { LocalPath = selected.Path, Sha256 = selected.Sha256, Md5 = selected.Md5, Length = selected.Length };
         }
 
         /// <summary>Verifies a completed file without modifying or promoting any partial download.</summary>
         /// <param name="path">The candidate complete filename.</param>
-        /// <param name="expected">Its expected lowercase SHA-256 digest.</param>
+        /// <param name="expected">The expected SHA-256, or null only when a legacy chart identity is verified separately.</param>
         /// <param name="token">Cancels hashing.</param>
         /// <returns>The verified path and length, or null when absent, unreadable or mismatched.</returns>
-        private static async Task<VerifiedFile?> VerifyAsync(string path, string expected, CancellationToken token)
+        private static async Task<VerifiedFile?> VerifyAsync(string path, string? expected, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            if (!File.Exists(path))
+            if (!IsRegularEntry(path, false))
             {
                 return null;
             }
 
             try
             {
+                var before = new FileInfo(path);
+                var modified = before.LastWriteTimeUtc.Ticks;
+                var originalLength = before.Length;
                 await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
                 var length = stream.Length;
                 using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -322,15 +380,20 @@ namespace MajMusic.Infrastructure.Shared
                 try
                 {
                     int read;
+                    long received = 0;
                     while ((read = await stream.ReadAsync(buffer.AsMemory(0, 81920), token).ConfigureAwait(false)) > 0)
                     {
+                        received += read;
                         sha256.AppendData(buffer, 0, read);
                         md5.AppendData(buffer, 0, read);
                     }
 
                     var digest = Convert.ToHexStringLower(sha256.GetHashAndReset());
                     var md5Digest = Convert.ToHexStringLower(md5.GetHashAndReset());
-                    return length > 0 && stream.Length == length && digest == expected ? new VerifiedFile(path, digest, md5Digest, length) : null;
+                    before.Refresh();
+                    return length > 0 && received == length && originalLength == length && stream.Length == length && before.Exists &&
+                        before.Length == length && before.LastWriteTimeUtc.Ticks == modified && (before.Attributes & FileAttributes.ReparsePoint) == 0 &&
+                        (expected is null || digest == expected) ? new VerifiedFile(path, digest, md5Digest, length) : null;
                 }
                 finally
                 {
@@ -343,12 +406,75 @@ namespace MajMusic.Infrastructure.Shared
             }
         }
 
+        /// <summary>Prioritizes the configured endpoint name, then checks ordinary sibling endpoint folders for this chart hash.</summary>
+        /// <param name="endpoint">The configured friendly name.</param>
+        /// <param name="revision">The exact Base64 MD5 chart identity.</param>
+        /// <returns>Only non-reparse chart directories beneath the selected legacy Net root.</returns>
+        private IReadOnlyList<(string Directory, bool ExactEndpoint)> LegacyCandidates(EndpointConfiguration endpoint, string? revision)
+        {
+            var result = new List<(string Directory, bool ExactEndpoint)>();
+            var cache = Path.Combine(_root, "Cache");
+            var net = Path.Combine(cache, "Net");
+            if (!IsChartHash(revision) || !IsRegularEntry(_root, true) || !IsRegularEntry(cache, true) || !IsRegularEntry(net, true))
+            {
+                return result;
+            }
+
+            var key = BitConverter.ToString(Convert.FromBase64String(revision!));
+            var exact = LegacyDirectory(endpoint, revision);
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (exact is not null && IsRegularEntry(Path.GetDirectoryName(exact)!, true) && IsRegularEntry(exact, true))
+            {
+                result.Add((exact, true));
+            }
+
+            try
+            {
+                foreach (var directory in Directory.EnumerateDirectories(net, "*", new EnumerationOptions { AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = true }))
+                {
+                    var child = Path.Combine(directory, key);
+                    if (!string.Equals(child, exact, comparison) && IsRegularEntry(directory, true) && IsRegularEntry(child, true))
+                    {
+                        result.Add((child, false));
+                    }
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // An inaccessible sibling does not invalidate a verified explicitly named endpoint directory.
+            }
+
+            return result;
+        }
+
+        /// <summary>Rejects links, junctions and incorrect entry kinds before any shared resource is opened.</summary>
+        /// <param name="path">The candidate directory or completed file.</param>
+        /// <param name="directory">Whether a directory is required.</param>
+        /// <returns>Whether the named entry is an ordinary file or directory.</returns>
+        private static bool IsRegularEntry(string path, bool directory)
+        {
+            try
+            {
+                var attributes = File.GetAttributes(path);
+                return (attributes & FileAttributes.ReparsePoint) == 0 && ((attributes & FileAttributes.Directory) != 0) == directory;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+            {
+                return false;
+            }
+        }
+
         /// <summary>Reads a legacy Base64 SHA-256 sidecar while rejecting incomplete or malformed metadata.</summary>
         /// <param name="path">The completed resource's sidecar filename.</param>
         /// <param name="token">Cancels the read.</param>
         /// <returns>The digest in lowercase hexadecimal, or null when unavailable.</returns>
         private static async Task<string?> ReadSidecarAsync(string path, CancellationToken token)
         {
+            if (!IsRegularEntry(path, false))
+            {
+                return null;
+            }
+
             try
             {
                 var info = new FileInfo(path);

@@ -144,18 +144,21 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             var state = _downloadState;
-            var path = state.LocalPath ?? track.Audio.LocalPath;
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return;
-            }
-
             var version = state.Version;
-            var available = DocumentReference.IsContentUri(path) || await Task.Run(() => File.Exists(path), token);
+            var located = await _cache.ResolveLocalTrackAsync(track, token);
+            var path = state.LocalPath ?? track.Audio.LocalPath;
+            path = located.Audio.LocalPath ?? path;
+            var available = !string.IsNullOrWhiteSpace(path)
+                && (DocumentReference.IsContentUri(path) || await Task.Run(() => File.Exists(path), token));
             token.ThrowIfCancellationRequested();
             if (!_disposed && _attachments > 0 && generation == _generation && ReferenceEquals(state, _downloadState)
                 && version == state.Version && state.Progress?.State != AudioDownloadState.Downloading)
             {
+                if (located.Audio != track.Audio || located.Cover != track.Cover)
+                {
+                    _track = _track with { Audio = located.Audio, Cover = located.Cover, Chart = located.Chart };
+                    PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(Track)));
+                }
                 state.IsAvailable = available;
                 state.LocalPath = path;
                 state.Version++;

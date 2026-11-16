@@ -44,6 +44,8 @@ namespace MajMusic.Tests
                 ("audio-output", AudioOutputTests.RunAsync, true),
                 ("audio-settings-ui", AudioSettingsPresentationTests.RunAsync, true),
                 ("workspace", WorkspaceTests.RunAsync, true),
+                ("shared-play-storage", SharedPlayStorageTests.RunAsync, true),
+                ("shared-play-storage-live", SharedPlayStorageTests.RunLiveAsync, false),
                 ("collection", CollectionTests.RunAsync, true),
                 ("collection-workflow", CollectionWorkflowTests.RunAsync, true),
                 ("playlists", PlaylistTests.RunAsync, true),

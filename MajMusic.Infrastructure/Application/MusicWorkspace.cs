@@ -154,9 +154,11 @@ namespace MajMusic.Infrastructure.Application
         }
 
         /// <inheritdoc />
-        public Task<IReadOnlyList<MusicTrack>> SearchAsync(string? query, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<MusicTrack>> SearchAsync(string? query, CancellationToken cancellationToken = default)
         {
-            return _library.SearchAsync(query, cancellationToken);
+            await RefreshSharedCatalogForQueryAsync(cancellationToken).ConfigureAwait(false);
+            var tracks = await _library.SearchAsync(query, cancellationToken).ConfigureAwait(false);
+            return await AttachInitialSharedMediaAsync(tracks, cancellationToken).ConfigureAwait(false);
         }
 
         /// <inheritdoc />

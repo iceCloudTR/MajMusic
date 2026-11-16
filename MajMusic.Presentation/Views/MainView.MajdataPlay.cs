@@ -41,7 +41,7 @@ namespace MajMusic.Presentation.Views
                 {
                     using var folder = folders[0];
                     var reference = await StoragePickerBridge.GetDirectoryReferenceAsync(folder, SharedDirectoryReferenceResolver);
-                    owner.SetPickedMediaStorage(reference);
+                    await owner.ApplyPickedMediaStorageAsync(reference);
                 }
             }
             catch (Exception exception)

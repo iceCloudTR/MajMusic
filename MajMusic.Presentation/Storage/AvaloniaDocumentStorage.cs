@@ -318,8 +318,93 @@ namespace MajMusic.Presentation.Storage
             }
 
             var provider = await ProviderAsync(token).ConfigureAwait(false);
-            return await provider.TryGetFolderFromPathAsync(new Uri(reference)).ConfigureAwait(false)
+            return await OpenGrantedFolderAsync(provider, reference, token).ConfigureAwait(false)
                 ?? throw new DirectoryNotFoundException("所选文档目录不可访问，请重新选择目录。");
+        }
+
+        /// <summary>Reopens a tree descendant by walking the original grant so Android retains its permission-root context.</summary>
+        /// <param name="provider">The currently attached platform storage provider.</param>
+        /// <param name="reference">The saved tree or tree/document directory URI.</param>
+        /// <param name="token">Cancels provider enumeration and releases intermediate wrappers.</param>
+        /// <returns>The caller-owned actual folder, or null when it no longer exists.</returns>
+        /// <exception cref="NotSupportedException">A descendant's opaque document ID cannot be safely resolved within its original grant.</exception>
+        internal static async Task<IStorageFolder?> OpenGrantedFolderAsync(IStorageProvider provider, string reference, CancellationToken token)
+        {
+            ArgumentNullException.ThrowIfNull(provider);
+            token.ThrowIfCancellationRequested();
+            var uri = new Uri(reference);
+            var parts = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (!DocumentReference.IsContentUri(reference) || parts.Length != 4 || parts[0] != "tree" || parts[2] != "document")
+            {
+                var folder = await provider.TryGetFolderFromPathAsync(uri).ConfigureAwait(false);
+                if (token.IsCancellationRequested)
+                {
+                    folder?.Dispose();
+                    token.ThrowIfCancellationRequested();
+                }
+
+                return folder;
+            }
+
+            var grantId = Uri.UnescapeDataString(parts[1]).TrimEnd('/');
+            var documentId = Uri.UnescapeDataString(parts[3]).TrimEnd('/');
+            var treeUri = new Uri(uri.GetLeftPart(UriPartial.Authority) + "/tree/" + parts[1]);
+            string[] descendants;
+            if (documentId == grantId)
+            {
+                descendants = [];
+            }
+            else if (documentId.StartsWith(grantId + '/', StringComparison.Ordinal))
+            {
+                descendants = documentId[(grantId.Length + 1)..].Split('/');
+                if (descendants.Any(part => string.IsNullOrWhiteSpace(part) || part is "." or ".."))
+                {
+                    throw new NotSupportedException("无法恢复所选文档子目录，请重新选择目录。");
+                }
+            }
+            else
+            {
+                throw new NotSupportedException("此文档提供方无法恢复子目录，请重新选择目标目录。");
+            }
+
+            IStorageFolder? current = await provider.TryGetFolderFromPathAsync(treeUri).ConfigureAwait(false);
+            try
+            {
+                foreach (var name in descendants)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (current is null)
+                    {
+                        return null;
+                    }
+
+                    IStorageFolder? next = null;
+                    await foreach (var item in current.GetItemsAsync().WithCancellation(token).ConfigureAwait(false))
+                    {
+                        if (item is IStorageFolder folder && item.Name.Equals(name, StringComparison.Ordinal))
+                        {
+                            next = folder;
+                            break;
+                        }
+
+                        item.Dispose();
+                    }
+
+                    // Child wrappers retain their own Activity and original PermissionRoot; disposing a parent
+                    // wrapper neither releases the persisted grant nor disposes any child document.
+                    current.Dispose();
+                    current = next;
+                }
+
+                token.ThrowIfCancellationRequested();
+                var result = current;
+                current = null;
+                return result;
+            }
+            finally
+            {
+                current?.Dispose();
+            }
         }
 
         /// <summary>Opens an existing granted document without interpreting its URI as a local path.</summary>

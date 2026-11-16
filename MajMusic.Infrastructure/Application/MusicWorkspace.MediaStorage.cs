@@ -42,7 +42,7 @@ namespace MajMusic.Infrastructure.Application
 
         /// <summary>Validates a new selection before persisting a location which the host cannot use.</summary>
         /// <param name="settings">The requested independent or shared media selection.</param>
-        /// <exception cref="InvalidDataException">A system directory or ungranted Android public path was selected.</exception>
+        /// <exception cref="InvalidDataException">A Windows system directory was selected.</exception>
         private void ValidateMediaStorageLocation(AppSettings settings)
         {
             var root = settings.UseMajdataPlayStorage
@@ -53,11 +53,6 @@ namespace MajMusic.Infrastructure.Application
                 return;
             }
             var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-            if (OperatingSystem.IsAndroid()
-                && normalized != DataDirectory && !normalized.StartsWith(DataDirectory + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-            {
-                throw new InvalidDataException("请通过目录选择器选择媒体储存位置。");
-            }
             if (OperatingSystem.IsWindows())
             {
                 var system = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
@@ -558,6 +553,8 @@ namespace MajMusic.Infrastructure.Application
             _mediaStorageRefresh.Dispose();
             _portablePlaylistWrites.Dispose();
             _sharedMediaWrites.Dispose();
+            _localMediaLookups.Dispose();
+            _sharedCatalogReads.Dispose();
         }
     }
 }
