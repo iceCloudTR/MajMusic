@@ -21,17 +21,18 @@ namespace MajMusic.Presentation.Views
         private bool _compactComments;
         /// <summary>Distinguishes the first chrome synchronization from an unchanged regular layout.</summary>
         private bool _chromeInitialized;
-        /// <summary>Prevents a user tab selection from being echoed back as another pane request.</summary>
-        private bool _synchronizingPane;
+        private bool _chartPreview;
+        private readonly SongPreviewTabs _tabs;
         /// <summary>Creates the expanded content without requesting social data or starting playback.</summary>
         public SongDetailsView()
         {
             InitializeComponent();
+            _tabs = this.FindControl<SongPreviewTabs>("SongPreviewSegments")!;
+            _tabs.SelectionChanged += OnDetailsTabSelectionChanged;
             _initialized = true;
             DataContextChanged += OnOwnerChanged;
             SizeChanged += OnDetailsSizeChanged;
-            UpdateSummaryVisibility();
-            UpdateViewportChrome();
+            UpdatePaneVisibility();
         }
 
         /// <summary>Gives discussions and the chart area the available height while metadata retains its artwork summary.</summary>
@@ -39,27 +40,20 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The selected detail pane.</param>
         private void OnDetailsTabSelectionChanged(object? sender, SelectionChangedEventArgs e)
         {
-            if (_initialized && sender is TabControl tabs && ReferenceEquals(e.Source, tabs))
+            if (ReferenceEquals(e.Source, _tabs))
             {
-                if (!_synchronizingPane && _owner is { IsSongDetailsExpanded: true } owner)
-                {
-                    _synchronizingPane = true;
-                    owner.IsSongChartPreviewSelected = tabs.SelectedIndex == 2;
-                    _synchronizingPane = false;
-                }
-                UpdateSummaryVisibility();
-                UpdateViewportChrome();
+                UpdatePaneVisibility();
             }
         }
 
-        /// <summary>Synchronizes the artwork row only after the view's named controls exist.</summary>
-        private void UpdateSummaryVisibility()
+        private void UpdatePaneVisibility()
         {
-            if (_initialized && this.FindControl<TabControl>("SongDetailsTabs") is { } tabs
-                && this.FindControl<Grid>("SongDetailsSummary") is { } summary)
-            {
-                summary.IsVisible = tabs.SelectedIndex == 0;
-            }
+            var slot = _tabs.SelectedValue is int selection ? selection : _owner?.IsSongChartPreviewSelected == true ? 1 : -1;
+            this.FindControl<Grid>("SongDetailsSummary")!.IsVisible = slot == -1;
+            this.FindControl<ScrollViewer>("SongOverviewPane")!.IsVisible = slot == -1;
+            this.FindControl<Grid>("SongCommentsLayout")!.IsVisible = slot == 0;
+            this.FindControl<Border>("ChartPreviewHost")!.IsVisible = slot > 0;
+            UpdateViewportChrome();
         }
 
         /// <inheritdoc />
@@ -100,10 +94,7 @@ namespace MajMusic.Presentation.Views
             {
                 _owner.PropertyChanged += OnSocialAvailabilityChanged;
             }
-            ResetUnavailableComments();
-            SynchronizeRequestedPane();
-            UpdateSummaryVisibility();
-            UpdateViewportChrome();
+            UpdatePaneVisibility();
         }
 
         /// <summary>Returns to ordinary metadata when social actions stop belonging to the selected song.</summary>
@@ -111,28 +102,13 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The changed social or selection property.</param>
         private void OnSocialAvailabilityChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName is nameof(MainViewModel.IsSongDetailsExpanded) or nameof(MainViewModel.IsSongChartPreviewSelected))
+            if (e.PropertyName == nameof(MainViewModel.IsSongChartPreviewSelected))
             {
-                SynchronizeRequestedPane();
+                UpdatePaneVisibility();
             }
-            if (e.PropertyName is nameof(MainViewModel.IsSongSocialVisible) or nameof(MainViewModel.SelectedTrack))
-            {
-                ResetUnavailableComments();
-            }
-            if (e.PropertyName is nameof(MainViewModel.HasSongReplyTarget) or nameof(MainViewModel.HasSongSocialStatus))
+            else if (e.PropertyName is nameof(MainViewModel.HasSongReplyTarget) or nameof(MainViewModel.HasSongSocialStatus))
             {
                 UpdateViewportChrome();
-            }
-        }
-
-        /// <summary>Honors explicit cover-preview and expanded-comment entry points without changing audio.</summary>
-        private void SynchronizeRequestedPane()
-        {
-            if (_initialized && !_synchronizingPane && _owner is { IsSongDetailsExpanded: true } owner)
-            {
-                _synchronizingPane = true;
-                this.FindControl<TabControl>("SongDetailsTabs")!.SelectedIndex = owner.IsSongChartPreviewSelected ? 2 : owner.IsSongSocialVisible ? 1 : 0;
-                _synchronizingPane = false;
             }
         }
 
@@ -147,38 +123,31 @@ namespace MajMusic.Presentation.Views
         /// <summary>Moves secondary actions into the existing title row without introducing an outer scroll surface.</summary>
         private void UpdateViewportChrome()
         {
-            if (!_initialized || this.FindControl<TabControl>("SongDetailsTabs") is not { } tabs)
+            if (!_initialized)
             {
                 return;
             }
             var threshold = 460 + (_owner?.HasSongReplyTarget == true ? 44 : 0) + (_owner?.HasSongSocialStatus == true ? 28 : 0);
-            var compact = tabs.SelectedIndex == 1 && Bounds.Height > 0 && Bounds.Height < threshold;
-            if (_chromeInitialized && compact == _compactComments)
+            var compact = Equals(_tabs.SelectedValue, 0) && Bounds.Height > 0 && Bounds.Height < threshold;
+            var chart = this.FindControl<Border>("ChartPreviewHost")!.IsVisible;
+            if (_chromeInitialized && compact == _compactComments && chart == _chartPreview)
             {
                 return;
             }
             _chromeInitialized = true;
             _compactComments = compact;
+            _chartPreview = chart;
             var layout = this.FindControl<Grid>("SongDetailsLayout")!;
-            layout.Margin = compact ? new Thickness(16, 4) : new Thickness(16);
-            layout.RowSpacing = compact ? 3 : 12;
+            layout.Margin = chart ? new Thickness(6, 4) : compact ? new Thickness(16, 4) : new Thickness(16);
+            layout.RowSpacing = chart ? 4 : compact ? 3 : 12;
             var comments = this.FindControl<Grid>("SongCommentsLayout")!;
             comments.Margin = new Thickness(0, compact ? 3 : 8, 0, 0);
             comments.RowSpacing = compact ? 3 : 8;
             this.FindControl<Grid>("SongCommentsHeader")!.IsVisible = !compact;
             this.FindControl<Grid>("SongMoreCommentsHost")!.IsVisible = !compact;
-            this.FindControl<Grid>("SongDetailsFooter")!.IsVisible = !compact;
+            this.FindControl<Grid>("SongDetailsFooter")!.IsVisible = !compact && !chart;
             this.FindControl<StackPanel>("CompactSongDetailsActions")!.IsVisible = compact;
             this.FindControl<TextBlock>("SongCommentsStatus")!.MaxLines = compact ? 1 : 2;
-        }
-
-        /// <summary>Closes an unavailable comment pane without changing song selection or issuing requests.</summary>
-        private void ResetUnavailableComments()
-        {
-            if (_initialized && _owner?.IsSongSocialVisible != true && this.FindControl<TabControl>("SongDetailsTabs") is { SelectedIndex: 1 } tabs)
-            {
-                tabs.SelectedIndex = 0;
-            }
         }
 
         /// <summary>Explicitly plays the inspected entry rather than resuming an unrelated paused song.</summary>

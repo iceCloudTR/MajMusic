@@ -12,11 +12,6 @@
         <views:CommentIndentConverter x:Key="CommentIndent" />
     </UserControl.Resources>
     <UserControl.Styles>
-        <Style Selector="TabItem">
-            <Setter Property="FontSize" Value="13" />
-            <Setter Property="MinHeight" Value="44" />
-            <Setter Property="Padding" Value="14,8" />
-        </Style>
         <Style Selector="TextBlock.detailMuted">
             <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
             <Setter Property="FontSize" Value="12" />
@@ -75,9 +70,10 @@
                 <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource DetailsDisplay}, ConverterParameter=audio}" Classes="detailMuted" TextTrimming="CharacterEllipsis" />
             </StackPanel>
         </Grid>
-        <TabControl x:Name="SongDetailsTabs" Grid.Row="2" Padding="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" SelectionChanged="OnDetailsTabSelectionChanged">
-            <TabItem Header="详情">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid x:Name="SongDetailsTabs" Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="6">
+            <views:SongPreviewTabs x:Name="SongPreviewSegments" ShowOverview="True" />
+            <Grid Grid.Row="1" ClipToBounds="True">
+                <ScrollViewer x:Name="SongOverviewPane" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Spacing="16" Margin="0,12,0,8">
                         <TextBlock Text="{Binding SelectedTrack.Description}" TextWrapping="Wrap" FontSize="13" />
                         <ItemsControl ItemsSource="{Binding SelectedTrack.Tags}">
@@ -101,9 +97,7 @@
                         </Grid>
                     </StackPanel>
                 </ScrollViewer>
-            </TabItem>
-            <TabItem x:Name="SongCommentsTab" Header="评论" IsVisible="{Binding IsSongSocialVisible}">
-                <Grid x:Name="SongCommentsLayout" RowDefinitions="Auto,Auto,*,Auto,Auto,Auto" RowSpacing="8" Margin="0,8,0,0" IsVisible="{Binding IsSongSocialVisible}">
+                <Grid x:Name="SongCommentsLayout" RowDefinitions="Auto,Auto,*,Auto,Auto,Auto" RowSpacing="8" Margin="0,8,0,0" IsVisible="False">
                     <Grid x:Name="SongCommentsHeader" ColumnDefinitions="*,Auto,44" ColumnSpacing="8">
                         <TextBlock Text="{Binding SongCommentCountText}" FontWeight="SemiBold" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="1" Text="加载中" Classes="detailMuted" IsVisible="{Binding IsSongSocialLoading}" VerticalAlignment="Center" />
@@ -128,13 +122,11 @@
                         <arc:Button x:Name="PostSongCommentButton" Grid.Column="1" Classes="detailAction" Content="发送" Height="66" MinHeight="66" Command="{Binding PostSongCommentCommand}" IsEnabled="{Binding CanPostSongComment}" VerticalAlignment="Stretch" />
                     </Grid>
                 </Grid>
-            </TabItem>
-            <TabItem Header="谱面">
-                <Border x:Name="ChartPreviewHost" Background="{DynamicResource MusicRaisedBrush}" CornerRadius="12" Margin="0,12,0,0" MinHeight="160">
+                <Border x:Name="ChartPreviewHost" Background="{DynamicResource MusicRaisedBrush}" CornerRadius="12" ClipToBounds="True" IsVisible="False">
                     <views:ChartPreviewPane />
                 </Border>
-            </TabItem>
-        </TabControl>
+            </Grid>
+        </Grid>
         <Grid x:Name="SongDetailsFooter" Grid.Row="3" RowDefinitions="44">
             <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
                 <arc:Button Classes="detailAction" Content="{Binding FavoriteButtonText}" Command="{Binding ToggleFavoriteCommand}" HorizontalAlignment="Stretch" />

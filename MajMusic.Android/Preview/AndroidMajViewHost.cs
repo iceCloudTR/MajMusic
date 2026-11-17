@@ -5,16 +5,18 @@ using Avalonia.Android;
 using Avalonia.Controls;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using MajMusic.Presentation.Views;
 using global::Android.Webkit;
 
 namespace MajMusic.Android.Preview
 {
     /// <summary>Hosts the system WebView in the assigned Android Avalonia preview region.</summary>
-    internal sealed class AndroidMajViewHost : NativeControlHost
+    internal sealed class AndroidMajViewHost : NativeControlHost, IMajViewNavigator
     {
-        private readonly Uri _address;
+        private Uri _address;
         private readonly Action<string> _failed;
         private PreviewClient? _client;
+        private WebView? _view;
         private bool _attached;
         private bool _reported;
 
@@ -25,6 +27,15 @@ namespace MajMusic.Android.Preview
         {
             _address = address;
             _failed = failed;
+        }
+
+        public void NavigatePreview(Uri target)
+        {
+            if (target.GetLeftPart(UriPartial.Path) == _address.GetLeftPart(UriPartial.Path))
+            {
+                _address = target;
+                _view?.LoadUrl(target.AbsoluteUri);
+            }
         }
 
         /// <inheritdoc />
@@ -69,6 +80,7 @@ namespace MajMusic.Android.Preview
                 _client = new PreviewClient(_address, ReportFailure);
                 view.SetWebViewClient(_client);
                 view.LoadUrl(_address.AbsoluteUri);
+                _view = view;
                 return new AndroidViewControlHandle(view);
             }
             catch (Exception exception) when (exception is InvalidOperationException or Java.Lang.RuntimeException)
@@ -90,6 +102,7 @@ namespace MajMusic.Android.Preview
         {
             if (control is AndroidViewControlHandle { View: WebView view })
             {
+                _view = null;
                 DestroyWebView(view);
                 _client?.Dispose();
                 _client = null;

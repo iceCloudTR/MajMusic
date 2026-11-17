@@ -9,7 +9,7 @@ namespace MajMusic.Tests
 {
     internal static class ChartPreviewAssetTests
     {
-        private const string ChartText = "&title=Generated chart\r\n&first=-0.45\r\n&lv_2=4\r\n&inote_2=\r\n(120){4}1,2,E\r\n&inote_4=|| Empty\r\nE\r\n&lv_5=13+\r\n&inote_5=(120){4}1h[4:1],2-6[4:1],E\r\n&inote_7=\r\n(120){4}C,8,E\r\n";
+        private const string ChartText = "&title=Generated chart\r\n&first=-0.45\r\n&lv_2=4\r\n&inote_2=\r\n(120){4}1,2,E\r\n&inote_4=|| Empty\r\n(120){4}<HS*1.5>,,,E\r\n&lv_5=13+\r\n&inote_5=(120){4}1h[4:1],2-6[4:1],E\r\n&inote_7=\r\n(120){4}C,8,E\r\n";
 
         public static async Task RunAsync()
         {
@@ -51,13 +51,24 @@ namespace MajMusic.Tests
             using var workspace = new MusicWorkspace(Path.Combine(root, "local-data"), client, client);
             await workspace.LoadSettingsAsync();
             var imported = (await workspace.IndexDirectoryAsync(Path.Combine(root, "originals"))).Tracks.Single();
+            var expected = new[] { new ChartPreviewDifficulty(2, "4"), new ChartPreviewDifficulty(5, "13+"), new ChartPreviewDifficulty(7, null) };
+            var movedAudio = audio + ".unavailable";
+            File.Move(audio, movedAudio);
+            try
+            {
+                TestAssert.True((await workspace.GetChartPreviewDifficultiesAsync(imported)).SequenceEqual(expected),
+                    "Local difficulty lookup must not open the audio, even when the selected audio file is temporarily unavailable.");
+            }
+            finally
+            {
+                File.Move(movedAudio, audio);
+            }
             var withVideo = await workspace.ResolveChartPreviewAsync(imported, true);
             TestAssert.Equal(ChartText, withVideo.ChartText, "Preview must preserve all original chart text and its newline format.");
             TestAssert.Equal(audio, withVideo.AudioPath, "The preview must read original audio without copying.");
             TestAssert.Equal(cover, withVideo.CoverPath, "The indexed original cover is the fallback background.");
             TestAssert.Equal(video, withVideo.VideoPath, "MV.MP4 remains the original matched background reference.");
-            TestAssert.True(withVideo.Difficulties.SequenceEqual([new ChartPreviewDifficulty(2, "4"), new ChartPreviewDifficulty(5, "13+"),
-                new ChartPreviewDifficulty(7, null)]), "Difficulty slots must be selectable even when nonconsecutive or missing a level label.");
+            TestAssert.True(withVideo.Difficulties.SequenceEqual(expected), "Difficulty slots must be selectable even when nonconsecutive or missing a level label.");
             var withoutVideo = await workspace.ResolveChartPreviewAsync(imported, false);
             TestAssert.True(withoutVideo.VideoPath is null && handler.Requests.Count == 0, "Disabling local PV must not perform network requests.");
             var previewedChartBytes = await File.ReadAllBytesAsync(chart);
@@ -89,6 +100,13 @@ namespace MajMusic.Tests
                 TestAssert.True(!handler.Requests.Any(request => request.Path.Contains("/asset-", StringComparison.Ordinal)),
                     "Synchronizing the music library cannot pull preview-only assets.");
 
+                handler.Requests.Clear();
+                var difficulties = await workspace.GetChartPreviewDifficultiesAsync(first);
+                TestAssert.True(difficulties.Select(item => item.Number).SequenceEqual([2, 5, 7])
+                    && handler.Requests.Count(request => request == ("/api/asset-chart", "Alice")) == 1
+                    && handler.Requests.All(request => request.Account == "Alice"
+                        && (request.Path.EndsWith("/info", StringComparison.Ordinal) || request.Path == "/api/asset-chart")),
+                    "Online difficulty lookup must use the song's account and only request the chart, never the music, cover, or video.");
                 var noVideo = await workspace.ResolveChartPreviewAsync(first, false);
                 TestAssert.True(noVideo.ChartText.Contains("&title=Alice", StringComparison.Ordinal) && noVideo.VideoPath is null,
                     "The song's owning endpoint session must supply the chart, with no implicit PV download.");
@@ -112,6 +130,8 @@ namespace MajMusic.Tests
             using var reopened = new MusicWorkspace(data, client, client);
             await reopened.LoadSettingsAsync();
             reopened.SetOnlineEnabled(false);
+            TestAssert.True((await reopened.GetChartPreviewDifficultiesAsync(first)).Select(item => item.Number).SequenceEqual([2, 5, 7])
+                && handler.Requests.Count == 0, "Previously cached chart difficulties must be available offline.");
             var cached = await reopened.ResolveChartPreviewAsync(first, true);
             TestAssert.True(cached.VideoPath == videoPath && cached.ChartText.Contains("&title=Alice", StringComparison.Ordinal) && handler.Requests.Count == 0,
                 "Cached chart, audio, and PV must remain usable after restart with networking disabled.");
@@ -144,9 +164,19 @@ namespace MajMusic.Tests
                 "Legacy fallbacks must keep the same scoped session and not requery unsupported details for audio.");
 
             await workspace.RemoveTrackMediaAsync(track);
+            handler.Requests.Clear();
+            TestAssert.True((await workspace.GetChartPreviewDifficultiesAsync(track)).Select(item => item.Number).SequenceEqual([2, 5, 7])
+                && handler.Requests.SequenceEqual([("/api/maichart/same-song/info", "Alice"), ("/api/maichart/same-song/chart", "Alice")]),
+                "Legacy difficulty lookup must only fall back to the chart route.");
+            var warmed = await workspace.ResolveChartPreviewAsync(track, false);
+            TestAssert.True(warmed.VideoPath is null && await File.ReadAllTextAsync(warmed.AudioPath) == "audio-Alice"
+                && handler.Requests.Count(item => item == ("/api/maichart/same-song/chart", "Alice")) == 1,
+                "Chart-only warming must still let legacy services open a PV-disabled preview without fetching the chart again.");
+
+            await workspace.RemoveTrackMediaAsync(track);
             handler.ChartInfoStatus = HttpStatusCode.Forbidden;
             handler.Requests.Clear();
-            await TestAssert.ThrowsAsync<HttpRequestException>(() => workspace.ResolveChartPreviewAsync(track, true));
+            await TestAssert.ThrowsAsync<HttpRequestException>(() => workspace.GetChartPreviewDifficultiesAsync(track));
             TestAssert.True(handler.Requests.SequenceEqual([("/api/maichart/same-song/info", "Alice")]),
                 "An authorization failure must stop before any direct media fallback.");
         }

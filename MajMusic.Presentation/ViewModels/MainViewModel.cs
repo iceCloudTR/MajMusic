@@ -353,12 +353,9 @@ namespace MajMusic.Presentation.ViewModels
                 var previous = _selectedTrack;
                 if (SetField(ref _selectedTrack, value))
                 {
-                    if ((previous?.Id, previous?.SourceId, previous?.EndpointId, previous?.Revision)
-                        != (value?.Id, value?.SourceId, value?.EndpointId, value?.Revision))
+                    if (!SamePreviewTrack(previous, value))
                     {
-                        CancelMajView();
-                        MajViewStatus = string.Empty;
-                        OnPropertyChanged(nameof(CanOpenMajView));
+                        ResetMajViewTrack();
                     }
                     OnPropertyChanged(nameof(SelectedTitle));
                     OnPropertyChanged(nameof(SelectedArtist));
@@ -1490,7 +1487,7 @@ namespace MajMusic.Presentation.ViewModels
                     _playbackSnapshot = current;
                     if (changed && _majViewSession is not null && current.State is (PlaybackState.Loading or PlaybackState.Playing))
                     {
-                        CancelMajView();
+                        CloseMajView();
                     }
                     SyncAudioOutputState();
                     PublishPlaybackMetadata(current);

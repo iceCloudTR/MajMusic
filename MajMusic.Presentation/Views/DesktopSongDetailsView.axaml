@@ -16,14 +16,8 @@
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
         </Style>
-        <Style Selector="arc|Button.detailTab">
-            <Setter Property="MinHeight" Value="44" />
-            <Setter Property="Variant" Value="Ghost" />
-            <Setter Property="LabelSwapMode" Value="None" />
-        </Style>
-        <Style Selector="arc|Button.detailTab.active">
-            <Setter Property="Background" Value="{DynamicResource MusicRaisedBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
+        <Style Selector="Border#DesktopDiscussionPane.preview">
+            <Setter Property="Padding" Value="3" />
         </Style>
         <Style Selector="TextBox.commentComposer:focus /template/ Border#PART_BorderElement">
             <Setter Property="BorderBrush" Value="{DynamicResource MusicAccentBrush}" />
@@ -37,19 +31,21 @@
             <ColumnDefinition Width="0.65*" MinWidth="180" MaxWidth="280" />
         </Grid.ColumnDefinitions>
         <arc:Button Grid.Column="0" Classes="quiet" Content="‹ 返回" Command="{Binding CloseExpandedSongDetailsCommand}" HorizontalAlignment="Left" MinHeight="44" />
-        <Grid Grid.Column="1" ColumnDefinitions="Auto,Auto,*,44" ColumnSpacing="6">
-            <arc:Button x:Name="DesktopCommentsPaneButton" Classes="detailTab" Classes.active="{Binding !IsSongChartPreviewSelected}" Content="评论" Command="{Binding ShowSongCommentsCommand}" />
-            <arc:Button Grid.Column="1" x:Name="DesktopChartPaneButton" Classes="detailTab" Classes.active="{Binding IsSongChartPreviewSelected}" Content="谱面预览" Command="{Binding OpenSongChartPreviewCommand}" />
-            <arc:Button Grid.Column="3" Classes="icon" Width="44" Height="44" Content="↻" FontSize="19" Command="{Binding RefreshSongSocialCommand}" IsVisible="{Binding IsSongSocialVisible}" ToolTip.Tip="刷新评论" AutomationProperties.Name="刷新评论" />
-        </Grid>
-        <Grid Grid.Column="2" ColumnDefinitions="*,44" ColumnSpacing="6">
+        <views:SongPreviewTabs x:Name="DesktopSongPreviewTabs" Grid.Column="1" Height="44" />
+        <Grid Grid.Column="2" ColumnDefinitions="*,Auto,44" ColumnSpacing="6">
             <TextBlock Text="{Binding SongSocialAccountText}" Classes="detailMuted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <arc:Button x:Name="CloseExpandedSongDetailsButton" Grid.Column="1" Classes="icon" Width="44" Height="44" Command="{Binding CloseExpandedSongDetailsCommand}" ToolTip.Tip="收起详情" AutomationProperties.Name="收起详情">
+            <arc:Button Grid.Column="1" Classes="icon" Width="44" Height="44" Content="↻" FontSize="19" Command="{Binding RefreshSongSocialCommand}" IsVisible="{Binding IsSongSocialVisible}" ToolTip.Tip="刷新评论" AutomationProperties.Name="刷新评论" />
+            <arc:Button x:Name="CloseExpandedSongDetailsButton" Grid.Column="2" Classes="icon" Width="44" Height="44" Command="{Binding CloseExpandedSongDetailsCommand}" ToolTip.Tip="收起详情" AutomationProperties.Name="收起详情">
                 <Path Data="M 3,3 L 13,13 M 13,3 L 3,13" Stroke="{DynamicResource MusicTextBrush}" StrokeThickness="1.7" Width="16" Height="16" Stretch="None" />
             </arc:Button>
         </Grid>
         <ContentControl x:Name="DesktopSongSummarySlot" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
-        <Border x:Name="DesktopDiscussionPane" Grid.Row="1" Grid.Column="1" Classes="card" Padding="12">
+        <Border x:Name="DesktopDiscussionPane" Grid.Row="1" Grid.Column="1" Classes="card" Classes.preview="{Binding IsSongChartPreviewSelected}">
+            <Border.Styles>
+                <Style Selector="Border#DesktopDiscussionPane:not(.preview)">
+                    <Setter Property="Padding" Value="12" />
+                </Style>
+            </Border.Styles>
             <Grid>
                 <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="6" IsVisible="{Binding !IsSongChartPreviewSelected}">
                     <Grid ColumnDefinitions="*,Auto">

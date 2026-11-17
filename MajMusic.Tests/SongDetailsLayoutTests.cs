@@ -101,7 +101,7 @@ namespace MajMusic.Tests
                         "The artwork preview action must open the reserved chart viewport directly, instead of playing or opening the discussion first.");
                     AssertPlaybackUnchanged(playback, backend, playing, queue);
                     SaveFrame(window, Path.Combine(output, "ui-social-desktop-chart-preview.png"));
-                    Tap(window, Find(desktop, "DesktopCommentsPaneButton"));
+                    TapTab(window, desktop, "DesktopSongPreviewTabs", 0);
                     TestAssert.True(!model.IsSongChartPreviewSelected && Find(desktop, "SongCommentsList").IsEffectivelyVisible,
                         "The desktop comments action must restore the discussion without changing the inspected song or the original information card.");
                     Tap(window, Find(desktop, "CloseExpandedSongDetailsButton"));
@@ -218,7 +218,7 @@ namespace MajMusic.Tests
         /// <param name="model">The real source-confirmed model.</param>
         private static void ValidateDesktopComments(Window window, Control root, MainViewModel model)
         {
-            Tap(window, Find(root, "DesktopCommentsPaneButton"));
+            TapTab(window, root, "DesktopSongPreviewTabs", 0);
             var input = Find(root, "SongCommentInput");
             TestAssert.True(model.SongCommentDraft.Length == 0 && input.IsEffectivelyVisible && input.IsEffectivelyEnabled
                 && !Find(root, "PostSongCommentButton").IsEffectivelyEnabled,
@@ -322,7 +322,7 @@ namespace MajMusic.Tests
         /// <param name="model">The source-confirmed presentation owner.</param>
         private static void ValidateMobileComments(Window window, Control root, MainViewModel model)
         {
-            Tap(window, Find(root, "SongCommentsTab"));
+            TapTab(window, root, "SongPreviewSegments", 0);
             Layout(window);
             var input = Find(root, "SongCommentInput");
             var send = Find(root, "PostSongCommentButton");
@@ -385,6 +385,13 @@ namespace MajMusic.Tests
         {
             var matches = root.GetVisualDescendants().OfType<Control>().Where(control => control.Name == name).ToArray();
             return matches.FirstOrDefault(control => control.IsEffectivelyVisible) ?? matches.Single();
+        }
+
+        private static void TapTab(Window window, Control root, string name, int slot)
+        {
+            var tabs = (SongPreviewTabs)Find(root, name);
+            var option = tabs.Items.OfType<TKCode.Arc.SegmentedOption>().Single(item => Equals(item.Value, slot));
+            Tap(window, tabs.ContainerFromIndex(tabs.Items.IndexOf(option))!);
         }
 
         /// <summary>Invokes actual pointer routing on an enabled production control.</summary>

@@ -14,8 +14,26 @@ namespace MajMusic.Infrastructure.Application
         private const int MaximumVideoBytes = 256 * 1024 * 1024;
 
         /// <inheritdoc />
-        public async Task<ChartPreviewAssets> ResolveChartPreviewAsync(MusicTrack track, bool includeVideo,
+        public Task<IReadOnlyList<ChartPreviewDifficulty>> GetChartPreviewDifficultiesAsync(MusicTrack track,
             CancellationToken cancellationToken = default)
+        {
+            return WithChartPreviewSourceAsync(track, false, async (source, token) =>
+            {
+                var parsed = await ReadPlayableChartAsync(source.ChartPath, token).ConfigureAwait(false);
+                await ValidatePreviewSourceAsync(source, token).ConfigureAwait(false);
+                return parsed.Difficulties;
+            }, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task<ChartPreviewAssets> ResolveChartPreviewAsync(MusicTrack track, bool includeVideo,
+            CancellationToken cancellationToken = default)
+        {
+            return WithChartPreviewSourceAsync(track, includeVideo, CompleteChartPreviewAsync, cancellationToken);
+        }
+
+        private async Task<TResult> WithChartPreviewSourceAsync<TResult>(MusicTrack track, bool includeVideo,
+            Func<ChartPreviewSource, CancellationToken, Task<TResult>> use, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(track);
             cancellationToken.ThrowIfCancellationRequested();
@@ -78,11 +96,15 @@ namespace MajMusic.Infrastructure.Application
                         }
                     }
 
-                    await RememberChartPreviewAsync(track, DescribeCachedPreview(chartPath, remote.Chart.Descriptor),
-                        videoPath is not null && remote.Video is { } loadedVideo ? DescribeCachedPreview(videoPath, loadedVideo.Descriptor) : null,
-                        mediaVersion, mediaRoot, token).ConfigureAwait(false);
-                    return await CompleteChartPreviewAsync(track, chartPath, videoPath, mediaVersion, mediaRoot, token,
-                        resolveOnlineAudioDetails: !remote.DirectRoutes).ConfigureAwait(false);
+                    var chart = DescribeCachedPreview(chartPath, remote.Chart.Descriptor);
+                    var cachedVideo = videoPath is not null && remote.Video is { } loadedVideo
+                        ? DescribeCachedPreview(videoPath, loadedVideo.Descriptor) : null;
+                    if (track.Chart != chart || cachedVideo is not null && cachedVideo != track.Video)
+                    {
+                        await RememberChartPreviewAsync(track, chart, cachedVideo, mediaVersion, mediaRoot, token).ConfigureAwait(false);
+                    }
+                    var source = new ChartPreviewSource(track, chartPath, videoPath, mediaVersion, mediaRoot, !remote.DirectRoutes);
+                    return await use(source, token).ConfigureAwait(false);
                 }
             }
             else
@@ -99,20 +121,25 @@ namespace MajMusic.Infrastructure.Application
                 throw new FileNotFoundException("没有可预览的谱面文件。");
             }
 
-            return await CompleteChartPreviewAsync(track, chartPath, videoPath, mediaVersion, mediaRoot, cancellationToken).ConfigureAwait(false);
+            return await use(new ChartPreviewSource(track, chartPath, videoPath, mediaVersion, mediaRoot, true),
+                cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task<ChartPreviewAssets> CompleteChartPreviewAsync(MusicTrack track, string chartPath, string? videoPath,
-            long mediaVersion, string mediaRoot, CancellationToken cancellationToken, bool resolveOnlineAudioDetails = true)
+        private async Task<ChartPreviewAssets> CompleteChartPreviewAsync(ChartPreviewSource source, CancellationToken cancellationToken)
         {
-            var chartText = await ReadPreviewChartTextAsync(chartPath, cancellationToken).ConfigureAwait(false);
-            var difficulties = FindChartDifficulties(chartText, cancellationToken);
-            if (difficulties.Count == 0)
+            var track = source.Track;
+            var (chartText, difficulties) = await ReadPlayableChartAsync(source.ChartPath, cancellationToken).ConfigureAwait(false);
+            string audioPath;
+            try
             {
-                throw new InvalidDataException("谱面没有可播放的难度。");
+                audioPath = await ResolveAudioCoreAsync(track, false, source.ResolveOnlineAudioDetails, cancellationToken).ConfigureAwait(false);
+            }
+            catch (HttpRequestException exception) when (source.ResolveOnlineAudioDetails && exception.StatusCode is
+                HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented)
+            {
+                audioPath = await ResolveAudioCoreAsync(track, false, false, cancellationToken).ConfigureAwait(false);
             }
 
-            var audioPath = await ResolveAudioCoreAsync(track, false, resolveOnlineAudioDetails, cancellationToken).ConfigureAwait(false);
             string? coverPath;
             try
             {
@@ -123,10 +150,30 @@ namespace MajMusic.Infrastructure.Application
                 coverPath = null;
             }
 
+            await ValidatePreviewSourceAsync(source, cancellationToken).ConfigureAwait(false);
+            return new ChartPreviewAssets(chartText, audioPath, coverPath, source.VideoPath, difficulties);
+        }
+
+        private async Task<(string Text, IReadOnlyList<ChartPreviewDifficulty> Difficulties)> ReadPlayableChartAsync(string chartPath,
+            CancellationToken cancellationToken)
+        {
+            var chartText = await ReadPreviewChartTextAsync(chartPath, cancellationToken).ConfigureAwait(false);
+            var difficulties = FindChartDifficulties(chartText, cancellationToken);
+            if (difficulties.Count == 0)
+            {
+                throw new InvalidDataException("谱面没有可播放的难度。");
+            }
+
+            return (chartText, difficulties);
+        }
+
+        private async Task ValidatePreviewSourceAsync(ChartPreviewSource source, CancellationToken cancellationToken)
+        {
+            var track = source.Track;
             if (RequiresManagedMedia(track))
             {
-                EnsureLocalMediaVersion(track, mediaVersion);
-                EnsureMediaStorageRoot(mediaRoot);
+                EnsureLocalMediaVersion(track, source.MediaVersion);
+                EnsureMediaStorageRoot(source.MediaRoot);
                 var current = await _library.FindTrackAsync(track.Id, cancellationToken).ConfigureAwait(false);
                 if (current is not null && LocalMediaOwner(current) != LocalMediaOwner(track))
                 {
@@ -135,8 +182,10 @@ namespace MajMusic.Infrastructure.Application
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            return new ChartPreviewAssets(chartText, audioPath, coverPath, videoPath, difficulties);
         }
+
+        private sealed record ChartPreviewSource(MusicTrack Track, string ChartPath, string? VideoPath, long MediaVersion,
+            string MediaRoot, bool ResolveOnlineAudioDetails);
 
         private async Task<string?> ReadPreviewCacheAsync(MusicTrack track, MediaResource? resource, CancellationToken token)
         {
@@ -249,6 +298,7 @@ namespace MajMusic.Infrastructure.Application
             var levels = new string?[7];
             var hasNotes = new bool[7];
             var current = -1;
+            var closingTimingMarker = '\0';
             using var reader = new StringReader(chart);
             while (reader.ReadLine() is { } line)
             {
@@ -268,6 +318,7 @@ namespace MajMusic.Infrastructure.Application
                 if (part[0] == '&')
                 {
                     current = -1;
+                    closingTimingMarker = '\0';
                     var separator = part.IndexOf('=');
                     if (separator < 0)
                     {
@@ -286,14 +337,45 @@ namespace MajMusic.Infrastructure.Application
                     }
                 }
 
-                if (current >= 0 && !part.IsEmpty && !part.Equals("E", StringComparison.OrdinalIgnoreCase))
+                if (current >= 0 && !hasNotes[current])
                 {
-                    hasNotes[current] = true;
+                    hasNotes[current] = HasPreviewNote(part, ref closingTimingMarker);
                 }
             }
 
             return Enumerable.Range(0, 7).Where(index => hasNotes[index])
                 .Select(index => new ChartPreviewDifficulty(index + 1, levels[index])).ToArray();
+        }
+
+        private static bool HasPreviewNote(ReadOnlySpan<char> content, ref char closingTimingMarker)
+        {
+            foreach (var character in content)
+            {
+                if (closingTimingMarker != '\0')
+                {
+                    if (character == closingTimingMarker)
+                    {
+                        closingTimingMarker = '\0';
+                    }
+                    continue;
+                }
+
+                if (character is >= '0' and <= '9' or >= 'A' and <= 'D' or >= 'a' and <= 'd')
+                {
+                    return true;
+                }
+
+                closingTimingMarker = character switch
+                {
+                    '(' => ')',
+                    '{' => '}',
+                    '<' => '>',
+                    '[' => ']',
+                    _ => '\0'
+                };
+            }
+
+            return false;
         }
     }
 }

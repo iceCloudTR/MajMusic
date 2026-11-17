@@ -56,10 +56,12 @@ namespace MajMusic.Presentation.ViewModels
                     if (value)
                     {
                         QueueSongSocialRefresh();
+                        _ = EnsureMajViewDifficultiesAsync();
                     }
                     else
                     {
                         IsSongChartPreviewSelected = false;
+                        _majViewLookupCancellation?.Cancel();
                         CancelSongSocialRequests();
                         NotifySongSocialBindings();
                     }
@@ -84,7 +86,6 @@ namespace MajMusic.Presentation.ViewModels
                 if (SetField(ref _isSongChartPreviewSelected, value) && !value)
                 {
                     CancelMajView();
-                    MajViewStatus = string.Empty;
                 }
             }
         }
@@ -162,12 +163,7 @@ namespace MajMusic.Presentation.ViewModels
                 IsSongDetailsExpanded = false;
                 return Task.CompletedTask;
             });
-            OpenSongChartPreviewCommand = CreateSongSocialCommand(() =>
-            {
-                IsSongChartPreviewSelected = true;
-                IsSongDetailsExpanded = true;
-                return Task.CompletedTask;
-            }, () => SelectedTrack is not null);
+            OpenSongChartPreviewCommand = CreateSongSocialCommand(OpenDefaultMajViewAsync, () => SelectedTrack is not null);
             ShowSongCommentsCommand = CreateSongSocialCommand(() =>
             {
                 IsSongChartPreviewSelected = false;

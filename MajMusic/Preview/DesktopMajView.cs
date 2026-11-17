@@ -5,11 +5,12 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using MajMusic.Presentation.Views;
 
 namespace MajMusic.Preview
 {
     /// <summary>Embeds the session in the desktop window using its system web renderer.</summary>
-    internal sealed class DesktopMajView : NativeWebView
+    internal sealed class DesktopMajView : NativeWebView, IMajViewNavigator
     {
         private readonly Action<string> _reportFailure;
         private readonly Uri _sessionAddress;
@@ -74,6 +75,14 @@ namespace MajMusic.Preview
             };
             ProcessTerminated += (_, _) => Fail("内嵌谱面已停止");
             Source = address;
+        }
+
+        public void NavigatePreview(Uri address)
+        {
+            if (IsSessionDocument(address))
+            {
+                Source = address;
+            }
         }
 
         /// <inheritdoc />

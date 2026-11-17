@@ -8,19 +8,26 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
+using TKCode.Arc.Motion;
 
 namespace MajMusic.Presentation.Views
 {
+    /// <summary>Navigates an already embedded preview without removing its platform control.</summary>
+    public interface IMajViewNavigator
+    {
+        /// <summary>Navigates within the current preview session.</summary>
+        /// <param name="address">The session address with the new difficulty and direction.</param>
+        void NavigatePreview(Uri address);
+    }
+
     /// <summary>Opens the selected song in the official MajView renderer.</summary>
     public partial class ChartPreviewPane : UserControl
     {
         private readonly ContentControl _surface;
-        private readonly Grid _inlinePreview;
         private readonly StackPanel _setup;
         private readonly List<Visual> _ancestors = new();
         private MainViewModel? _owner;
         private Uri? _displayedAddress;
-        private bool _requested;
         private long _mountVersion;
 
         /// <summary>Creates an inline platform control which owns its renderer through visual attachment.</summary>
@@ -31,7 +38,6 @@ namespace MajMusic.Presentation.Views
         {
             InitializeComponent();
             _surface = this.FindControl<ContentControl>("PreviewSurface")!;
-            _inlinePreview = this.FindControl<Grid>("InlinePreview")!;
             _setup = this.FindControl<StackPanel>("PreviewSetup")!;
             DataContextChanged += (_, _) =>
             {
@@ -76,18 +82,12 @@ namespace MajMusic.Presentation.Views
             }
         }
 
-        private async void OnOpenMajView(object? sender, RoutedEventArgs args)
+        private async void OnRetryMajView(object? sender, RoutedEventArgs args)
         {
             if (_owner is { } owner && IsPaneActive(owner))
             {
-                _requested = true;
-                await owner.OpenMajViewAsync();
+                await owner.OpenDefaultMajViewAsync();
             }
-        }
-
-        private void OnCloseMajView(object? sender, RoutedEventArgs args)
-        {
-            CloseOwnedPreview();
         }
 
         private void ObserveOwner(MainViewModel? owner)
@@ -136,7 +136,7 @@ namespace MajMusic.Presentation.Views
                 CloseOwnedPreview();
                 return;
             }
-            if (!_requested || owner.MajViewAddress is not { } address)
+            if (owner.MajViewAddress is not { } address)
             {
                 ClearSurface();
                 return;
@@ -145,10 +145,17 @@ namespace MajMusic.Presentation.Views
             {
                 return;
             }
+            if (_displayedAddress is { } current && SameSession(current, address)
+                && _surface.Content is IMajViewNavigator navigator)
+            {
+                _displayedAddress = address;
+                navigator.NavigatePreview(WithMotionPolicy(address));
+                return;
+            }
 
             ClearSurface();
             _displayedAddress = address;
-            _inlinePreview.IsVisible = true;
+            _surface.IsVisible = true;
             _setup.IsVisible = false;
             var version = _mountVersion;
             Dispatcher.UIThread.Post(() => MountWhenSettled(owner, address, version), DispatcherPriority.Loaded);
@@ -180,7 +187,7 @@ namespace MajMusic.Presentation.Views
                     return;
                 }
 
-                var embedded = create(address, message =>
+                var embedded = create(WithMotionPolicy(address), message =>
                     Dispatcher.UIThread.Post(() =>
                     {
                         if (CanMount(owner, address, version))
@@ -200,13 +207,25 @@ namespace MajMusic.Presentation.Views
         }
 
         private bool CanMount(MainViewModel owner, Uri address, long version) => version == _mountVersion
-            && ReferenceEquals(_owner, owner) && owner.MajViewAddress == address && IsPaneActive(owner)
+            && ReferenceEquals(_owner, owner) && owner.MajViewAddress is { } active && SameSession(active, address) && IsPaneActive(owner)
             && TopLevel.GetTopLevel(this) is not null;
+
+        private Uri WithMotionPolicy(Uri address)
+        {
+            if (ArcMotion.GetEffectiveLevel(this) == ArcMotionLevel.Full)
+            {
+                return address;
+            }
+            var builder = new UriBuilder(address) { Query = address.Query.TrimStart('?') + "&motion=off" };
+            return builder.Uri;
+        }
+
+        private static bool SameSession(Uri first, Uri second) =>
+            first.GetLeftPart(UriPartial.Path) == second.GetLeftPart(UriPartial.Path);
 
         private void CloseOwnedPreview()
         {
-            var owned = _requested;
-            _requested = false;
+            var owned = _displayedAddress is not null;
             ClearSurface();
             if (owned)
             {
@@ -219,7 +238,7 @@ namespace MajMusic.Presentation.Views
             _mountVersion++;
             _displayedAddress = null;
             _surface.Content = null;
-            _inlinePreview.IsVisible = false;
+            _surface.IsVisible = false;
             _setup.IsVisible = true;
         }
     }
