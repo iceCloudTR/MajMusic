@@ -5,7 +5,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
-using Avalonia.Media;
 using TKCode.Arc.Motion;
 
 namespace MajMusic.Presentation.Theme
@@ -16,8 +15,6 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Identifies the shared expanded-details state.</summary>
         public static readonly StyledProperty<bool> IsOpenProperty = AvaloniaProperty.Register<SongDetailsOverlay, bool>(
             nameof(IsOpen), defaultBindingMode: BindingMode.TwoWay);
-        /// <summary>Moves only the overlay's own painted surface.</summary>
-        private readonly TranslateTransform _translation = new();
         /// <summary>Owns the one reversible entry and exit animation.</summary>
         private MotionValue<double>? _motion;
         /// <summary>Retains the current global or inherited motion policy.</summary>
@@ -28,7 +25,6 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Creates a clipped overlay which is absent from input until expanded.</summary>
         public SongDetailsOverlay()
         {
-            RenderTransform = _translation;
             ClipToBounds = true;
             Focusable = true;
             IsVisible = false;
@@ -125,7 +121,6 @@ namespace MajMusic.Presentation.Theme
         {
             var progress = Math.Clamp(value, 0, 1);
             Opacity = progress;
-            _translation.Y = ArcMotion.GetEffectiveLevel(this) == ArcMotionLevel.Full ? (1 - progress) * 16 : 0;
             IsVisible = IsOpen || progress > 0;
             IsHitTestVisible = IsOpen;
         }

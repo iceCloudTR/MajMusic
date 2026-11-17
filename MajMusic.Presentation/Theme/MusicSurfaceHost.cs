@@ -30,6 +30,8 @@ namespace MajMusic.Presentation.Theme
 
         /// <summary>Limits the longest side of a transient snapshot independently of display scaling.</summary>
         private const int MaximumSnapshotEdge = 1920;
+        /// <summary>Bounds transient rasterization and allocation by area as well as its longest edge.</summary>
+        private const int MaximumSnapshotPixels = 2 * 1024 * 1024;
         /// <summary>Contains the two paint surfaces without changing their layout size.</summary>
         private SurfacePanel? _surface;
         /// <summary>Contains only the latest live page and its interactive controls.</summary>
@@ -56,6 +58,8 @@ namespace MajMusic.Presentation.Theme
         private bool _hasSnapshot;
         /// <summary>Exposes completion or interruption of the latest surface transition.</summary>
         private Task<bool> _transitionUpdate = Task.FromResult(true);
+        /// <summary>Allows a version's delayed content publication to join its already running transition.</summary>
+        private bool _awaitingVersionContent;
 
         /// <summary>Creates a fixed-size two-surface presenter whose navigation does not move surrounding chrome.</summary>
         public MusicSurfaceHost()
@@ -109,6 +113,8 @@ namespace MajMusic.Presentation.Theme
         public double OutgoingOffset => _outgoingTransform.X;
         /// <summary>Gets the original logical snapshot viewport, whose size is independent of subsequent layout.</summary>
         public Size SnapshotViewport => _snapshotViewport;
+        /// <summary>Gets the bounded raster dimensions currently retained for the outgoing surface.</summary>
+        public PixelSize SnapshotPixelSize => _snapshot?.PixelSize ?? default;
 
         /// <inheritdoc />
         protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
@@ -150,7 +156,8 @@ namespace MajMusic.Presentation.Theme
             var canAnimate = transitionChanged && _live is not null && _motion is not null && IsLoaded
                 && IsEffectivelyVisible && ArcMotion.GetEffectiveLevel(this) == ArcMotionLevel.Full
                 && !(change.Property == ContentProperty && change.NewValue is null);
-            var reuseSnapshot = canAnimate && HasSnapshot && TransitionProgress == 0;
+            var joinVersionContent = canAnimate && HasSnapshot && contentChanged && _awaitingVersionContent;
+            var reuseSnapshot = canAnimate && HasSnapshot && (TransitionProgress == 0 || joinVersionContent);
             var captured = canAnimate && !reuseSnapshot ? CaptureSurface() : null;
             base.OnPropertyChanged(change);
             if (!transitionChanged || _live is null)
@@ -171,7 +178,6 @@ namespace MajMusic.Presentation.Theme
                 return;
             }
 
-            _motion.Stop();
             if (SlideDirection != 0)
             {
                 _activeDirection = Math.Sign(SlideDirection);
@@ -182,6 +188,14 @@ namespace MajMusic.Presentation.Theme
                 _activeDirection = current > previous ? 1 : -1;
             }
 
+            if (joinVersionContent)
+            {
+                _awaitingVersionContent = false;
+                ApplyProgress(TransitionProgress);
+                return;
+            }
+
+            _motion.Stop();
             if (!reuseSnapshot && captured is { } frame)
             {
                 ReleaseSnapshot();
@@ -192,6 +206,7 @@ namespace MajMusic.Presentation.Theme
                 _surface?.InvalidateArrange();
             }
 
+            _awaitingVersionContent = change.Property == ChangeVersionProperty;
             _motion.Jump(0);
             _transitionUpdate = _motion.AnimateTo(1, MotionSpec.Tween(MusicMotion.SurfaceDuration, MusicMotion.InOut));
         }
@@ -221,6 +236,9 @@ namespace MajMusic.Presentation.Theme
             var size = surface.Bounds.Size;
             var scale = Math.Min(TopLevel.GetTopLevel(this)?.RenderScaling ?? 1,
                 MaximumSnapshotEdge / Math.Max(size.Width, size.Height));
+            // Leave room for the final ceil in both dimensions without exceeding the area budget.
+            scale = Math.Min(scale, Math.Sqrt((MaximumSnapshotPixels - MaximumSnapshotEdge * 2 - 1d)
+                / (size.Width * size.Height)));
             var bitmap = new RenderTargetBitmap(new PixelSize(Math.Max(1, (int)Math.Ceiling(size.Width * scale)),
                 Math.Max(1, (int)Math.Ceiling(size.Height * scale))), new Vector(96 * scale, 96 * scale));
             try
@@ -264,6 +282,12 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Detaches the snapshot from painting before releasing its native bitmap.</summary>
         private void ReleaseSnapshot()
         {
+            _awaitingVersionContent = false;
+            if (_snapshot is null && !HasSnapshot)
+            {
+                return;
+            }
+
             if (_outgoing is not null)
             {
                 _outgoing.SetSnapshot(null, default);
@@ -309,8 +333,11 @@ namespace MajMusic.Presentation.Theme
             /// <inheritdoc />
             protected override Size ArrangeOverride(Size finalSize)
             {
-                _owner._viewport = finalSize;
-                _owner.ApplyProgress(_owner.TransitionProgress);
+                if (_owner._viewport != finalSize)
+                {
+                    _owner._viewport = finalSize;
+                    _owner.ApplyProgress(_owner.TransitionProgress);
+                }
                 _content.Arrange(new Rect(finalSize));
                 _ghost.Arrange(new Rect(_owner._snapshotViewport));
                 return finalSize;
@@ -330,6 +357,11 @@ namespace MajMusic.Presentation.Theme
             /// <param name="viewport">The original logical viewport.</param>
             public void SetSnapshot(Bitmap? bitmap, Size viewport)
             {
+                if (ReferenceEquals(_bitmap, bitmap) && _capturedViewport == viewport)
+                {
+                    return;
+                }
+
                 _bitmap = bitmap;
                 _capturedViewport = viewport;
                 InvalidateVisual();

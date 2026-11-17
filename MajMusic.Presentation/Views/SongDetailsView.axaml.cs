@@ -21,6 +21,8 @@ namespace MajMusic.Presentation.Views
         private bool _compactComments;
         /// <summary>Distinguishes the first chrome synchronization from an unchanged regular layout.</summary>
         private bool _chromeInitialized;
+        /// <summary>Prevents a user tab selection from being echoed back as another pane request.</summary>
+        private bool _synchronizingPane;
         /// <summary>Creates the expanded content without requesting social data or starting playback.</summary>
         public SongDetailsView()
         {
@@ -39,6 +41,12 @@ namespace MajMusic.Presentation.Views
         {
             if (_initialized && sender is TabControl tabs && ReferenceEquals(e.Source, tabs))
             {
+                if (!_synchronizingPane && _owner is { IsSongDetailsExpanded: true } owner)
+                {
+                    _synchronizingPane = true;
+                    owner.IsSongChartPreviewSelected = tabs.SelectedIndex == 2;
+                    _synchronizingPane = false;
+                }
                 UpdateSummaryVisibility();
                 UpdateViewportChrome();
             }
@@ -93,10 +101,7 @@ namespace MajMusic.Presentation.Views
                 _owner.PropertyChanged += OnSocialAvailabilityChanged;
             }
             ResetUnavailableComments();
-            if (_initialized && _owner is { IsSongDetailsExpanded: true, IsSongSocialVisible: true })
-            {
-                this.FindControl<TabControl>("SongDetailsTabs")!.SelectedIndex = 1;
-            }
+            SynchronizeRequestedPane();
             UpdateSummaryVisibility();
             UpdateViewportChrome();
         }
@@ -106,9 +111,9 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The changed social or selection property.</param>
         private void OnSocialAvailabilityChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(MainViewModel.IsSongDetailsExpanded) && _owner is { IsSongDetailsExpanded: true, IsSongSocialVisible: true })
+            if (e.PropertyName is nameof(MainViewModel.IsSongDetailsExpanded) or nameof(MainViewModel.IsSongChartPreviewSelected))
             {
-                this.FindControl<TabControl>("SongDetailsTabs")!.SelectedIndex = 1;
+                SynchronizeRequestedPane();
             }
             if (e.PropertyName is nameof(MainViewModel.IsSongSocialVisible) or nameof(MainViewModel.SelectedTrack))
             {
@@ -117,6 +122,17 @@ namespace MajMusic.Presentation.Views
             if (e.PropertyName is nameof(MainViewModel.HasSongReplyTarget) or nameof(MainViewModel.HasSongSocialStatus))
             {
                 UpdateViewportChrome();
+            }
+        }
+
+        /// <summary>Honors explicit cover-preview and expanded-comment entry points without changing audio.</summary>
+        private void SynchronizeRequestedPane()
+        {
+            if (_initialized && !_synchronizingPane && _owner is { IsSongDetailsExpanded: true } owner)
+            {
+                _synchronizingPane = true;
+                this.FindControl<TabControl>("SongDetailsTabs")!.SelectedIndex = owner.IsSongChartPreviewSelected ? 2 : owner.IsSongSocialVisible ? 1 : 0;
+                _synchronizingPane = false;
             }
         }
 

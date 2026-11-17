@@ -113,28 +113,7 @@
                     <ListBox x:Name="SongCommentsList" Grid.Row="2" ItemsSource="{Binding SongComments}" Padding="0" BorderThickness="0" Background="Transparent" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
                         <ListBox.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:SongCommentItemViewModel">
-                                        <Border BorderBrush="{DynamicResource MusicLineBrush}" BorderThickness="0,0,0,1" Padding="0,10" Margin="{Binding Depth, Converter={StaticResource CommentIndent}}">
-                                            <StackPanel Spacing="8">
-                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                                                    <TextBlock Text="{Binding Author}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Grid.Column="1" Text="{Binding PostedAtText}" Classes="detailMuted" FontSize="10" />
-                                                </Grid>
-                                                <TextBlock Text="{Binding Content}" TextWrapping="Wrap" FontSize="13" />
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <arc:Button Classes="detailAction" Classes.liked="{Binding IsLiked}" Command="{Binding ToggleLikeCommand}" IsVisible="{Binding CanInteract}" AutomationProperties.Name="点赞评论">
-                                                        <StackPanel Orientation="Horizontal" Spacing="5">
-                                                            <TextBlock Text="赞" IsVisible="{Binding !IsLiked}" />
-                                                            <TextBlock Text="已赞" IsVisible="{Binding IsLiked}" Foreground="{DynamicResource MusicAccentBrush}" />
-                                                            <TextBlock Text="{Binding ScoreText}" />
-                                                        </StackPanel>
-                                                    </arc:Button>
-                                                    <arc:Button Classes="detailAction" Content="回复" Command="{Binding ReplyCommand}" IsVisible="{Binding CanInteract}" IsEnabled="{Binding CanReply}" />
-                                                    <arc:Button Classes="detailAction" Content="删除" Command="{Binding DeleteCommand}" IsVisible="{Binding IsOwn}" IsEnabled="{Binding CanDelete}" />
-                                                </StackPanel>
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
+                            <DataTemplate x:DataType="vm:SongCommentItemViewModel"><views:SongCommentRow /></DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
                     <Grid x:Name="SongMoreCommentsHost" Grid.Row="3">

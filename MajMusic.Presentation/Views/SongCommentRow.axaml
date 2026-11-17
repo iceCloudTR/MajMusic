@@ -1,0 +1,37 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:vm="using:MajMusic.Presentation.ViewModels"
+             xmlns:views="using:MajMusic.Presentation.Views"
+             x:Class="MajMusic.Presentation.Views.SongCommentRow" x:DataType="vm:SongCommentItemViewModel">
+    <UserControl.Resources><views:CommentIndentConverter x:Key="Indent" /></UserControl.Resources>
+    <UserControl.Styles>
+        <Style Selector="arc|Button.commentAction">
+            <Setter Property="MinHeight" Value="44" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="LabelSwapMode" Value="None" />
+        </Style>
+        <Style Selector="arc|Button.liked"><Setter Property="Foreground" Value="{DynamicResource MusicAccentBrush}" /></Style>
+    </UserControl.Styles>
+    <Border BorderBrush="{DynamicResource MusicLineBrush}" BorderThickness="0,0,0,1" Padding="0,10" Margin="{Binding Depth, Converter={StaticResource Indent}}">
+        <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <TextBlock Text="{Binding Author}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="1" Text="{Binding PostedAtText}" Foreground="{DynamicResource MusicMutedBrush}" FontSize="10" />
+            </Grid>
+            <TextBlock Text="{Binding Content}" TextWrapping="Wrap" FontSize="13" />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <arc:Button Classes="commentAction" Classes.liked="{Binding IsLiked}" Command="{Binding ToggleLikeCommand}" IsVisible="{Binding CanInteract}" AutomationProperties.Name="点赞评论">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <TextBlock Text="赞" IsVisible="{Binding !IsLiked}" />
+                        <TextBlock Text="已赞" IsVisible="{Binding IsLiked}" Foreground="{DynamicResource MusicAccentBrush}" />
+                        <TextBlock Text="{Binding ScoreText}" />
+                    </StackPanel>
+                </arc:Button>
+                <arc:Button Classes="commentAction" Content="回复" Command="{Binding ReplyCommand}" IsVisible="{Binding CanInteract}" IsEnabled="{Binding CanReply}" />
+                <arc:Button Classes="commentAction" Content="删除" Command="{Binding DeleteCommand}" IsVisible="{Binding IsOwn}" IsEnabled="{Binding CanDelete}" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

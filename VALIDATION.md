@@ -235,3 +235,21 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- social-n
 接口按 [MajdataNet 官方前端契约](https://github.com/TeamMajdata/MajdataNet/blob/main/src/types/interact.ts)实现；本轮公共匿名接口探测返回 HTTP 403，未使用玩家账号发表、点赞或删除真实内容，真实服务器的登录互动待用户实测。没有读取 Play 目录或数据库，也没有引入谱面渲染依赖。[谱面预览方案](docs/ChartPreview.md) 记录 MajdataView、Web 分支和 MajSimai 的源码核对及下一步路线。
 
 桌面 Release 编译为 0 警告、0 错误，未覆盖 Debug 输出或操作用户正在运行的播放器。最终 Android ARM64 包位于 `artifacts/android-arm64-20261117-184446-c25b27c6/MajMusic-android-arm64.apk`，38.91 MiB，通过签名、单 ARM64 ABI 与 16 KB 对齐检查；本轮未安装或进行 Android 实机验证。
+
+## 桌面三栏详情与导航动画
+
+2026-11-17，桌面“详情与评论”入口移到右侧歌曲卡片下方。展开后，原 `LibraryDetails` 控件经过透明飞行层横移至左栏，中栏显示评论，右栏显示点赞、输入与发送；关闭后原控件移回右栏。两边不是重复创建的详情树，卡片尺寸与纵坐标保持一致，快速收起会从当前绘制位置接续。封面按钮直接选择谱面预览区域，渲染器仍按上节方案预留。
+
+切页修复同一次导航在稍后发布内容时重复截图、重新启动横移动画的问题；空快照释放及未改变尺寸的布局更新不再重复触发绘制失效。临时截图同时限制为最长 1920 像素和约 2 Mi 像素面积，保留原来的逻辑坐标映射；125%、150%、175% 桌面卡片首帧像素尺寸检查保留。导航先给选择控件处理反馈，再合并提交最后一个目标。播放／暂停图标只交叉淡入，取消旋转、缩放及播放按钮额外的按压、标签位移动效。
+
+分组运行以下八组，全部通过：
+
+```sh
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- mobile-player-gesture social-presentation song-details-layout surface-geometry arc-responsive arc-motion surface-motion playback-region-motion
+```
+
+`song-details-layout` 渲染 1100×800、720×540 桌面三栏以及原手机半屏、全屏和短视口。真实指针分别打开评论、进入谱面区域及返回；中栏滚动时左右栏与输入框不移动。播放 A、查看 B 时，所有详情操作保持播放曲目、音频打开次数与队列不变。`surface-motion` 使用实际渲染与 Arc 手动时钟，验证截图像素预算、延迟内容不重复绘制旧树、同一卡片的中帧、反向接续和退出释放。截图保存在 `artifacts/social-details/`，已目视检查；没有据此宣称设备上的实际帧率。
+
+额外运行 `headless` 在原有第 114 行卡片宽高比断言失败，合成卡片为 402×203，要求宽度与两倍高度差小于 2。隔离检出改动前的 `f56a466` 后，同组在同一位置复现。该断言及卡片比例实现保持不变；对照记录位于 `artifacts/headless-baseline-evidence-f803aef9/`。
+
+最终桌面 Release 编译为 0 警告、0 错误。Android ARM64 包为 `artifacts/android-arm64-20261117-194721-4991bd3e/MajMusic-android-arm64.apk`，38.91 MiB，通过签名、单 ARM64 ABI 与 16 KB 对齐检查；未安装或进行 Android 实机验证。

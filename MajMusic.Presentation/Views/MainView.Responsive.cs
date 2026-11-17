@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Interactivity;
 using MajMusic.Presentation.ViewModels;
+using MajMusic.Presentation.Theme;
 
 namespace MajMusic.Presentation.Views
 {
@@ -87,6 +88,15 @@ namespace MajMusic.Presentation.Views
             if (mobile == IsMobileLayout || _desktopContent is null)
             {
                 return;
+            }
+
+            if (DataContext is MainViewModel { IsSongDetailsExpanded: true } owner)
+            {
+                owner.IsSongDetailsExpanded = false;
+            }
+            if (mobile)
+            {
+                this.FindControl<SharedSongCardFlight>("DesktopSongCardFlight")?.MoveTo(false);
             }
 
             if (mobile && _mobileContent is null)

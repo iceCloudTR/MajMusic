@@ -324,7 +324,7 @@
                                 </StackPanel>
                             </theme:MetadataTransition>
                             <arcm:IconButton x:Name="MobilePreviousButton" Grid.Column="1" Icon="{StaticResource MobilePreviousIcon}" Variant="Plain" Command="{Binding PreviousCommand}" AutomationProperties.Name="上一首" />
-                            <arcm:Button x:Name="MobilePlayPauseButton" Grid.Column="2" Variant="Tinted" Command="{Binding TogglePlayPauseCommand}" Padding="0" AutomationProperties.Name="{Binding TransportButtonText}">
+                            <arcm:Button x:Name="MobilePlayPauseButton" Grid.Column="2" Variant="Tinted" Command="{Binding TogglePlayPauseCommand}" Padding="0" RenderTransform="{x:Null}" AutomationProperties.Name="{Binding TransportButtonText}">
                                 <theme:PlayPauseTransition x:Name="MobileTransportGlyphTransition" IsPlaying="{Binding IsPlaying}" Width="20" Height="20">
                                     <Canvas Width="20" Height="20">
                                         <Path Data="M 6,3 L 16,10 L 6,17 Z" Fill="{DynamicResource MusicTextBrush}" IsVisible="{Binding !IsPlaying}" />
@@ -392,6 +392,6 @@
                 </Grid>
             </theme:InterruptibleSongSheet>
         </arcm:Page.Overlay>
-        <theme:MusicSurfaceHost x:Name="MobileSectionHost" ChangeVersion="{Binding SelectedSectionIndex, ElementName=MobileRoot}" Margin="12,8,12,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+        <theme:MusicSurfaceHost x:Name="MobileSectionHost" Margin="12,8,12,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
     </arcm:Page>
 </UserControl>

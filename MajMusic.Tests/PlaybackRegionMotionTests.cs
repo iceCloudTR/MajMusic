@@ -160,8 +160,8 @@ namespace MajMusic.Tests
                 Advance(clock, window, 45);
                 var middleGlyph = RegionPixels(window, glyph);
                 var matrix = Live(glyph).RenderTransform!.Value;
-                TestAssert.True(!initialGlyph.SequenceEqual(middleGlyph) && matrix.M11 is > .8 and < 1 && Math.Abs(matrix.M12) > .001,
-                    "The actual play/pause middle frame must show a centered local fade, rotation and restrained scale.");
+                TestAssert.True(!initialGlyph.SequenceEqual(middleGlyph) && matrix.IsIdentity && Live(glyph).Opacity is > 0 and < 1,
+                    "The actual play/pause middle frame must crossfade without translating, scaling or rotating the icon.");
                 Save(window, Path.Combine(output, "ui-playback-glyph-middle-" + suffix + ".png"));
                 var interruptedGlyph = glyph.TransitionUpdate;
                 glyph.IsPlaying = false;

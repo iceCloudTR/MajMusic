@@ -31,11 +31,17 @@ namespace MajMusic.Tests
             {
                 var workspace = new SocialPresentationTests.SocialWorkspace();
                 workspace.CommentsOverride = (track, account, page, _) => Task.FromResult(SocialPresentationTests.SocialWorkspace.Page(track, account, page) with { Total = 21 });
-                await using var model = new MainViewModel(workspace, new PlaybackService(new UnavailablePlaybackBackend()));
+                var backend = new LibraryExperienceTests.ExperienceBackend();
+                var playback = new PlaybackService(backend, resolveAudioPath: (track, token) => workspace.ResolveAudioAsync(track, false, token));
+                await using var model = new MainViewModel(workspace, playback);
                 await model.InitializeAsync().WaitAsync(timeout.Token);
                 model.ShowLibraryModeCommand.Execute(null);
                 await model.HomeUpdate.WaitAsync(timeout.Token);
                 model.SelectedTrack = workspace.Library[0];
+                await model.PlaySelectedAsync().WaitAsync(timeout.Token);
+                var playing = playback.Snapshot.Track!.Id;
+                var queue = playback.Queue.Tracks.Select(track => track.Id).ToArray();
+                model.SelectedTrack = workspace.Library[1];
                 var main = new MainView { DataContext = model };
                 var window = new Window { Content = main, Width = 1100, Height = 800 };
                 var output = Path.Combine(Environment.CurrentDirectory, "artifacts", "social-details");
@@ -44,24 +50,62 @@ namespace MajMusic.Tests
                 {
                     window.Show();
                     Layout(window);
-                    Tap(window, Find(main, "DesktopExpandDetailsButton"));
+                    var source = main.FindControl<ContentControl>("DesktopSidebarDetailsSlot")!;
+                    var flight = main.FindControl<SharedSongCardFlight>("DesktopSongCardFlight")!;
+                    var card = main.FindControl<Border>("LibraryDetails")!;
+                    var originalX = card.TranslatePoint(default, window)!.Value.X;
+                    TestAssert.True(ReferenceEquals(source.Content, card), "The ordinary inspector must initially own the one existing information card.");
+                    var expand = main.FindControl<Control>("DesktopExpandDetailsButton")!;
+                    var actions = main.FindControl<Control>("DesktopPlaylistActions")!;
+                    TestAssert.True(expand.TranslatePoint(default, card)!.Value.Y >= actions.TranslatePoint(new Point(0, actions.Bounds.Height), card)!.Value.Y,
+                        "The ordinary details action must sit below the song information and playlist controls instead of covering artwork.");
+                    Tap(window, expand);
+                    await flight.MoveUpdate.WaitAsync(timeout.Token);
                     await model.SongSocialUpdate.WaitAsync(timeout.Token);
                     Layout(window);
                     var desktop = Find(main, "DesktopExpandedSongDetails");
+                    var destination = main.FindControl<DesktopSongDetailsView>("DesktopSongDetails")!.FindControl<ContentControl>("DesktopSongSummarySlot")!;
                     TestAssert.True(model.IsSongDetailsExpanded && desktop.IsEffectivelyVisible && desktop.Bounds.Height > 320,
                         "The real desktop expand button must reveal an actionable details panel with the selected song's metadata.");
+                    TestAssert.True(ReferenceEquals(destination.Content, card) && ReferenceEquals(main.FindControl<Border>("LibraryDetails"), card)
+                        && source.Content is null && card.TranslatePoint(default, window)!.Value.X < originalX - 100,
+                        "Expansion must move the original information Border into the left slot rather than constructing a second card.");
+                    ValidateDesktopPanes(window, desktop);
+                    AssertPlaybackUnchanged(playback, backend, playing, queue);
                     SaveFrame(window, Path.Combine(output, "ui-social-desktop-expanded.png"));
-                    ValidateComments(window, desktop, model);
+                    ValidateDesktopComments(window, desktop, model);
                     SaveFrame(window, Path.Combine(output, "ui-social-desktop-comments.png"));
+                    await ValidateDesktopScrollingAsync(window, desktop, workspace, model, output, timeout.Token);
                     window.Width = 720;
                     window.Height = 540;
                     model.SongComments.Single().ReplyCommand.Execute(null);
                     Layout(window);
-                    ValidateComposerBounds(window, desktop, desktop);
+                    await flight.MoveUpdate.WaitAsync(timeout.Token);
+                    ValidateDesktopPanes(window, desktop);
                     SaveFrame(window, Path.Combine(output, "ui-social-desktop-short-comments.png"));
                     model.CancelSongReplyCommand.Execute(null);
                     Tap(window, Find(desktop, "CloseExpandedSongDetailsButton"));
+                    await flight.MoveUpdate.WaitAsync(timeout.Token);
+                    Layout(window);
                     TestAssert.True(!model.IsSongDetailsExpanded, "The desktop close action returns to the existing music view.");
+                    TestAssert.True(ReferenceEquals(source.Content, card) && destination.Content is null,
+                        "Closing expanded details must return the same card to its original sidebar slot.");
+                    Tap(window, main.FindControl<Control>("DesktopChartPreviewButton")!);
+                    await flight.MoveUpdate.WaitAsync(timeout.Token);
+                    await model.SongSocialUpdate.WaitAsync(timeout.Token);
+                    Layout(window);
+                    TestAssert.True(model.IsSongDetailsExpanded && model.IsSongChartPreviewSelected
+                        && Find(desktop, "ChartPreviewHost").IsEffectivelyVisible && !Find(desktop, "SongCommentsList").IsEffectivelyVisible,
+                        "The artwork preview action must open the reserved chart viewport directly, instead of playing or opening the discussion first.");
+                    AssertPlaybackUnchanged(playback, backend, playing, queue);
+                    SaveFrame(window, Path.Combine(output, "ui-social-desktop-chart-preview.png"));
+                    Tap(window, Find(desktop, "DesktopCommentsPaneButton"));
+                    TestAssert.True(!model.IsSongChartPreviewSelected && Find(desktop, "SongCommentsList").IsEffectivelyVisible,
+                        "The desktop comments action must restore the discussion without changing the inspected song or the original information card.");
+                    Tap(window, Find(desktop, "CloseExpandedSongDetailsButton"));
+                    await flight.MoveUpdate.WaitAsync(timeout.Token);
+                    Layout(window);
+                    TestAssert.True(ReferenceEquals(source.Content, card), "Preview navigation must return the original card without leaving another owner behind.");
 
                     window.Width = 390;
                     window.Height = 844;
@@ -87,14 +131,14 @@ namespace MajMusic.Tests
                         "Mobile expansion moves the same fixed-height pane to its full resting point without rescaling its content.");
                     var expanded = mobile.GetVisualDescendants().OfType<SongDetailsView>().Single(view => view.IsEffectivelyVisible);
                     SaveFrame(window, Path.Combine(output, "ui-social-phone-full.png"));
-                    ValidateComments(window, expanded, model);
+                    ValidateMobileComments(window, expanded, model);
                     SaveFrame(window, Path.Combine(output, "ui-social-phone-comments.png"));
                     window.Height = 420;
                     model.SongComments.Single().ReplyCommand.Execute(null);
                     Layout(window);
                     await sheet.SheetUpdate.WaitAsync(timeout.Token);
                     Layout(window);
-                    ValidateComposerBounds(window, expanded, sheet);
+                    ValidateMobileComposerBounds(window, expanded, sheet);
                     SaveFrame(window, Path.Combine(output, "ui-social-phone-short-comments.png"));
                     model.CancelSongReplyCommand.Execute(null);
                     window.Height = 844;
@@ -107,6 +151,7 @@ namespace MajMusic.Tests
                     TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && !model.IsSongDetailsExpanded && Math.Abs(VisiblePanelHeight(panel, sheet) - half) < 2,
                         "The expanded close action returns to half height and keeps the same inspected song open.");
                     TestAssert.Equal(0, workspace.Posts.Count, "Rendering and inspecting synthetic source comments must never submit a comment implicitly.");
+                    AssertPlaybackUnchanged(playback, backend, playing, queue);
                 }
                 finally
                 {
@@ -116,11 +161,144 @@ namespace MajMusic.Tests
             }, timeout.Token);
         }
 
-        /// <summary>Opens the actual comment tab and checks that an authenticated empty draft remains editable.</summary>
+        /// <summary>Checks simultaneous desktop panes and the right-hand multiline composer at regular and minimum sizes.</summary>
+        /// <param name="window">The real rendered desktop window.</param>
+        /// <param name="root">The expanded desktop overlay.</param>
+        private static void ValidateDesktopPanes(Window window, Control root)
+        {
+            var summary = Find(root, "DesktopSongSummarySlot");
+            var discussion = Find(root, "DesktopDiscussionPane");
+            var composer = Find(root, "DesktopComposerPane");
+            var left = BoundsIn(summary, root);
+            var middle = BoundsIn(discussion, root);
+            var right = BoundsIn(composer, root);
+            TestAssert.True(left.Width > 100 && middle.Width >= 180 && right.Width >= 170
+                && left.Right <= middle.X + 1 && middle.Right <= right.X + 1
+                && Math.Abs(left.Y - middle.Y) < 1 && Math.Abs(middle.Y - right.Y) < 1,
+                "Expanded desktop details must present three simultaneous nonoverlapping columns with aligned top edges.");
+            foreach (var pane in new[] { summary, discussion, composer })
+            {
+                AssertContained(pane, root, "Every desktop pane must fit the actual expanded viewport.");
+                var bounds = BoundsIn(pane, window);
+                TestAssert.True(bounds.X >= -1 && bounds.Y >= -1 && bounds.Right <= window.ClientSize.Width + 1 && bounds.Bottom <= window.ClientSize.Height + 1,
+                    "Desktop panes must remain inside the native client area at the minimum supported window size.");
+            }
+            AssertContained(Find(root, "LibraryDetails"), summary, "The relocated information card must remain fully inside its left-hand slot.");
+            var input = Find(root, "SongCommentInput");
+            var send = Find(root, "PostSongCommentButton");
+            var like = Find(root, "SongLikeButton");
+            foreach (var control in new[] { input, send, like })
+            {
+                TestAssert.True(control.IsEffectivelyVisible && control.Bounds.Height >= 44,
+                    "The independent right-hand column must retain complete visible composer, send and vote controls.");
+                AssertContained(control, composer, "Comment composition and votes must stay inside their own right-hand pane.");
+            }
+            var inputBounds = BoundsIn(input, composer);
+            var sendBounds = BoundsIn(send, composer);
+            var likeBounds = BoundsIn(like, composer);
+            TestAssert.True(input.Bounds.Height >= 66 && likeBounds.Bottom <= inputBounds.Y + 1 && inputBounds.Bottom <= sendBounds.Y + 1
+                && Math.Abs(inputBounds.X - sendBounds.X) < 1 && Math.Abs(inputBounds.Right - sendBounds.Right) < 1,
+                "Desktop votes, textarea and the separate bottom send action must not overlap, while input and send share the column edges.");
+            TestAssert.True(Find(root, "SongCommentsList").Bounds.Height >= 44, "The independent middle column must keep a finite comment reading area.");
+        }
+
+        /// <summary>Checks real comments without requiring the desktop composer to live inside a mobile tab.</summary>
+        /// <param name="window">The pointer input owner.</param>
+        /// <param name="root">The expanded desktop subtree.</param>
+        /// <param name="model">The real source-confirmed model.</param>
+        private static void ValidateDesktopComments(Window window, Control root, MainViewModel model)
+        {
+            Tap(window, Find(root, "DesktopCommentsPaneButton"));
+            var input = Find(root, "SongCommentInput");
+            TestAssert.True(model.SongCommentDraft.Length == 0 && input.IsEffectivelyVisible && input.IsEffectivelyEnabled
+                && !Find(root, "PostSongCommentButton").IsEffectivelyEnabled,
+                "An authenticated desktop user must be able to start an empty draft while an empty submission remains disabled.");
+            TestAssert.True(root.GetVisualDescendants().OfType<TextBlock>().Any(text => text.IsEffectivelyVisible && text.Text == model.SongComments.Single().Content),
+                "The middle discussion pane must paint the current source comment rather than a sample or stale song's row.");
+            ValidateDesktopPanes(window, root);
+        }
+
+        /// <summary>Scrolls an actual finite comment page and verifies both side columns remain stationary.</summary>
+        /// <param name="window">The real input target.</param>
+        /// <param name="root">The expanded desktop overlay.</param>
+        /// <param name="workspace">The generated source page provider.</param>
+        /// <param name="model">The selected source and comment owner.</param>
+        /// <param name="output">The ignored screenshot directory.</param>
+        /// <param name="token">Cancels controlled refresh completion.</param>
+        /// <returns>A task representing middle-only scrolling and restored single-row fixture state.</returns>
+        private static async Task ValidateDesktopScrollingAsync(Window window, Control root, SocialPresentationTests.SocialWorkspace workspace,
+            MainViewModel model, string output, CancellationToken token)
+        {
+            var original = workspace.CommentsOverride;
+            workspace.CommentsOverride = (track, account, page, _) => Task.FromResult(SocialPresentationTests.SocialWorkspace.Page(track, account, page) with
+            {
+                Total = 40,
+                Items = Enumerable.Range(0, 20).Select(index => SocialPresentationTests.SocialWorkspace.Comment(track, account) with
+                {
+                    Id = "scroll-thread-" + index,
+                    Body = "Generated discussion " + index + "\nA second generated line keeps the real comment list taller than its viewport."
+                }).ToArray()
+            });
+            try
+            {
+                await TestAssert.ExecuteAsync(model.RefreshSongSocialCommand).WaitAsync(token);
+                Layout(window);
+                var summary = Find(root, "DesktopSongSummarySlot");
+                var composer = Find(root, "DesktopComposerPane");
+                var input = Find(root, "SongCommentInput");
+                var left = BoundsIn(summary, window);
+                var right = BoundsIn(composer, window);
+                var inputBefore = BoundsIn(input, window);
+                var list = (ListBox)Find(root, "SongCommentsList");
+                var point = list.TranslatePoint(new Point(list.Bounds.Width / 2, list.Bounds.Height / 2), window)!.Value;
+                window.MouseWheel(point, new Vector(0, -8), RawInputModifiers.None);
+                Layout(window);
+                TestAssert.True(list.GetVisualDescendants().OfType<ScrollViewer>().Any(scroll => scroll.Offset.Y > 0)
+                    && BoundsIn(summary, window) == left && BoundsIn(composer, window) == right && BoundsIn(input, window) == inputBefore,
+                    "Scrolling source comments must move only the central list, keeping song information and the complete composer fixed.");
+                SaveFrame(window, Path.Combine(output, "ui-social-desktop-comments-scrolled.png"));
+            }
+            finally
+            {
+                workspace.CommentsOverride = original;
+                await TestAssert.ExecuteAsync(model.RefreshSongSocialCommand).WaitAsync(token);
+                Layout(window);
+            }
+        }
+
+        /// <summary>Confirms that inspecting or previewing another song never changes the audio owner or opens its source.</summary>
+        /// <param name="playback">The authoritative playing queue.</param>
+        /// <param name="backend">The controlled native-audio replacement.</param>
+        /// <param name="playing">The originally loaded song identity.</param>
+        /// <param name="queue">The originally loaded ordered queue.</param>
+        private static void AssertPlaybackUnchanged(PlaybackService playback, LibraryExperienceTests.ExperienceBackend backend, string playing, string[] queue)
+        {
+            TestAssert.True(backend.OpenCount == 1 && playback.Snapshot.Track?.Id == playing && playback.Queue.Current?.Id == playing
+                && playback.Snapshot.State == PlaybackState.Playing && playback.Queue.Tracks.Select(track => track.Id).SequenceEqual(queue),
+                "Expanding, moving and previewing the inspected song must preserve the original audio, playing state and queue without reopening it.");
+        }
+
+        /// <summary>Measures a laid-out control in another control's coordinate system.</summary>
+        /// <param name="control">The actual arranged production element.</param>
+        /// <param name="relativeTo">The coordinate owner.</param>
+        /// <returns>The translated layout rectangle.</returns>
+        private static Rect BoundsIn(Control control, Control relativeTo) => new(control.TranslatePoint(default, relativeTo)!.Value, control.Bounds.Size);
+
+        /// <summary>Checks complete layout containment without substituting window size for a clipped child viewport.</summary>
+        /// <param name="control">The visible element under test.</param>
+        /// <param name="container">The actual containing pane or slot.</param>
+        /// <param name="message">The intended geometry boundary.</param>
+        private static void AssertContained(Control control, Control container, string message)
+        {
+            var bounds = BoundsIn(control, container);
+            TestAssert.True(bounds.X >= -1 && bounds.Y >= -1 && bounds.Right <= container.Bounds.Width + 1 && bounds.Bottom <= container.Bounds.Height + 1, message);
+        }
+
+        /// <summary>Opens the actual mobile comment tab and checks that an authenticated empty draft remains editable.</summary>
         /// <param name="window">The pointer input owner.</param>
         /// <param name="root">The visible expanded details subtree.</param>
         /// <param name="model">The source-confirmed presentation owner.</param>
-        private static void ValidateComments(Window window, Control root, MainViewModel model)
+        private static void ValidateMobileComments(Window window, Control root, MainViewModel model)
         {
             Tap(window, Find(root, "SongCommentsTab"));
             Layout(window);
@@ -137,14 +315,14 @@ namespace MajMusic.Tests
             TestAssert.True(reply.IsEffectivelyVisible && reply.IsEffectivelyEnabled && reply.Bounds.Height >= 44
                 && replyOffset.Y >= -1 && replyOffset.Y + reply.Bounds.Height <= item.Bounds.Height + 1,
                 "Comment actions must fit inside their actual list item rather than being clipped by the music-list row height.");
-            ValidateComposerBounds(window, root, root);
+            ValidateMobileComposerBounds(window, root, root);
         }
 
         /// <summary>Keeps the complete composer and send control inside the actual clipped detail viewport, including short windows.</summary>
         /// <param name="window">The current rendered window.</param>
         /// <param name="root">The expanded details subtree.</param>
         /// <param name="clip">The outer detail or sheet viewport which limits painted and interactive content.</param>
-        private static void ValidateComposerBounds(Window window, Control root, Control clip)
+        private static void ValidateMobileComposerBounds(Window window, Control root, Control clip)
         {
             var input = Find(root, "SongCommentInput");
             var send = Find(root, "PostSongCommentButton");

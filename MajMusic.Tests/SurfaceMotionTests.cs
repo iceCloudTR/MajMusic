@@ -123,6 +123,8 @@ namespace MajMusic.Tests
 
                 ValidatePixelMatrix(clock);
                 await ValidateActualCardsAsync(clock);
+                ValidateBoundedCaptureAndLatePublication(clock);
+                await ValidateSharedSongCardFlightAsync(clock);
                 return true;
             }, timeout.Token);
         }

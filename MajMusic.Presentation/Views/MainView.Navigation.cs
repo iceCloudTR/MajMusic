@@ -3,6 +3,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using MajMusic.Presentation.ViewModels;
 using TKCode.Arc;
 
@@ -15,6 +16,10 @@ namespace MajMusic.Presentation.Views
         private bool _desktopNavigationLoaded;
         /// <summary>Prevents a programmatic page synchronization from becoming another navigation request.</summary>
         private bool _restoringDesktopNavigation;
+        /// <summary>Coalesces page clicks after the selector's own input and rendering feedback.</summary>
+        private long _desktopNavigationRequest;
+        /// <summary>Coalesces mode clicks before starting snapshot capture and library preparation.</summary>
+        private long _homeNavigationRequest;
 
         /// <summary>Highlights the page restored by the native page host.</summary>
         /// <param name="sender">The desktop navigation bar.</param>
@@ -66,7 +71,16 @@ namespace MajMusic.Presentation.Views
                 && sender is SegmentedControl { SelectedIndex: >= 0 and < 5 } navigation
                 && navigation.SelectedIndex != SelectedSectionIndex)
             {
-                NavigateToSection(navigation.SelectedIndex);
+                var section = navigation.SelectedIndex;
+                var request = ++_desktopNavigationRequest;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (request == _desktopNavigationRequest && IsLoaded && !IsMobileLayout
+                        && navigation.SelectedIndex == section && SelectedSectionIndex != section)
+                    {
+                        NavigateToSection(section);
+                    }
+                }, DispatcherPriority.Background);
             }
         }
 
@@ -118,16 +132,27 @@ namespace MajMusic.Presentation.Views
                 return;
             }
 
-            var command = mode switch
+            var request = ++_homeNavigationRequest;
+            Dispatcher.UIThread.Post(() =>
             {
-                HomeBrowseMode.Playlists => owner.ShowPlaylistsModeCommand,
-                HomeBrowseMode.Library => owner.ShowLibraryModeCommand,
-                _ => owner.ShowRecommendationsModeCommand
-            };
-            if (command.CanExecute(null))
-            {
-                command.Execute(null);
-            }
+                if (request != _homeNavigationRequest || !IsLoaded || IsMobileLayout || SelectedSectionIndex != 0
+                    || !ReferenceEquals(DataContext, owner)
+                    || this.FindControl<SegmentedControl>("HomeModeSegments")?.SelectedValue is not HomeBrowseMode selected || selected != mode)
+                {
+                    return;
+                }
+
+                var command = mode switch
+                {
+                    HomeBrowseMode.Playlists => owner.ShowPlaylistsModeCommand,
+                    HomeBrowseMode.Library => owner.ShowLibraryModeCommand,
+                    _ => owner.ShowRecommendationsModeCommand
+                };
+                if (command.CanExecute(null))
+                {
+                    command.Execute(null);
+                }
+            }, DispatcherPriority.Background);
         }
     }
 }

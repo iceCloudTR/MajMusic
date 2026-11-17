@@ -15,6 +15,8 @@ namespace MajMusic.Presentation.ViewModels
     {
         /// <summary>Stores whether the inspected song uses the expanded details presentation.</summary>
         private bool _isSongDetailsExpanded;
+        /// <summary>Retains the explicitly requested chart pane independently of discussion loading.</summary>
+        private bool _isSongChartPreviewSelected;
         /// <summary>Identifies the exact chart, endpoint and account displayed by interaction controls.</summary>
         private SongSocialOwner? _songSocialOwner;
         /// <summary>Cancels requests when the inspected chart or its account changes.</summary>
@@ -57,6 +59,7 @@ namespace MajMusic.Presentation.ViewModels
                     }
                     else
                     {
+                        IsSongChartPreviewSelected = false;
                         CancelSongSocialRequests();
                         NotifySongSocialBindings();
                     }
@@ -68,6 +71,16 @@ namespace MajMusic.Presentation.ViewModels
         public AsyncCommand OpenExpandedSongDetailsCommand { get; private set; } = null!;
         /// <summary>Gets the action returning to the compact details presentation.</summary>
         public AsyncCommand CloseExpandedSongDetailsCommand { get; private set; } = null!;
+        /// <summary>Gets the action opening the reserved chart viewport for the inspected song.</summary>
+        public AsyncCommand OpenSongChartPreviewCommand { get; private set; } = null!;
+        /// <summary>Gets the action returning the expanded center pane to source comments.</summary>
+        public AsyncCommand ShowSongCommentsCommand { get; private set; } = null!;
+        /// <summary>Gets or sets whether expanded details display the chart viewport.</summary>
+        public bool IsSongChartPreviewSelected
+        {
+            get => _isSongChartPreviewSelected;
+            set => SetField(ref _isSongChartPreviewSelected, value);
+        }
         /// <summary>Gets the independent chart upvote action, separate from favorites.</summary>
         public AsyncCommand ToggleSongLikeCommand { get; private set; } = null!;
         /// <summary>Gets the action reloading a finite source summary and first comment page.</summary>
@@ -133,6 +146,7 @@ namespace MajMusic.Presentation.ViewModels
         {
             OpenExpandedSongDetailsCommand = CreateSongSocialCommand(() =>
             {
+                IsSongChartPreviewSelected = false;
                 IsSongDetailsExpanded = true;
                 return Task.CompletedTask;
             }, () => SelectedTrack is not null);
@@ -141,6 +155,17 @@ namespace MajMusic.Presentation.ViewModels
                 IsSongDetailsExpanded = false;
                 return Task.CompletedTask;
             });
+            OpenSongChartPreviewCommand = CreateSongSocialCommand(() =>
+            {
+                IsSongChartPreviewSelected = true;
+                IsSongDetailsExpanded = true;
+                return Task.CompletedTask;
+            }, () => SelectedTrack is not null);
+            ShowSongCommentsCommand = CreateSongSocialCommand(() =>
+            {
+                IsSongChartPreviewSelected = false;
+                return Task.CompletedTask;
+            }, () => SelectedTrack is not null);
             ToggleSongLikeCommand = CreateSongSocialCommand(ToggleSongLikeAsync, () => CanLikeSong);
             RefreshSongSocialCommand = CreateSongSocialCommand(() => LoadSongSocialAsync(false), () => IsSongSocialVisible && !_isSongSocialLoading && !_isSongSocialMutating);
             LoadMoreSongCommentsCommand = CreateSongSocialCommand(() => LoadSongSocialAsync(true), () => HasMoreSongComments && !_isSongSocialLoading && !_isSongSocialMutating);
@@ -531,7 +556,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 OnPropertyChanged(name);
             }
-            foreach (var command in new[] { OpenExpandedSongDetailsCommand, CloseExpandedSongDetailsCommand, ToggleSongLikeCommand,
+            foreach (var command in new[] { OpenExpandedSongDetailsCommand, CloseExpandedSongDetailsCommand, OpenSongChartPreviewCommand, ShowSongCommentsCommand, ToggleSongLikeCommand,
                 RefreshSongSocialCommand, LoadMoreSongCommentsCommand, PostSongCommentCommand, CancelSongReplyCommand })
             {
                 command?.NotifyCanExecuteChanged();

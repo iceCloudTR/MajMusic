@@ -4,7 +4,7 @@ using Avalonia;
 
 namespace MajMusic.Presentation.Theme
 {
-    /// <summary>Transitions the existing centered play and pause paths inside their unchanged icon canvas.</summary>
+    /// <summary>Crossfades the existing play and pause paths without moving their painted geometry.</summary>
     public sealed class PlayPauseTransition : FixedTransitionHost
     {
         /// <summary>Identifies the authoritative playback state.</summary>
@@ -15,8 +15,8 @@ namespace MajMusic.Presentation.Theme
             get => GetValue(IsPlayingProperty);
             set => SetValue(IsPlayingProperty, value);
         }
-        /// <inheritdoc />
-        protected override bool IsGlyph => true;
+        /// <summary>Keeps both icon surfaces at their exact resting geometry throughout the opacity transition.</summary>
+        protected override bool IsGlyph => false;
         /// <inheritdoc />
         protected override TimeSpan FullDuration => TimeSpan.FromMilliseconds(150);
 

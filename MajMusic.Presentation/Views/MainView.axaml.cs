@@ -31,6 +31,7 @@ namespace MajMusic.Presentation.Views
             this.FindControl<TextBox>("LibrarySearch")!.AddHandler(KeyDownEvent, OnSearchKeyDown, RoutingStrategies.Tunnel, true);
             DataContextChanged += OnViewDataContextChanged;
             InitializeResponsiveShell();
+            InitializeDesktopSongDetails();
         }
 
         /// <summary>Returns to the library after explicitly opening the selected playlist.</summary>

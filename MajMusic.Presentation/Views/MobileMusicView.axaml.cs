@@ -35,6 +35,10 @@ namespace MajMusic.Presentation.Views
         private bool _restoringMode;
         /// <summary>Indicates whether this view is the active responsive presentation.</summary>
         private bool _attached;
+        /// <summary>Rejects page construction queued for an earlier tab, owner or attachment.</summary>
+        private long _sectionPresentationRequest;
+        /// <summary>Coalesces browsing input before starting its synchronous surface snapshot.</summary>
+        private long _homeModeRequest;
         /// <summary>Owns only a drag that started on the noninteractive part of the bottom player.</summary>
         private IPointer? _miniPlayerPointer;
         /// <summary>Retains the player gesture origin in stable mobile-root coordinates.</summary>
@@ -103,9 +107,10 @@ namespace MajMusic.Presentation.Views
             base.OnPropertyChanged(change);
             if (change.Property == SelectedSectionIndexProperty && _attached)
             {
+                _homeModeRequest++;
                 ReleaseMiniPlayerGesture();
                 this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!.IsOpen = false;
-                PresentSection();
+                QueueSectionPresentation();
             }
         }
 
@@ -124,6 +129,8 @@ namespace MajMusic.Presentation.Views
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             _attached = false;
+            _sectionPresentationRequest++;
+            _homeModeRequest++;
             LayoutUpdated -= OnMobileLayoutUpdated;
             ReleaseMiniPlayerGesture();
             ReleaseSection();
@@ -169,6 +176,7 @@ namespace MajMusic.Presentation.Views
         /// <summary>Creates just the active page and restores its browsing segment without navigating again.</summary>
         private void PresentSection()
         {
+            _sectionPresentationRequest++;
             this.FindControl<Navbar>("MobileNavbar")!.Title = SectionTitles[SelectedSectionIndex];
             if (DataContext is not MainViewModel owner)
             {
@@ -179,11 +187,20 @@ namespace MajMusic.Presentation.Views
             _restoringMode = true;
             try
             {
+                var host = this.FindControl<MusicSurfaceHost>("MobileSectionHost")!;
+                var previous = host.Content as Control;
+                if (previous is not null && host.ChangeVersion == SelectedSectionIndex
+                    && ReferenceEquals(previous.DataContext, owner))
+                {
+                    RestoreBrowsingMode();
+                    UpdateBrowseViewport();
+                    return;
+                }
+
+                host.ChangeVersion = SelectedSectionIndex;
                 var template = (IDataTemplate)Resources[SectionTemplates[SelectedSectionIndex]]!;
                 var section = template.Build(owner)!;
                 section.DataContext = owner;
-                var host = this.FindControl<ContentControl>("MobileSectionHost")!;
-                var previous = host.Content as Control;
                 host.Content = section;
                 if (previous is not null)
                 {
@@ -196,6 +213,22 @@ namespace MajMusic.Presentation.Views
             {
                 _restoringMode = false;
             }
+        }
+
+        /// <summary>Lets the tab selection render before constructing its next page and drops superseded requests.</summary>
+        private void QueueSectionPresentation()
+        {
+            var request = ++_sectionPresentationRequest;
+            var section = SelectedSectionIndex;
+            var owner = DataContext;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_attached && request == _sectionPresentationRequest && section == SelectedSectionIndex
+                    && ReferenceEquals(DataContext, owner))
+                {
+                    PresentSection();
+                }
+            }, DispatcherPriority.Background);
         }
 
         /// <summary>Detaches the inactive page's inherited bindings and browse subscriptions.</summary>
@@ -537,16 +570,27 @@ namespace MajMusic.Presentation.Views
         {
             if (!_restoringMode && e.AddedItems.Count > 0 && DataContext is MainViewModel owner && sender is Segmented modes)
             {
-                var command = modes.SelectedIndex switch
+                var mode = modes.SelectedIndex;
+                var request = ++_homeModeRequest;
+                Dispatcher.UIThread.Post(() =>
                 {
-                    1 => owner.ShowPlaylistsModeCommand,
-                    2 => owner.ShowLibraryModeCommand,
-                    _ => owner.ShowRecommendationsModeCommand
-                };
-                if (command.CanExecute(null))
-                {
-                    command.Execute(null);
-                }
+                    if (!_attached || !modes.IsLoaded || request != _homeModeRequest || SelectedSectionIndex != 0
+                        || !ReferenceEquals(DataContext, owner) || modes.SelectedIndex != mode)
+                    {
+                        return;
+                    }
+
+                    var command = mode switch
+                    {
+                        1 => owner.ShowPlaylistsModeCommand,
+                        2 => owner.ShowLibraryModeCommand,
+                        _ => owner.ShowRecommendationsModeCommand
+                    };
+                    if (command.CanExecute(null))
+                    {
+                        command.Execute(null);
+                    }
+                }, DispatcherPriority.Background);
             }
         }
 
