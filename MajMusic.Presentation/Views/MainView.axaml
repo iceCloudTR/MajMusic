@@ -120,11 +120,16 @@
                                 <RowDefinition Height="32" />
                                 <RowDefinition Height="32" />
                             </Grid.RowDefinitions>
-                            <Viewbox x:Name="DesktopDetailsCover" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Top">
-                                <Border Width="240" Height="240" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}" ClipToBounds="True">
-                                    <theme:CoverTransition Source="{Binding Cover}" Stretch="UniformToFill" />
-                                </Border>
-                            </Viewbox>
+                            <Grid>
+                                <Viewbox x:Name="DesktopDetailsCover" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Top">
+                                    <Border Width="240" Height="240" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}" ClipToBounds="True">
+                                        <theme:CoverTransition Source="{Binding Cover}" Stretch="UniformToFill" />
+                                    </Border>
+                                </Viewbox>
+                                <arc:Button x:Name="DesktopExpandDetailsButton" Classes="icon" Width="36" Height="36" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6" Command="{Binding OpenExpandedSongDetailsCommand}" ToolTip.Tip="展开详情" AutomationProperties.Name="展开详情">
+                                    <Path Data="M 3,6 L 3,3 L 6,3 M 10,3 L 13,3 L 13,6 M 13,10 L 13,13 L 10,13 M 6,13 L 3,13 L 3,10" Stroke="{DynamicResource MusicTextBrush}" StrokeThickness="1.5" Width="16" Height="16" Stretch="None" />
+                                </arc:Button>
+                            </Grid>
                             <StackPanel Grid.Row="1" Spacing="2">
                                 <TextBlock Text="{Binding SelectedTrack.Title}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                 <TextBlock Text="{Binding SelectedTrack.Artist}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" />
@@ -280,6 +285,11 @@
                 </StackPanel>
             </TabItem>
         </TabControl>
+        <theme:SongDetailsOverlay x:Name="DesktopExpandedSongDetails" Grid.Row="1" ZIndex="20" IsOpen="{Binding IsSongDetailsExpanded, Mode=TwoWay}">
+            <Border Classes="card" Background="{DynamicResource MusicPanelBrush}" Padding="0">
+                <views:SongDetailsView />
+            </Border>
+        </theme:SongDetailsOverlay>
         <Grid Grid.Row="2" ColumnDefinitions="Auto,*" ColumnSpacing="12" Height="16">
             <TextBlock Text="{Binding PlaybackHint}" IsVisible="{Binding HasPlaybackHint}" Classes="muted" FontSize="11" MaxWidth="360" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding PlaybackHint}" />
             <TextBlock Grid.Column="1" Text="{Binding Status}" IsVisible="{Binding HasStatus}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Status}" />

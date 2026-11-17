@@ -91,7 +91,9 @@ namespace MajMusic.Presentation.Views
             if (DataContext is MainViewModel { SelectedTrack: not null })
             {
                 UpdateSheetViewport();
-                this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!.IsOpen = true;
+                var sheet = this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!;
+                sheet.SetCurrentValue(InterruptibleSongSheet.IsExpandedProperty, false);
+                sheet.IsOpen = true;
             }
         }
 
@@ -238,6 +240,12 @@ namespace MajMusic.Presentation.Views
             }
 
             var inset = Math.Clamp(overlay.Bounds.Height - top.Y, 0, overlay.Bounds.Height);
+            var safeTop = this.FindControl<Navbar>("MobileNavbar")?.TranslatePoint(default, overlay) is { } navbarTop
+                ? Math.Clamp(navbarTop.Y, 0, overlay.Bounds.Height) : 0;
+            if (Math.Abs(sheet.Margin.Top - safeTop) > 0.1)
+            {
+                sheet.Margin = new Thickness(sheet.Margin.Left, safeTop, sheet.Margin.Right, sheet.Margin.Bottom);
+            }
             if (Math.Abs(sheet.BottomInset - inset) > 0.1)
             {
                 sheet.BottomInset = inset;

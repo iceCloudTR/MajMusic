@@ -1,11 +1,15 @@
 #nullable enable
 
+using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Data;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using TKCode.Arc.Gestures;
 using TKCode.Arc.Mobile;
 using TKCode.Arc.Motion;
@@ -13,12 +17,18 @@ using TKCode.Arc.Motion;
 namespace MajMusic.Presentation.Theme
 {
     /// <summary>Uses Arc's song sheet template with one reversible position for opening, dismissal and dragging.</summary>
-    /// <remarks>The song details use the content-sized sheet; multiple resting detents are not used.</remarks>
+    /// <remarks>One position drives the closed, half-height and expanded resting points.</remarks>
     public sealed class InterruptibleSongSheet : Sheet
     {
         /// <summary>Reserves the measured navigation area below the sheet's own clipped viewport.</summary>
         public static readonly StyledProperty<double> BottomInsetProperty = AvaloniaProperty.Register<InterruptibleSongSheet, double>(
             nameof(BottomInset), coerce: (_, value) => double.IsFinite(value) ? Math.Max(0, value) : 0);
+        /// <summary>Identifies the expanded resting point while retaining the inherited open state.</summary>
+        public static readonly StyledProperty<bool> IsExpandedProperty = AvaloniaProperty.Register<InterruptibleSongSheet, bool>(
+            nameof(IsExpanded), defaultBindingMode: BindingMode.TwoWay);
+        /// <summary>Identifies expanded content during an upward preview as well as at its committed resting point.</summary>
+        public static readonly DirectProperty<InterruptibleSongSheet, bool> ShowsExpandedContentProperty =
+            AvaloniaProperty.RegisterDirect<InterruptibleSongSheet, bool>(nameof(ShowsExpandedContent), sheet => sheet.ShowsExpandedContent);
         /// <summary>Keeps the closed panel's outline beyond the viewport.</summary>
         private const double ClosedGap = 24;
         /// <summary>Finishes a tapped or released sheet promptly without changing direct pointer tracking.</summary>
@@ -35,6 +45,10 @@ namespace MajMusic.Presentation.Theme
         private Control? _handle;
         /// <summary>Retains the original scrollable content surface.</summary>
         private ScrollViewer? _body;
+        /// <summary>Retains the original title so expanded content can provide its own fixed header.</summary>
+        private TextBlock? _title;
+        /// <summary>Retains the content control under the initial contact for nested scrolling arbitration.</summary>
+        private Control? _bodyGestureSource;
         /// <summary>Owns the sole animated progress for the attached template.</summary>
         private MotionValue<double>? _motion;
         /// <summary>Owns a drag beginning on the title or grabber.</summary>
@@ -57,11 +71,23 @@ namespace MajMusic.Presentation.Theme
         private double _interactiveOriginOffset;
         /// <summary>Retains the previous resting target for an interrupted external pull.</summary>
         private bool _interactiveOriginOpen;
+        /// <summary>Retains the external gesture's expanded resting point for cancellation.</summary>
+        private bool _interactiveOriginExpanded;
+        /// <summary>Retains the sheet gesture's original expanded resting point.</summary>
+        private bool _dragOriginExpanded;
+        /// <summary>Suppresses intermediate retargets while committing two related public properties.</summary>
+        private bool _committingDetent;
+        /// <summary>Retains whether the actual translated pane has entered its expanded-content region.</summary>
+        private bool _showsExpandedContent;
+        /// <summary>Retains the installed motion policy for immediate settling when that policy changes.</summary>
+        private ArcMotionLevel _level;
 
         /// <summary>Creates an overlay whose moving content cannot paint or catch touches below its viewport.</summary>
         public InterruptibleSongSheet()
         {
             ClipToBounds = true;
+            ArcMotion.SetTracks(this, true);
+            Classes.CollectionChanged += OnMotionPolicyChanged;
         }
 
         /// <summary>Gets or sets the measured distance from the overlay's bottom to the navigation bar's top.</summary>
@@ -71,14 +97,31 @@ namespace MajMusic.Presentation.Theme
             set => SetValue(BottomInsetProperty, value);
         }
 
-        /// <summary>Gets the displayed opening progress, from zero when closed to one when fully open.</summary>
-        public double TransitionProgress => _progress;
-        /// <summary>Gets the actual panel offset below its open position, in device-independent pixels.</summary>
+        /// <summary>Gets or sets whether the open pane rests at full height instead of half height.</summary>
+        public bool IsExpanded
+        {
+            get => GetValue(IsExpandedProperty);
+            set => SetValue(IsExpandedProperty, value);
+        }
+        /// <summary>Gets whether a full-content preview is visible while dragging or expanded.</summary>
+        public bool ShowsExpandedContent => _showsExpandedContent;
+
+        /// <summary>Gets opening progress from zero when closed to one at either open resting point.</summary>
+        public double TransitionProgress => Math.Clamp(_progress / HalfProgress, 0, 1);
+        /// <summary>Gets the actual panel offset below its expanded resting point, in device-independent pixels.</summary>
         public new double PanelOffset => _translation.Y;
         /// <summary>Gets completion of the current transition; false means that another target interrupted it.</summary>
         public Task<bool> SheetUpdate => _sheetUpdate;
         /// <summary>Gets the distance required to move the complete panel beyond the bottom edge.</summary>
-        private double ClosedOffset => Math.Max(0, _panel?.Bounds.Height ?? 0) + ClosedGap;
+        private double ClosedOffset => FullPanelHeight + ClosedGap;
+        /// <summary>Gets the stable full-height pane size used for all three resting points.</summary>
+        private double FullPanelHeight => Math.Max(0, Bounds.Height) * Math.Clamp(MaxHeightFraction, 0.1, 1);
+        /// <summary>Gets the half-height pane's distance below the expanded resting point.</summary>
+        private double HalfOffset => FullPanelHeight * 0.5;
+        /// <summary>Gets the raw position at which exactly half of the pane remains visible.</summary>
+        private double HalfProgress => 1 - HalfOffset / ClosedOffset;
+        /// <summary>Gets the committed normalized position without carrying pointer velocity into settling.</summary>
+        private double TargetProgress => IsOpen ? IsExpanded ? 1 : HalfProgress : 0;
 
         /// <summary>Catches the current position for a direct upward pull beginning on the mini player.</summary>
         /// <returns>Whether the attached sheet is ready to follow the pointer.</returns>
@@ -92,6 +135,7 @@ namespace MajMusic.Presentation.Theme
 
             _motion.Stop();
             _interactiveOriginOpen = IsOpen;
+            _interactiveOriginExpanded = IsExpanded;
             _interactiveOpening = true;
             _dragging = true;
             _present = true;
@@ -129,15 +173,9 @@ namespace MajMusic.Presentation.Theme
             _dragging = false;
             var distance = _interactiveOriginOffset - PanelOffset;
             var open = cancelled ? _interactiveOriginOpen : distance >= 8 ||
-                _progress >= 0.5 || upwardVelocity > 500 && distance >= 6;
-            if (IsOpen == open)
-            {
-                TransitionToTarget();
-            }
-            else
-            {
-                SetCurrentValue(IsOpenProperty, open);
-            }
+                _progress >= HalfProgress * 0.5 || upwardVelocity > 500 && distance >= 6;
+            var expanded = cancelled ? _interactiveOriginExpanded : open && _progress > (HalfProgress + 1) * 0.5;
+            CommitDetent(open, expanded);
         }
 
         /// <inheritdoc />
@@ -150,6 +188,7 @@ namespace MajMusic.Presentation.Theme
             _panel = e.NameScope.Find<Border>("PART_Panel");
             _handle = e.NameScope.Find<Control>("PART_Handle");
             _body = e.NameScope.Find<ScrollViewer>("PART_Body");
+            _title = e.NameScope.Find<TextBlock>("PART_Title");
             ConnectTemplate();
         }
 
@@ -170,10 +209,25 @@ namespace MajMusic.Presentation.Theme
         /// <inheritdoc />
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
-            if (change.Property == IsOpenProperty)
+            if (change.Property == IsOpenProperty || change.Property == IsExpandedProperty)
             {
                 // Keep the inherited public property and its bindings, without starting the private Arc spring.
-                TransitionToTarget();
+                if (!_committingDetent)
+                {
+                    if (change.Property == IsOpenProperty && !IsOpen && IsExpanded)
+                    {
+                        CommitDetent(false, false);
+                    }
+                    else if (change.Property == IsExpandedProperty && IsExpanded && !IsOpen)
+                    {
+                        CommitDetent(true, true);
+                    }
+                    else
+                    {
+                        UpdatePanelSize();
+                        TransitionToTarget();
+                    }
+                }
                 return;
             }
 
@@ -194,6 +248,14 @@ namespace MajMusic.Presentation.Theme
             if (change.Property == BoundsProperty || change.Property == MaxHeightFractionProperty)
             {
                 UpdatePanelSize();
+                if (!_dragging)
+                {
+                    TransitionToTarget();
+                }
+            }
+            else if (change.Property == TitleProperty)
+            {
+                UpdateBodySize();
             }
         }
 
@@ -207,11 +269,12 @@ namespace MajMusic.Presentation.Theme
 
             _panel.RenderTransform = _translation;
             _panel.SizeChanged += OnPanelSizeChanged;
-            _motion = new MotionValue<double>(this, IsOpen ? 1 : 0, MotionVectors.Double);
+            _level = ArcMotion.GetEffectiveLevel(this);
+            _motion = new MotionValue<double>(this, TargetProgress, MotionVectors.Double);
             _motion.Changed += ApplyProgress;
             _present = IsOpen;
             UpdatePanelSize();
-            ApplyProgress(IsOpen ? 1 : 0);
+            ApplyProgress(TargetProgress);
             if (_scrim is not null)
             {
                 _scrim.PointerPressed += OnScrimPressed;
@@ -219,6 +282,7 @@ namespace MajMusic.Presentation.Theme
 
             if (_handle is not null)
             {
+                _handle.SizeChanged += OnHandleSizeChanged;
                 _handleDrag = CreateDrag(_handle, false);
             }
 
@@ -226,6 +290,7 @@ namespace MajMusic.Presentation.Theme
             {
                 _bodyDrag = CreateDrag(_body, true);
                 _bodyDrag.Starting += OnBodyDragStarting;
+                _body.AddHandler(PointerPressedEvent, OnBodyPointerPressed, RoutingStrategies.Tunnel, true);
             }
         }
 
@@ -234,6 +299,12 @@ namespace MajMusic.Presentation.Theme
         {
             _interactiveOpening = false;
             _dragging = false;
+            _bodyGestureSource = null;
+            if (_handle is not null)
+            {
+                _handle.SizeChanged -= OnHandleSizeChanged;
+            }
+            _body?.RemoveHandler(PointerPressedEvent, OnBodyPointerPressed);
             _handleDrag?.Dispose();
             _handleDrag = null;
             _bodyDrag?.Dispose();
@@ -261,7 +332,7 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Retargets from the currently displayed position without carrying the old direction's velocity.</summary>
         private void TransitionToTarget()
         {
-            var target = IsOpen ? 1d : 0d;
+            var target = TargetProgress;
             if (_motion is null || _panel is null)
             {
                 ApplyProgress(target);
@@ -299,9 +370,11 @@ namespace MajMusic.Presentation.Theme
         {
             _progress = Math.Clamp(progress, 0, 1);
             _translation.Y = ClosedOffset * (1 - _progress);
+            SetAndRaise(ShowsExpandedContentProperty, ref _showsExpandedContent, IsExpanded || _progress > (HalfProgress + 1) * 0.5);
+            UpdateBodySize();
             if (_scrim is not null)
             {
-                _scrim.Opacity = _progress;
+                _scrim.Opacity = TransitionProgress;
             }
 
             if (!IsOpen && !_dragging && _progress == 0)
@@ -316,12 +389,75 @@ namespace MajMusic.Presentation.Theme
             }
         }
 
-        /// <summary>Keeps the original content-sized panel within the current page height.</summary>
+        /// <summary>Keeps one full-size pane within the current page so translation alone defines its resting point.</summary>
         private void UpdatePanelSize()
         {
             if (_panel is not null)
             {
-                _panel.MaxHeight = Math.Max(0, Bounds.Height) * Math.Clamp(MaxHeightFraction, 0.1, 1);
+                _panel.MaxHeight = FullPanelHeight;
+                _panel.Height = FullPanelHeight;
+                UpdateBodySize();
+            }
+        }
+
+        /// <summary>Fits the live body to the visible detent while keeping its fixed actions above the lower viewport edge.</summary>
+        private void UpdateBodySize()
+        {
+            if (_body is null)
+            {
+                return;
+            }
+            if (_title is not null)
+            {
+                _title.IsVisible = !ShowsExpandedContent && !string.IsNullOrEmpty(Title);
+            }
+            var handle = _handle is null ? 44 : _handle.Bounds.Height + _handle.Margin.Top + _handle.Margin.Bottom;
+            var visible = ShowsExpandedContent ? Math.Clamp(FullPanelHeight - PanelOffset, HalfOffset, FullPanelHeight) : HalfOffset;
+            _body.Height = Math.Max(0, visible - handle - (_panel?.BorderThickness.Top ?? 0) - (_panel?.BorderThickness.Bottom ?? 0));
+            _body.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
+            _body.VerticalScrollBarVisibility = ShowsExpandedContent ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto;
+        }
+
+        /// <summary>Preserves the same visible bottom edge when the grabber title changes height.</summary>
+        /// <param name="sender">The template handle.</param>
+        /// <param name="e">Its updated measured size.</param>
+        private void OnHandleSizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            UpdateBodySize();
+        }
+
+        /// <summary>Commits a resting point atomically before starting one reversible settle.</summary>
+        /// <param name="open">Whether at least the half-height pane remains open.</param>
+        /// <param name="expanded">Whether the pane rests at full height.</param>
+        private void CommitDetent(bool open, bool expanded)
+        {
+            _committingDetent = true;
+            try
+            {
+                SetCurrentValue(IsExpandedProperty, open && expanded);
+                SetCurrentValue(IsOpenProperty, open);
+            }
+            finally
+            {
+                _committingDetent = false;
+            }
+            UpdatePanelSize();
+            TransitionToTarget();
+        }
+
+        /// <summary>Settles to the committed resting point when inherited motion is reduced or disabled.</summary>
+        /// <param name="sender">The Arc policy classes.</param>
+        /// <param name="e">The updated motion classification.</param>
+        private void OnMotionPolicyChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            var level = ArcMotion.GetEffectiveLevel(this);
+            if (_level != level)
+            {
+                _level = level;
+                if (!_dragging)
+                {
+                    TransitionToTarget();
+                }
             }
         }
 
@@ -373,8 +509,23 @@ namespace MajMusic.Presentation.Theme
         /// <param name="e">The proposed content drag.</param>
         private void OnBodyDragStarting(object? sender, DragGestureEventArgs e)
         {
-            e.Cancel = _body is { } body && body.Extent.Height > body.Viewport.Height + 1 &&
+            var ancestors = _bodyGestureSource?.GetVisualAncestors().OfType<Control>().ToArray() ?? [];
+            if (_bodyGestureSource is TextBox || ancestors.Any(control => control is TextBox))
+            {
+                e.Cancel = true;
+                return;
+            }
+            var body = _bodyGestureSource as ScrollViewer ?? ancestors.OfType<ScrollViewer>().FirstOrDefault() ?? _body;
+            e.Cancel = body is not null && body.Extent.Height > body.Viewport.Height + 1 &&
                 !(body.Offset.Y <= 0 && e.Offset.Y > 0);
+        }
+
+        /// <summary>Remembers nested comment scrolling before Arc claims a vertical gesture.</summary>
+        /// <param name="sender">The outer sheet body.</param>
+        /// <param name="e">The original contact.</param>
+        private void OnBodyPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            _bodyGestureSource = e.Source as Control;
         }
 
         /// <summary>Catches the displayed position without first moving to the previous animation target.</summary>
@@ -385,6 +536,7 @@ namespace MajMusic.Presentation.Theme
             _motion?.Stop();
             _dragging = true;
             _dragOrigin = PanelOffset - e.Offset.Y;
+            _dragOriginExpanded = IsExpanded;
         }
 
         /// <summary>Maps pointer motion to the same normalized opening fraction.</summary>
@@ -410,15 +562,24 @@ namespace MajMusic.Presentation.Theme
             }
 
             _dragging = false;
-            var projectedOffset = PanelOffset + e.Velocity.Y * 0.2;
-            if (IsDismissible && (e.Velocity.Y > 500 || projectedOffset > ClosedOffset / 2))
+            var projectedOffset = PanelOffset + e.Velocity.Y * 0.16;
+            var open = !IsDismissible || projectedOffset < (HalfOffset + ClosedOffset) * 0.5;
+            var expanded = open && projectedOffset < HalfOffset * 0.5;
+            if (!_dragOriginExpanded && (e.Offset.Y < -36 || e.Velocity.Y < -500))
             {
-                SetCurrentValue(IsOpenProperty, false);
+                open = true;
+                expanded = true;
             }
-            else
+            else if (_dragOriginExpanded && e.Offset.Y > 36 && open)
             {
-                TransitionToTarget();
+                expanded = false;
             }
+            else if (!_dragOriginExpanded && IsDismissible && (e.Offset.Y > 48 || e.Velocity.Y > 500))
+            {
+                open = false;
+                expanded = false;
+            }
+            CommitDetent(open, expanded);
         }
 
         /// <summary>Settles a cancelled gesture from its current position without retaining pointer velocity.</summary>
@@ -429,7 +590,7 @@ namespace MajMusic.Presentation.Theme
             if (_dragging)
             {
                 _dragging = false;
-                TransitionToTarget();
+                CommitDetent(true, _dragOriginExpanded);
             }
         }
     }

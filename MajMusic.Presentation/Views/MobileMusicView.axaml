@@ -355,37 +355,41 @@
             </Grid>
         </arcm:Page.Footer>
         <arcm:Page.Overlay>
-            <theme:InterruptibleSongSheet x:Name="MobileTrackSheet" Title="{Binding SelectedTitle}" MaxHeightFraction="0.94">
-                <StackPanel Spacing="12" Margin="4,0,4,8">
-                    <Border Width="144" Height="144" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}" HorizontalAlignment="Center" ClipToBounds="True">
-                        <theme:CoverTransition Source="{Binding Cover}" Stretch="UniformToFill" />
-                    </Border>
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="{Binding SelectedArtist}" TextWrapping="Wrap" HorizontalAlignment="Center" FontSize="14" />
-                        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
-                            <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource MobileDisplay}, ConverterParameter=duration}" Classes="mobileLabel" />
-                            <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource MobileDisplay}, ConverterParameter=audio}" Classes="mobileLabel" />
-                        </StackPanel>
-                        <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource MobileDisplay}, ConverterParameter=source}" Classes="mobileLabel" HorizontalAlignment="Center" />
-                    </StackPanel>
-                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                        <arcm:Button x:Name="MobileDetailLikeButton" Content="{Binding FavoriteButtonText}" Variant="Tinted" Command="{Binding ToggleFavoriteCommand}" />
-                        <arcm:Button x:Name="MobileDetailDownloadButton" Grid.Column="1" Content="下载" Variant="Tinted" Command="{Binding DownloadCommand}" />
-                    </Grid>
-                    <Grid ColumnDefinitions="*,44" ColumnSpacing="8">
-                        <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.Playlist}" x:Name="MobileDetailPlaylistPicker" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}" Placeholder="加入歌单" />
-                        <arcm:Button x:Name="MobileDetailAddButton" Grid.Column="1" Content="+" Command="{Binding AddToPlaylistCommand}" AutomationProperties.Name="加入歌单" />
-                    </Grid>
-                    <Grid ColumnDefinitions="44,*,44" ColumnSpacing="8">
-                        <arcm:IconButton x:Name="MobileShuffleButton" Classes="playbackMode" Classes.active="{Binding IsShuffle}" Icon="{StaticResource MobileShuffleIcon}" Variant="Plain" Command="{Binding ToggleShuffleCommand}" AutomationProperties.Name="{Binding ShuffleModeText}" />
-                        <arcm:Button x:Name="MobileDetailPlayButton" Grid.Column="1" Content="播放这首" Click="OnPlaySelectedClicked" IsEnabled="{Binding CanPlay}" />
-                        <Grid Grid.Column="2">
-                            <arcm:IconButton x:Name="MobileRepeatButton" Classes="playbackMode" Classes.active="{Binding IsRepeating}" Icon="{StaticResource MobileRepeatIcon}" Variant="Plain" Command="{Binding CycleRepeatModeCommand}" AutomationProperties.Name="{Binding RepeatModeText}" />
-                            <TextBlock Text="1" IsVisible="{Binding IsRepeatOne}" FontSize="9" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="{DynamicResource MusicAccentBrush}" />
+            <theme:InterruptibleSongSheet x:Name="MobileTrackSheet" Title="{Binding SelectedTitle}" MaxHeightFraction="1" IsExpanded="{Binding IsSongDetailsExpanded, Mode=TwoWay}">
+                <Grid>
+                    <StackPanel Spacing="8" Margin="8,0,8,8" VerticalAlignment="Top" IsVisible="{Binding !ShowsExpandedContent, ElementName=MobileTrackSheet}">
+                        <Grid ColumnDefinitions="64,*,44" ColumnSpacing="10">
+                            <Border Width="64" Height="64" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}" ClipToBounds="True">
+                                <theme:CoverTransition Source="{Binding Cover}" Stretch="UniformToFill" />
+                            </Border>
+                            <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding SelectedArtist}" TextTrimming="CharacterEllipsis" FontSize="13" />
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource MobileDisplay}, ConverterParameter=duration}" Classes="mobileLabel" />
+                                    <TextBlock Grid.Column="1" Text="{Binding SelectedTrack, Converter={StaticResource MobileDisplay}, ConverterParameter=audio}" Classes="mobileLabel" TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                                <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource MobileDisplay}, ConverterParameter=source}" Classes="mobileLabel" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <arcm:Button x:Name="MobileExpandDetailsButton" Grid.Column="2" Content="↗" Variant="Plain" Command="{Binding OpenExpandedSongDetailsCommand}" AutomationProperties.Name="展开详情" />
                         </Grid>
-                    </Grid>
-                    <arcm:Button Content="从歌单移除" Variant="Plain" Command="{Binding RemoveFromPlaylistCommand}" IsVisible="{Binding IsLocalPlaylistView}" />
-                </StackPanel>
+                        <Grid ColumnDefinitions="44,*,*,*,44" ColumnSpacing="4">
+                            <arcm:IconButton x:Name="MobileShuffleButton" Classes="playbackMode" Classes.active="{Binding IsShuffle}" Icon="{StaticResource MobileShuffleIcon}" Variant="Plain" Command="{Binding ToggleShuffleCommand}" AutomationProperties.Name="{Binding ShuffleModeText}" />
+                            <arcm:Button x:Name="MobileDetailLikeButton" Grid.Column="1" Content="{Binding FavoriteButtonText}" FontSize="12" Padding="3,0" Variant="Tinted" Command="{Binding ToggleFavoriteCommand}" />
+                            <arcm:Button x:Name="MobileDetailDownloadButton" Grid.Column="2" Content="下载" FontSize="12" Padding="3,0" Variant="Tinted" Command="{Binding DownloadCommand}" />
+                            <arcm:Button x:Name="MobileDetailPlayButton" Grid.Column="3" Content="播放这首" FontSize="12" Padding="3,0" Click="OnPlaySelectedClicked" IsEnabled="{Binding CanPlay}" />
+                            <Grid Grid.Column="4">
+                                <arcm:IconButton x:Name="MobileRepeatButton" Classes="playbackMode" Classes.active="{Binding IsRepeating}" Icon="{StaticResource MobileRepeatIcon}" Variant="Plain" Command="{Binding CycleRepeatModeCommand}" AutomationProperties.Name="{Binding RepeatModeText}" />
+                                <TextBlock Text="1" IsVisible="{Binding IsRepeatOne}" FontSize="9" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="{DynamicResource MusicAccentBrush}" />
+                            </Grid>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,44,Auto" ColumnSpacing="8">
+                            <arc:Select Size="Medium" Height="44" TextSelector="{x:Static converters:MusicSelectLabels.Playlist}" x:Name="MobileDetailPlaylistPicker" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}" Placeholder="加入歌单" />
+                            <arcm:Button x:Name="MobileDetailAddButton" Grid.Column="1" Content="+" Command="{Binding AddToPlaylistCommand}" AutomationProperties.Name="加入歌单" />
+                            <arcm:Button Grid.Column="2" Content="−" Width="44" Variant="Plain" Command="{Binding RemoveFromPlaylistCommand}" IsVisible="{Binding IsLocalPlaylistView}" AutomationProperties.Name="从歌单移除" />
+                        </Grid>
+                    </StackPanel>
+                    <views:SongDetailsView IsVisible="{Binding ShowsExpandedContent, ElementName=MobileTrackSheet}" />
+                </Grid>
             </theme:InterruptibleSongSheet>
         </arcm:Page.Overlay>
         <theme:MusicSurfaceHost x:Name="MobileSectionHost" ChangeVersion="{Binding SelectedSectionIndex, ElementName=MobileRoot}" Margin="12,8,12,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />

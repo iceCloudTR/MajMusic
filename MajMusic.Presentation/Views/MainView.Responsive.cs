@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Interactivity;
+using MajMusic.Presentation.ViewModels;
 
 namespace MajMusic.Presentation.Views
 {
@@ -44,6 +45,10 @@ namespace MajMusic.Presentation.Views
             base.OnPropertyChanged(change);
             if (change.Property == SelectedSectionIndexProperty)
             {
+                if (DataContext is MainViewModel owner && owner.IsSongDetailsExpanded)
+                {
+                    owner.CloseExpandedSongDetailsCommand.Execute(null);
+                }
                 if (_desktopContent is not null && this.FindControl<TabControl>("MainTabs") is { } tabs
                     && tabs.SelectedIndex != SelectedSectionIndex)
                 {

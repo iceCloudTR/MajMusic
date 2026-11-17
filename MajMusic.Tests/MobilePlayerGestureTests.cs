@@ -10,6 +10,7 @@ using MajMusic.Core.Models;
 using MajMusic.Core.Playback;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
+using MajMusic.Presentation.Theme;
 using ArcSheet = TKCode.Arc.Mobile.Sheet;
 using ArcSlider = TKCode.Arc.Slider;
 
@@ -70,15 +71,32 @@ namespace MajMusic.Tests
                     TestAssert.True(model.SelectedTrack?.Id == playing.Id && playback.Queue.Current?.Id == playing.Id
                         && model.IsPlaying && playback.Queue.Tracks.Count == 120,
                         "The player gesture must inspect actual playing A even when browsing selected B, while retaining the loaded queue and transport.");
+                    await ValidateSheetDetentsAsync(window, (InterruptibleSongSheet)sheet, model, playback, timeout.Token);
                     sheet.IsOpen = false;
+                    await ((InterruptibleSongSheet)sheet).SheetUpdate.WaitAsync(timeout.Token);
                     Layout(window);
 
-                    foreach (var movement in new[] { new Vector(0, -20), new Vector(100, -30), new Vector(0, 60) })
+                    foreach (var movement in new[] { new Vector(0, 0), new Vector(0, -20) })
                     {
                         model.SelectedTrack = selected;
                         Swipe(window, PlayerPoint(player, window), movement);
+                        await WaitAsync(() => sheet.IsOpen, timeout.Token);
+                        await ((InterruptibleSongSheet)sheet).SheetUpdate.WaitAsync(timeout.Token);
+                        TestAssert.True(!((InterruptibleSongSheet)sheet).IsExpanded && model.SelectedTrack?.Id == playing.Id
+                            && playback.Queue.Current?.Id == playing.Id && model.IsPlaying,
+                            "Both a player tap and a light upward pull must open half-height details for the actual playing song.");
+                        sheet.IsOpen = false;
+                        await ((InterruptibleSongSheet)sheet).SheetUpdate.WaitAsync(timeout.Token);
+                        Layout(window);
+                    }
+
+                    foreach (var movement in new[] { new Vector(100, -30), new Vector(0, 60) })
+                    {
+                        model.SelectedTrack = selected;
+                        Swipe(window, PlayerPoint(player, window), movement);
+                        await ((InterruptibleSongSheet)sheet).SheetUpdate.WaitAsync(timeout.Token);
                         TestAssert.True(!sheet.IsOpen && model.SelectedTrack?.Id == selected.Id,
-                            "A tap-sized, horizontal or downward player movement cannot replace the inspected song or open the sheet.");
+                            "A horizontal or downward player movement cannot replace the inspected song or open the sheet.");
                     }
 
                     var browser = mobile.GetVisualDescendants().OfType<BrowseTracksView>().Single();
@@ -106,6 +124,63 @@ namespace MajMusic.Tests
 
                 return true;
             }, timeout.Token);
+        }
+
+        /// <summary>Exercises real half-to-full handle dragging and cancellation at both resting points without changing playback.</summary>
+        /// <param name="window">The headless native input owner.</param>
+        /// <param name="sheet">The actual production details sheet.</param>
+        /// <param name="model">The inspected-song presentation owner.</param>
+        /// <param name="playback">The existing playing queue.</param>
+        /// <param name="token">Cancels a missing gesture settlement.</param>
+        /// <returns>A task representing direct tracking, expansion and cancellation.</returns>
+        private static async Task ValidateSheetDetentsAsync(Window window, InterruptibleSongSheet sheet, MainViewModel model,
+            PlaybackService playback, CancellationToken token)
+        {
+            await sheet.SheetUpdate.WaitAsync(token);
+            Layout(window);
+            var track = playback.Snapshot.Track!.Id;
+            var handle = sheet.GetVisualDescendants().OfType<Control>().Single(control => control.Name == "PART_Handle");
+            var halfOffset = sheet.PanelOffset;
+            TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && halfOffset > 100,
+                "A player pull must begin at the real half-height song-details resting point.");
+            var start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), window)!.Value;
+            using (var cancelled = window.TouchBegin(start, RawInputModifiers.None))
+            {
+                window.TouchMove(cancelled, start + new Vector(0, -20), RawInputModifiers.None);
+                window.TouchMove(cancelled, start + new Vector(0, -70), RawInputModifiers.None);
+                Layout(window);
+                TestAssert.True(sheet.PanelOffset < halfOffset - 20 && sheet.PanelOffset > 0,
+                    "A held upward handle movement must directly expose more content before committing a detent.");
+            }
+            Layout(window);
+            await sheet.SheetUpdate.WaitAsync(token);
+            TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && Math.Abs(sheet.PanelOffset - halfOffset) < 2,
+                "Cancelling an upward contact must restore half height without committing a full view or dismissing it.");
+
+            start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), window)!.Value;
+            Swipe(window, start, new Vector(0, -90));
+            await sheet.SheetUpdate.WaitAsync(token);
+            Layout(window);
+            TestAssert.True(sheet.IsOpen && sheet.IsExpanded && model.IsSongDetailsExpanded && sheet.PanelOffset < 1,
+                "A committed upward handle gesture must move the existing details pane to its full resting point.");
+            start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), window)!.Value;
+            using (var cancelled = window.TouchBegin(start, RawInputModifiers.None))
+            {
+                window.TouchMove(cancelled, start + new Vector(0, 15), RawInputModifiers.None);
+                window.TouchMove(cancelled, start + new Vector(0, 65), RawInputModifiers.None);
+                Layout(window);
+                TestAssert.True(sheet.PanelOffset > 20, "A held downward movement must track from the full resting point.");
+            }
+            Layout(window);
+            await sheet.SheetUpdate.WaitAsync(token);
+            TestAssert.True(sheet.IsOpen && sheet.IsExpanded && sheet.PanelOffset < 1,
+                "Cancelling a downward contact must restore full height instead of retaining the gesture's transient displacement.");
+            model.CloseExpandedSongDetailsCommand.Execute(null);
+            await sheet.SheetUpdate.WaitAsync(token);
+            Layout(window);
+            TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && Math.Abs(sheet.PanelOffset - halfOffset) < 2
+                && playback.Snapshot.Track?.Id == track && playback.Queue.Current?.Id == track && model.IsPlaying,
+                "Returning to compact details must preserve the original loaded track, queue and playing state.");
         }
 
         /// <summary>Locates the noninteractive information area inside the persistent player.</summary>

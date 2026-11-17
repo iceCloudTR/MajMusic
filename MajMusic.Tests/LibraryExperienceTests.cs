@@ -358,7 +358,7 @@ namespace MajMusic.Tests
         }
 
         /// <summary>Controls persistence and independently authenticated online snapshots without HTTP or disk access.</summary>
-        internal sealed class ExperienceWorkspace : IMusicWorkspace, IOnlineMusicWorkspace
+        internal class ExperienceWorkspace : IMusicWorkspace, IOnlineMusicWorkspace
         {
             /// <summary>Gets an optional controllable local query for home cancellation cases.</summary>
             public Func<string?, CancellationToken, Task<IReadOnlyList<MusicTrack>>>? SearchOverride { get; set; }

@@ -142,6 +142,7 @@ namespace MajMusic.Presentation.ViewModels
             InitializePlaybackModeCommands();
             InitializePlaylistManagementCommands();
             InitializeLocalMediaCleanupCommands();
+            InitializeSongSocialCommands();
             _playback.StateChanged += OnPlaybackStateChanged;
         }
 
@@ -775,6 +776,7 @@ namespace MajMusic.Presentation.ViewModels
         private async Task DisposeCoreAsync(Task[] operations)
         {
             _lifetime.Cancel();
+            CancelSongSocialRequests();
             DisposeAudioDownloadProgress();
             foreach (var card in EndpointCards)
             {
@@ -1095,6 +1097,7 @@ namespace MajMusic.Presentation.ViewModels
 
             RefreshPlaylistManagementCommands();
             RefreshEndpointCardCommands();
+            RefreshSongSocialCommands();
             UpdatePreviewLibrary(library);
         }
 
@@ -1532,6 +1535,7 @@ namespace MajMusic.Presentation.ViewModels
 
             RefreshPlaylistManagementCommands();
             RefreshEndpointCardCommands();
+            RefreshSongSocialCommands();
         }
 
         /// <summary>Updates a property and notifies the view.</summary>

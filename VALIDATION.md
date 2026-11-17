@@ -219,3 +219,19 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- independ
 最终运行 `independent-media-storage`、`storage`、`directory-sources`、`document-storage`、`directory-ui`、`media-cache-concurrency`、`collection`、`playlist-management` 和 `playlist-mirrors`，九组全部通过。独立存储组另覆盖 SAF 目录内同 SHA 音频跨歌曲复用、持久归属标记，以及未归属旧文档不读不删。歌单互转断言分别核对 Music 的两个身份扩展字段和其余标准字段完整往返。
 
 桌面 Release 编译为 0 警告、0 错误；Android ARM64 发布通过签名、ABI 和 16 KB 对齐检查，最终包位于 `artifacts/android-arm64-20261117-174846-c1384aa5/`，38.87 MiB。本轮未安装或进行 Android 实机验证。上文已记录的 `audio-download-progress` 基线超时不在本轮修复范围。
+
+## 歌曲完整详情与在线互动
+
+2026-11-17，手机歌曲详情增加半屏、全屏两档。点击或轻上滑迷你播放器先打开半屏，继续上拉或点击展开按钮进入全屏；全屏收起返回半屏。桌面右侧增加展开按钮，在原内容区打开完整详情并保留底部播放器。面板以同一进度控制可打断动画，触摸取消回到原档位；评论的滚动与输入不抢占抽屉手势。
+
+完整详情提供歌曲信息、MajNet 点赞与撤销、评论与回复、本人删除、评论点赞，并预留 `ChartPreviewHost`。点赞独立于收藏。请求根据歌曲所属接入点绑定当前会话，Guest 只读，离线不发起请求。评论按页加载，追加时保留既有行与滚动位置；切歌、换账号、关闭详情取消旧请求，迟到结果不替换新歌曲或清空新草稿。
+
+```sh
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- social-network social-presentation song-details-layout mobile-player-gesture mobile-safe-area source-transport auth-boundaries collection-network independent-media-storage
+```
+
+九组全部通过。`social-network` 使用真实工作区与模拟 HTTP 核对路由、JSON、分页、来源身份、本人删除及会话切换；`social-presentation` 故意让旧请求忽略取消，核对旧读写隔离、失败草稿保留与追加评论稳定性。`song-details-layout` 渲染桌面 1100×800、最小窗口 720×540、手机 390×844 和模拟键盘挤压后的 390×420 视口，使用指针操作展开与收起，检查评论操作未被曲库行高裁切、输入区与发送按钮在评论页可见区域内对齐。短视口同时保留回复目标与下一页，确保评论仍可滚动阅读；刷新、播放与加载更多改用顶部图标。合成界面截图位于 `artifacts/social-details/`，已目视核对。
+
+接口按 [MajdataNet 官方前端契约](https://github.com/TeamMajdata/MajdataNet/blob/main/src/types/interact.ts)实现；本轮公共匿名接口探测返回 HTTP 403，未使用玩家账号发表、点赞或删除真实内容，真实服务器的登录互动待用户实测。没有读取 Play 目录或数据库，也没有引入谱面渲染依赖。[谱面预览方案](docs/ChartPreview.md) 记录 MajdataView、Web 分支和 MajSimai 的源码核对及下一步路线。
+
+桌面 Release 编译为 0 警告、0 错误，未覆盖 Debug 输出或操作用户正在运行的播放器。最终 Android ARM64 包位于 `artifacts/android-arm64-20261117-184446-c25b27c6/MajMusic-android-arm64.apk`，38.91 MiB，通过签名、单 ARM64 ABI 与 16 KB 对齐检查；本轮未安装或进行 Android 实机验证。
