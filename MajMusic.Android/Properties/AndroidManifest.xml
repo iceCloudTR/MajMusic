@@ -10,5 +10,6 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <application android:label="MajMusic" android:icon="@drawable/app_icon" android:theme="@style/MajMusicTheme"
-                 android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="false" android:requestLegacyExternalStorage="true" />
+                 android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="false"
+                 android:networkSecurityConfig="@xml/majmusic_network_security" android:requestLegacyExternalStorage="true" />
 </manifest>

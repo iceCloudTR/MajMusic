@@ -3,6 +3,8 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using MajMusic.Android.Preview;
+using MajMusic.Presentation.Views;
 
 namespace MajMusic.Android
 {
@@ -21,6 +23,7 @@ namespace MajMusic.Android
         /// <inheritdoc />
         public override void OnFrameworkInitializationCompleted()
         {
+            ChartPreviewPane.CreateEmbeddedView = static (address, failed) => new AndroidMajViewHost(address, failed);
             _services = new AndroidServices(global::Android.App.Application.Context);
             if (ApplicationLifetime is IActivityApplicationLifetime lifetime)
             {
@@ -28,6 +31,12 @@ namespace MajMusic.Android
             }
 
             base.OnFrameworkInitializationCompleted();
+        }
+
+        /// <summary>Releases a foreground chart preview while leaving music playback services in place.</summary>
+        internal void CloseChartPreview()
+        {
+            _services?.CloseChartPreview();
         }
     }
 }

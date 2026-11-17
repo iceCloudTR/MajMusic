@@ -60,26 +60,24 @@ namespace MajMusic.Tests
             await playback.SetQueueAsync([song, other]);
             await playback.SeekAsync(TimeSpan.FromSeconds(5));
             model.ShowPreviewVideo = false;
-            await model.OpenMajViewAsync(address =>
-            {
-                TestAssert.True(address == workspace.Pending.Address && playback.Snapshot.State == PlaybackState.Paused
-                    && playback.Snapshot.Position == TimeSpan.FromSeconds(5) && playback.Queue.Tracks.SequenceEqual([song, other]),
-                    "Launching MajView must park the original playback and retain the queue and position.");
-                return Task.FromResult(true);
-            });
+            await model.OpenMajViewAsync();
+            TestAssert.True(model.MajViewAddress == workspace.Pending.Address && playback.Snapshot.State == PlaybackState.Paused
+                && playback.Snapshot.Position == TimeSpan.FromSeconds(5) && playback.Queue.Tracks.SequenceEqual([song, other]),
+                "Mounting MajView must park the original playback and retain the queue and position.");
             TestAssert.True(!workspace.IncludeVideo && model.MajViewStatus.Length == 0, "PV selection must apply to that exact preview.");
             await playback.ResumeAsync();
             await workspace.Pending.Closed.Task.WaitAsync(TimeSpan.FromSeconds(3));
-            TestAssert.True(playback.Snapshot.State == PlaybackState.Playing, "Resuming music must close the active preview.");
+            TestAssert.True(playback.Snapshot.State == PlaybackState.Playing && model.MajViewAddress is null,
+                "Resuming music must remove the active preview.");
 
             workspace.Pending = new PreviewSession();
             workspace.Ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var stale = model.OpenMajViewAsync(_ => throw new InvalidOperationException("An obsolete selection must not open."));
+            var stale = model.OpenMajViewAsync();
             model.SelectedTrack = other;
             workspace.Ready.SetResult();
             await stale.WaitAsync(TimeSpan.FromSeconds(3));
-            TestAssert.True(workspace.Pending.Closed.Task.IsCompleted && model.MajViewStatus.Length == 0,
-                "A slow preview completing after selection changes must release its session without launching.");
+            TestAssert.True(workspace.Pending.Closed.Task.IsCompleted && model.MajViewAddress is null && model.MajViewStatus.Length == 0,
+                "A slow preview completing after selection changes must release its session without mounting.");
         }
 
         private sealed class PreviewWorkspace : LibraryExperienceTests.ExperienceWorkspace, IMajViewPreviewHost

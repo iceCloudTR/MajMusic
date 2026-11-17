@@ -41,6 +41,13 @@ namespace MajMusic.Android
             AndroidStorageAccess.Instance.OnActivityPaused(this);
         }
 
+        /// <summary>Stops foreground chart preview playback when this activity is no longer visible.</summary>
+        protected override void OnStop()
+        {
+            (Avalonia.Application.Current as MobileApplication)?.CloseChartPreview();
+            base.OnStop();
+        }
+
         /// <summary>Releases this native host while preserving pending work across configuration recreation.</summary>
         protected override void OnDestroy()
         {

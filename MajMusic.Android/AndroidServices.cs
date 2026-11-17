@@ -92,6 +92,12 @@ namespace MajMusic.Android
             return view;
         }
 
+        /// <summary>Releases the active embedded chart preview independently of the music transport.</summary>
+        internal void CloseChartPreview()
+        {
+            _viewModel.CloseMajView();
+        }
+
         /// <summary>Connects the single page-owned safe area after the real mobile viewport and native rendering scale are available.</summary>
         /// <param name="sender">The current activity's shared root view.</param>
         /// <param name="args">The completed layout notification.</param>

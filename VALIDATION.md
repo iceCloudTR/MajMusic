@@ -316,3 +316,9 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- mobile-p
 从页内表单应用设置后，使用 MajView 的原生菜单读回音符流速 8、触摸流速 9.5、打击音 −24 dB。同一难度重新加载后 PV 仍显示，关闭后本机预览地址失效。报告和截图在 `artifacts/majview-preview-fixture/browser/session/`、`fresh-views/` 和 `settings-final/`。
 
 14 组回归通过，覆盖官方构建的校验和离线复用、谱面与 PV 按需读取、旧接入点兼容、账号隔离、本机预览的 Range 请求与关闭、预览前暂停主播放器及保留队列、选曲中断、详情布局。桌面 Release 编译为 0 警告、0 错误；安卓只做 ARM64 包构建与产物校验。
+
+## MajView 内嵌谱面框
+
+Windows 原生窗口使用实际的 MajMusic 详情、WebView2 和生成的谱面、音乐、PV。点击详情框内的加载按钮后，预览控件的全部边界都在中央框内；调整窗口尺寸后，控件随框扩展，画面保持正方形，未出现页面滚动条。实测 7 → 5 → 2 → 7 切换、音乐与打击音、PV 静音及流速、音效设置。点击预览关闭按钮或切回评论后，内嵌视图移除，本机预览会话结束。未启动外部浏览器。
+
+7 组回归通过，覆盖谱面资源、运行时、预览会话、详情布局、切页动效和手机播放器。Windows x64 便携包和 Android ARM64 包已生成；Android 签名、ABI 与 16 KB 对齐校验通过，未做真机测试。

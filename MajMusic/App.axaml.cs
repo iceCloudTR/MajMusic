@@ -6,8 +6,10 @@ using MajMusic.Core.Playback;
 using MajMusic.Audio.Desktop;
 using MajMusic.Infrastructure.Application;
 using MajMusic.Infrastructure.Metadata;
+using MajMusic.Preview;
 using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
+using MajMusic.Presentation.Views;
 
 #nullable enable
 
@@ -28,6 +30,7 @@ namespace MajMusic
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
                 var workspace = new MusicWorkspace();
+                ChartPreviewPane.CreateEmbeddedView = (address, fail) => new DesktopMajView(address, fail, workspace.DataDirectory);
                 try
                 {
                     var preferences = workspace.LoadSettingsAsync().GetAwaiter().GetResult();

@@ -88,7 +88,7 @@ function loadLevel() {
     instance.SendMessage("HandleJSMessages", "ReceiveMessage", request);
 }
 
-async function closePreview(notify) {
+async function closePreview() {
     if (stopped) return;
     stopped = true;
     clearInterval(heartbeat);
@@ -99,19 +99,15 @@ async function closePreview(notify) {
     if (instance) {
         try { await instance.Quit(); } catch { }
     }
-    if (notify) {
-        try { await fetch("closed", { method: "POST", keepalive: true }); } catch { }
-    }
 }
 
-document.querySelector("#close").addEventListener("click", () => void closePreview(true));
 difficulty.addEventListener("change", () => {
     if (!instance || stopped) return;
     reloadLevel();
 });
 window.addEventListener("pagehide", () => {
     if (!changingLevel) navigator.sendBeacon("closed");
-    void closePreview(false);
+    void closePreview();
 });
 document.querySelector("#options").addEventListener("toggle", event => {
     if (event.currentTarget.open) fillSettings();
@@ -121,7 +117,6 @@ async function start() {
     const response = await fetch("song.json");
     if (!response.ok) throw new Error("谱面已关闭");
     song = await response.json();
-    document.querySelector("#title").textContent = song.title;
     const names = ["Easy", "Basic", "Advanced", "Expert", "Master", "Re:Master", "UTAGE"];
     for (const item of song.difficulties) {
         const option = document.createElement("option");
@@ -163,7 +158,7 @@ async function start() {
             const alive = await fetch("alive", { cache: "no-store" });
             if (alive.ok) return;
         } catch { }
-        void closePreview(false);
+        void closePreview();
     }, 500);
 }
 

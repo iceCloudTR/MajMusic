@@ -4,12 +4,22 @@
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              x:Class="MajMusic.Presentation.Views.ChartPreviewPane"
              x:DataType="vm:MainViewModel">
-    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Margin="16">
-        <TextBlock Text="MajView" FontWeight="SemiBold" FontSize="20" HorizontalAlignment="Center" />
-        <arc:Checkbox Content="背景 PV" IsChecked="{Binding ShowPreviewVideo, Mode=TwoWay}" HorizontalAlignment="Center" />
-        <arc:Button x:Name="OpenMajViewButton" Content="{Binding MajViewOpenLabel}" IsEnabled="{Binding CanOpenMajView}"
-                    Click="OnOpenMajView" MinHeight="44" HorizontalAlignment="Stretch" />
-        <TextBlock Text="{Binding MajViewStatus}" Classes="detailMuted" TextWrapping="Wrap"
-                   TextAlignment="Center" MaxWidth="300" />
-    </StackPanel>
+    <Grid ClipToBounds="True">
+        <StackPanel x:Name="PreviewSetup" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="8">
+            <arc:Checkbox Content="背景 PV" IsChecked="{Binding ShowPreviewVideo, Mode=TwoWay}" HorizontalAlignment="Center" />
+            <arc:Button x:Name="OpenMajViewButton" Content="{Binding MajViewOpenLabel}" IsEnabled="{Binding CanOpenMajView}"
+                        Click="OnOpenMajView" MinHeight="40" HorizontalAlignment="Stretch" />
+            <TextBlock Text="{Binding MajViewStatus}" Classes="detailMuted" TextWrapping="Wrap"
+                       TextAlignment="Center" MaxWidth="300" />
+        </StackPanel>
+        <Grid x:Name="InlinePreview" RowDefinitions="40,*" IsVisible="False" ClipToBounds="True">
+            <Grid ColumnDefinitions="*,Auto" Margin="8,0,6,0">
+                <TextBlock Text="{Binding SelectedTitle}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <arc:Button Grid.Column="1" x:Name="CloseMajViewButton" Width="40" MinWidth="40" Height="36" MinHeight="36"
+                            Classes="icon" Content="×" Click="OnCloseMajView" ToolTip.Tip="关闭预览" AutomationProperties.Name="关闭预览" />
+            </Grid>
+            <ContentControl Grid.Row="1" x:Name="PreviewSurface" Margin="3,0,3,3"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" ClipToBounds="True" />
+        </Grid>
+    </Grid>
 </UserControl>
