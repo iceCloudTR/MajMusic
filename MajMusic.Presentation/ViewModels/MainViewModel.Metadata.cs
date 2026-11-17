@@ -150,7 +150,7 @@ namespace MajMusic.Presentation.ViewModels
                         var updated = track;
                         if (_metadata is not null)
                         {
-                            updated = await _metadata.EnrichAsync(updated, cancellation.Token);
+                            updated = await EnrichLocalMetadataAsync(updated, cancellation.Token);
                         }
                         cancellation.Token.ThrowIfCancellationRequested();
                         updated = PreferDownloadedMetadata(updated);
@@ -226,6 +226,22 @@ namespace MajMusic.Presentation.ViewModels
 
                 cancellation.Dispose();
             }
+        }
+
+        /// <summary>Validates online and archived media ownership before a local metadata provider can open its path.</summary>
+        /// <param name="track">The captured source revision or completed-download candidate.</param>
+        /// <param name="cancellationToken">Cancels validation and parsing with the original page, card or download lifecycle.</param>
+        /// <returns>The owned or sanitized descriptor with any available local metadata; explicit imports retain their original source paths.</returns>
+        private async Task<MusicTrack> EnrichLocalMetadataAsync(MusicTrack track, CancellationToken cancellationToken)
+        {
+            var candidate = track;
+            if ((track.RemoteId is not null || track.SourceId == "local/archive") && _workspace is ILocalTrackMediaResolver resolver)
+            {
+                candidate = await resolver.ResolveLocalTrackAsync(track, cancellationToken).ConfigureAwait(false);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return _metadata is { } provider
+                ? await provider.EnrichAsync(candidate, cancellationToken).ConfigureAwait(false) : candidate;
         }
 
         /// <summary>Replaces matching visible metadata while preserving selected and queued entry identities.</summary>

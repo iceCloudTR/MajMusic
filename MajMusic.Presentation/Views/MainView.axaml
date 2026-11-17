@@ -171,14 +171,11 @@
             <TabItem x:Name="DirectoriesTab" Header="目录">
                 <Grid Margin="0" RowDefinitions="Auto,38,*,Auto" RowSpacing="8">
                     <Border Classes="card" Padding="10">
-                        <Grid ColumnDefinitions="Auto,150,*,32,Auto" ColumnSpacing="6">
-                            <TextBlock Text="媒体储存" FontWeight="SemiBold" VerticalAlignment="Center" />
-                            <arc:Select x:Name="MediaStorageModePicker" Grid.Column="1" ItemsSource="{Binding MediaStorageModes}"
-                                        TextSelector="{x:Static converters:MusicSelectLabels.MediaStorageMode}"
-                                        SelectedItem="{Binding SelectedMediaStorageMode, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" />
-                            <arc:Input x:Name="MediaStoragePathBox" Grid.Column="2" Text="{Binding MediaStoragePath, Mode=TwoWay}" Placeholder="媒体目录" IsEnabled="{Binding IsIdle}" />
-                            <arc:Button Grid.Column="3" Classes="icon" Content="…" Click="OnMediaStorageBrowseClicked" IsEnabled="{Binding IsIdle}" ToolTip.Tip="选择媒体目录" />
-                            <arc:Button Grid.Column="4" Content="保存读取" Command="{Binding SaveMediaStorageCommand}" />
+                        <Grid ColumnDefinitions="Auto,*,32,Auto" ColumnSpacing="6">
+                            <TextBlock Text="媒体目录" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <arc:Input x:Name="MediaStoragePathBox" Grid.Column="1" Text="{Binding MediaStoragePath, Mode=TwoWay}" Placeholder="媒体目录" IsEnabled="{Binding IsIdle}" />
+                            <arc:Button Grid.Column="2" Classes="icon" Content="…" Click="OnMediaStorageBrowseClicked" IsEnabled="{Binding IsIdle}" ToolTip.Tip="选择媒体目录" />
+                            <arc:Button Grid.Column="3" Content="应用" Command="{Binding SaveMediaStorageCommand}" />
                         </Grid>
                     </Border>
                     <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto,32,32" ColumnSpacing="6">

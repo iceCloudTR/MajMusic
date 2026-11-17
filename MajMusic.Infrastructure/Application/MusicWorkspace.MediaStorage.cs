@@ -5,506 +5,269 @@ using System.Text;
 using MajMusic.Core.Abstractions;
 using MajMusic.Core.Models;
 using MajMusic.Infrastructure.Downloads;
-using MajMusic.Infrastructure.Shared;
 
 namespace MajMusic.Infrastructure.Application
 {
-    /// <summary>Reuses MajdataPlay's public media hierarchy while retaining MajMusic's own settings and indexes.</summary>
-    public sealed partial class MusicWorkspace : IMajdataPlayWorkspace
+    /// <summary>Owns Music's selected media directory without reading another application's storage.</summary>
+    public sealed partial class MusicWorkspace
     {
-        /// <summary>Accesses only an explicitly granted writable document tree.</summary>
-        private readonly ISharedStorageAccess? _sharedStorageAccess;
-        /// <summary>Keeps caches belonging to previously selected roots alive until workspace shutdown.</summary>
+        /// <summary>Accesses only a directory explicitly authorized for Music media.</summary>
+        private readonly IMediaStorageAccess? _mediaStorageAccess;
+        /// <summary>Retains previous native cache owners until active operations have drained.</summary>
         private readonly Dictionary<string, MediaCache> _mediaStorageCaches = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-        /// <summary>Serializes explicit rescans without blocking unrelated media resolution.</summary>
-        private readonly SemaphoreSlim _mediaStorageRefresh = new(1, 1);
-        /// <summary>Orders shared-file publication against explicit deletion of completed objects.</summary>
-        private readonly SemaphoreSlim _sharedMediaWrites = new(1, 1);
+        /// <summary>Orders managed document publication against explicit file deletion.</summary>
+        private readonly SemaphoreSlim _mediaWrites = new(1, 1);
 
-        /// <inheritdoc />
-        public string DefaultMajdataPlayDirectory => OperatingSystem.IsAndroid()
-            ? "/storage/emulated/0/Documents/MajdataPlay"
-            : OperatingSystem.IsWindows()
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Majdata Hub", "game")
-                : DataDirectory;
-
-        /// <summary>Gets the selected independent or shared root without moving essential application data.</summary>
-        /// <returns>The ordinary filesystem path or explicitly granted document-tree URI.</returns>
+        /// <summary>Gets the selected independent root or Music's private default.</summary>
         private string GetMediaStorageRoot()
         {
             lock (_stateGate)
             {
-                return _settings.UseMajdataPlayStorage
-                    ? _settings.MajdataPlayDirectory ?? DefaultMajdataPlayDirectory
-                    : _settings.MediaStorageDirectory ?? DataDirectory;
+                return _settings.MediaStorageDirectory ?? DataDirectory;
             }
         }
 
-        /// <summary>Validates a new selection before persisting a location which the host cannot use.</summary>
-        /// <param name="settings">The requested independent or shared media selection.</param>
-        /// <exception cref="InvalidDataException">A Windows system directory was selected.</exception>
+        /// <summary>Rejects invalid destinations before saving a media-directory selection.</summary>
+        /// <param name="settings">The requested independent media preferences.</param>
         private void ValidateMediaStorageLocation(AppSettings settings)
         {
-            var root = settings.UseMajdataPlayStorage
-                ? settings.MajdataPlayDirectory ?? DefaultMajdataPlayDirectory
-                : settings.MediaStorageDirectory ?? DataDirectory;
+            var root = settings.MediaStorageDirectory ?? DataDirectory;
             if (DocumentReference.IsContentUri(root))
             {
                 return;
             }
             var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+            if (OperatingSystem.IsAndroid() && !Directory.Exists(normalized))
+            {
+                throw new InvalidDataException("媒体目录不可访问，请重新选择目录并授予访问权限。");
+            }
             if (OperatingSystem.IsWindows())
             {
                 var system = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-                if (normalized.Equals(system, StringComparison.OrdinalIgnoreCase)
-                    || normalized.StartsWith(system + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                if (normalized.Equals(system, StringComparison.OrdinalIgnoreCase) || normalized.StartsWith(system + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new InvalidDataException("请选择应用或游戏的储存目录。");
+                    throw new InvalidDataException("请选择应用的媒体储存目录。");
                 }
             }
         }
 
-        /// <summary>Gets an instance whose immutable objects belong to the selected filesystem root.</summary>
-        /// <returns>The cache for the selected root, or the private transfer staging cache for document trees.</returns>
+        /// <summary>Gets the selected native cache or private staging cache used by a document provider.</summary>
         private MediaCache GetCurrentMediaCache()
         {
             var root = GetMediaStorageRoot();
-            if (DocumentReference.IsContentUri(root))
+            if (DocumentReference.IsContentUri(root) || SameMediaDirectory(root, DataDirectory))
             {
                 return _defaultCache;
             }
             root = Path.GetFullPath(root);
-            if (string.Equals(root, DataDirectory, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
-            {
-                return _defaultCache;
-            }
             lock (_stateGate)
             {
                 if (!_mediaStorageCaches.TryGetValue(root, out var cache))
                 {
                     var key = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(root)));
                     cache = new MediaCache(Path.Combine(root, "Cache"), _resourceClient, _networkPolicy,
-                        indexDirectory: Path.Combine(DataDirectory, "Runtime", "MajMusicCache", key));
+                        indexDirectory: Path.Combine(DataDirectory, "Runtime", "MajMusicCache", key), requireIndexOwnership: true);
                     _mediaStorageCaches.Add(root, cache);
                 }
                 return cache;
             }
         }
 
-        /// <inheritdoc />
-        public async Task<LocalLibraryScanResult> RefreshMajdataPlayAsync(CancellationToken cancellationToken = default)
+        /// <summary>Builds Music's immutable relative media filename from a validated digest.</summary>
+        /// <param name="hash">The complete SHA-256 digest.</param>
+        private static string MediaObjectRelativePath(string hash)
         {
-            await _mediaStorageRefresh.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
+            if (hash.Length != 64 || !hash.All(Uri.IsHexDigit))
             {
-                var root = GetMediaStorageRoot();
-                var tracks = new List<MusicTrack>();
-                var issues = new List<LocalLibraryScanIssue>();
-                var charts = await FindStorageItemAsync(root, "MaiCharts", true, cancellationToken).ConfigureAwait(false);
-                if (charts is not null)
-                {
-                    var scanned = await IndexDirectoryAsync(charts, cancellationToken).ConfigureAwait(false);
-                    tracks.AddRange(scanned.Tracks);
-                    issues.AddRange(scanned.Issues);
-                    var collections = new MajCollectionExchange(this, _documentStorage);
-                    await collections.ImportIndexDirectoryAsync(charts, true, cancellationToken).ConfigureAwait(false);
-                }
-                if (!DocumentReference.IsContentUri(root) && Directory.Exists(root))
-                {
-                    EndpointConfiguration[] endpoints;
-                    lock (_stateGate)
-                    {
-                        endpoints = _settings.Endpoints.ToArray();
-                    }
-                    var online = await new MajdataPlayCatalog(root).ReadAsync(endpoints, cancellationToken).ConfigureAwait(false);
-                    if (online.Count > 0)
-                    {
-                        tracks.AddRange(await MergeOnlineTracksAsync(online, cancellationToken).ConfigureAwait(false));
-                    }
-                    var legacy = Directory.Exists(Path.Combine(root, "Cache", "Net"));
-                    var catalog = new MajdataPlayCatalog(root);
-                    var attachments = new List<MusicTrack>();
-                    foreach (var track in await _library.SearchAsync(null, cancellationToken).ConfigureAwait(false))
-                    {
-                        var endpoint = endpoints.FirstOrDefault(item => item.Id == track.EndpointId);
-                        if (track.RemoteId is null || endpoint is null || !legacy && track.Audio.Sha256 is null && track.Cover?.Sha256 is null)
-                        {
-                            continue;
-                        }
-                        var attached = await catalog.AttachResourcesAsync(track, endpoint, cancellationToken).ConfigureAwait(false);
-                        if (attached.Audio.LocalPath != track.Audio.LocalPath || attached.Cover?.LocalPath != track.Cover?.LocalPath)
-                        {
-                            attachments.Add(attached);
-                        }
-                    }
-                    if (attachments.Count > 0)
-                    {
-                        await _metadataGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-                        try
-                        {
-                            await _library.UpsertTracksAsync(attachments, cancellationToken).ConfigureAwait(false);
-                        }
-                        finally
-                        {
-                            _metadataGate.Release();
-                        }
-                    }
-                }
-                await MirrorAllPortablePlaylistsAsync(cancellationToken).ConfigureAwait(false);
-                return new LocalLibraryScanResult { RootDirectory = root, Tracks = tracks, Issues = issues };
+                throw new InvalidDataException("A media object requires a SHA-256 digest.");
             }
-            finally
-            {
-                _mediaStorageRefresh.Release();
-            }
+            var normalized = hash.ToLowerInvariant();
+            return Path.Combine("Cache", "Objects", normalized[..2], normalized);
         }
 
-        /// <summary>Finds only an exact child of the configured root, retaining document-provider references.</summary>
-        /// <param name="root">The chosen root.</param>
-        /// <param name="relativePath">A trusted application-relative child path.</param>
-        /// <param name="directory">Whether the child is a directory.</param>
-        /// <param name="cancellationToken">Cancels provider access.</param>
-        /// <returns>The original path or document URI when available.</returns>
-        private Task<string?> FindStorageItemAsync(string root, string relativePath, bool directory, CancellationToken cancellationToken)
+        /// <summary>Resolves only a document previously published by Music into its currently selected root.</summary>
+        /// <param name="track">The source-owned music entry.</param>
+        /// <param name="cover">Whether the resource is artwork.</param>
+        /// <param name="token">Cancels document validation.</param>
+        private async Task<string?> TryResolveMediaDocumentAsync(MusicTrack track, bool cover, CancellationToken token)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (DocumentReference.IsContentUri(root))
-            {
-                return _sharedStorageAccess?.FindAsync(root, relativePath, directory, cancellationToken)
-                    ?? Task.FromResult<string?>(null);
-            }
-            var path = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
-            return Task.FromResult<string?>((directory ? Directory.Exists(path) : File.Exists(path)) ? path : null);
-        }
-
-        /// <summary>Reuses only content whose bytes agree with the source digest; online identity remains unchanged.</summary>
-        /// <param name="track">The original online descriptor.</param>
-        /// <param name="cover">Whether to resolve artwork.</param>
-        /// <param name="cancellationToken">Cancels hash validation.</param>
-        /// <returns>The original matching file or document URI, or null on a miss.</returns>
-        private async Task<string?> TryResolveSharedMediaAsync(MusicTrack track, bool cover, CancellationToken cancellationToken)
-        {
-            if (track.RemoteId is null)
+            var resource = cover ? track.Cover : track.Audio;
+            if (resource is null)
             {
                 return null;
             }
-            var resource = cover ? track.Cover : track.Audio;
-            var root = GetMediaStorageRoot();
-            if (resource?.Sha256 is { Length: 64 } hash && hash.All(Uri.IsHexDigit))
+            var reference = resource.LocalPath;
+            if (!DocumentReference.IsContentUri(reference) && resource.Sha256 is { Length: 64 } hash && hash.All(Uri.IsHexDigit))
             {
-                var path = await FindStorageItemAsync(root, MajdataPlayCatalog.GetObjectRelativePath(hash), false, cancellationToken).ConfigureAwait(false);
-                if (path is not null && await MatchesSharedFileAsync(path, hash, resource.Length, cancellationToken).ConfigureAwait(false))
-                {
-                    return path;
-                }
+                reference = await FindOwnedDocumentAsync(hash, token).ConfigureAwait(false);
+                resource = resource with { LocalPath = reference, ManagedStorageRoot = reference is null ? null : GetMediaStorageRoot() };
             }
-            if (!DocumentReference.IsContentUri(root) && Directory.Exists(root))
+            if (reference is null || !DocumentReference.IsContentUri(reference))
             {
-                EndpointConfiguration? endpoint;
-                lock (_stateGate)
-                {
-                    endpoint = _settings.Endpoints.FirstOrDefault(item => item.Id == track.EndpointId);
-                }
-                if (endpoint is not null)
-                {
-                    var attached = await new MajdataPlayCatalog(root).AttachResourcesAsync(track, endpoint, cancellationToken).ConfigureAwait(false);
-                    var candidate = cover ? attached.Cover : attached.Audio;
-                    if (candidate?.LocalPath is { } path && File.Exists(path) && candidate.Sha256 is { } digest
-                        && await MatchesSharedFileAsync(path, digest, candidate.Length, cancellationToken).ConfigureAwait(false))
-                    {
-                        return path;
-                    }
-                }
+                return null;
             }
-            return null;
+            var safe = await FilterOwnedResourceAsync(resource, token).ConfigureAwait(false);
+            return safe.LocalPath is not null && await MatchesMediaFileAsync(reference, resource.Sha256!, resource.Length, token).ConfigureAwait(false) ? reference : null;
         }
 
-        /// <summary>Publishes a completed private transfer to an authorized shared tree using Maj's immutable object name.</summary>
-        /// <param name="track">The owning online entry.</param>
-        /// <param name="cover">Whether the completed file is artwork.</param>
-        /// <param name="path">The validated completed filesystem object.</param>
-        /// <param name="cancellationToken">Cancels hashing and publication.</param>
-        /// <param name="mediaVersion">The original removal generation, when resolution began before this publication.</param>
-        /// <returns>The shared document URI, or the original filesystem path.</returns>
-        private async Task<string> PublishSharedMediaAsync(MusicTrack track, bool cover, string path, CancellationToken cancellationToken, long? mediaVersion = null)
-        {
-            var version = mediaVersion ?? LocalMediaVersion(track);
-            await _sharedMediaWrites.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                EnsureLocalMediaVersion(track, version);
-                return await PublishSharedMediaCoreAsync(track, cover, path, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                _sharedMediaWrites.Release();
-            }
-        }
-
-        /// <summary>Publishes an immutable object while shared publication and removal are exclusively owned.</summary>
-        /// <param name="track">The source-scoped owner.</param>
-        /// <param name="cover">Whether this is artwork.</param>
-        /// <param name="path">The complete validated source file.</param>
-        /// <param name="cancellationToken">Cancels the transfer and alias cleanup.</param>
-        /// <returns>The completed original file or shared document reference.</returns>
-        private async Task<string> PublishSharedMediaCoreAsync(MusicTrack track, bool cover, string path, CancellationToken cancellationToken)
+        /// <summary>Publishes a completed Music transfer into its selected document provider.</summary>
+        /// <param name="track">The captured source revision.</param>
+        /// <param name="cover">Whether the resource is artwork.</param>
+        /// <param name="path">The already validated completed Music file.</param>
+        /// <param name="token">Cancels provider I/O.</param>
+        /// <param name="mediaVersion">Rejects a publication superseded by explicit deletion.</param>
+        private async Task<string> PublishMediaAsync(MusicTrack track, bool cover, string path, CancellationToken token, long? mediaVersion = null)
         {
             var root = GetMediaStorageRoot();
-            if (track.RemoteId is null || DocumentReference.IsContentUri(path))
+            if (!RequiresManagedMedia(track) || !DocumentReference.IsContentUri(root) || DocumentReference.IsContentUri(path))
             {
                 return path;
             }
-            if (!DocumentReference.IsContentUri(root))
-            {
-                return await PublishNativeMediaAsync(root, path, cancellationToken).ConfigureAwait(false);
-            }
-            var storage = _sharedStorageAccess ?? throw new NotSupportedException("请重新选择媒体储存目录并授予读写权限。");
-            string hash;
-            long length;
-            await using (var stream = File.OpenRead(path))
-            {
-                length = stream.Length;
-                hash = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
-            }
-            var relative = MajdataPlayCatalog.GetObjectRelativePath(hash);
-            var existing = await storage.FindAsync(root, relative, false, cancellationToken).ConfigureAwait(false);
-            if (existing is not null)
-            {
-                if (!await MatchesSharedFileAsync(existing, hash, length, cancellationToken).ConfigureAwait(false))
-                {
-                    throw new InvalidDataException("共享目录中的文件校验失败，请删除该本地文件后重试。");
-                }
-                return existing;
-            }
-            var published = await storage.PublishFileAsync(root, relative, path, cancellationToken).ConfigureAwait(false);
-            return published;
-        }
-
-        /// <summary>Removes the private transfer staging copy after its complete bytes are committed to a granted shared tree.</summary>
-        /// <param name="track">The source-scoped owner of this completed transfer.</param>
-        /// <param name="cover">Whether its resource is artwork.</param>
-        /// <param name="path">The private completed staging object.</param>
-        /// <param name="hash">Its verified SHA-256.</param>
-        /// <param name="cancellationToken">Cancels alias cleanup.</param>
-        /// <returns>A task representing staging cleanup without touching imported source files.</returns>
-        private async Task ReleasePrivateTransferAsync(MusicTrack track, bool cover, string path, string? hash, CancellationToken cancellationToken)
-        {
-            if (!_defaultCache.IsManagedPath(path))
-            {
-                return;
-            }
-            var descriptor = (cover ? track.Cover : track.Audio)! with { LocalPath = path, Sha256 = hash ?? Path.GetFileName(path) };
+            await _mediaWrites.WaitAsync(token).ConfigureAwait(false);
             try
             {
-                await _defaultCache.RemoveResourcesAsync([ScopeResourceForCache(track, descriptor)], new HashSet<string>(), cancellationToken).ConfigureAwait(false);
-            }
-            catch (IOException)
-            {
-                // An existing reader can finish with the old private copy; the shared file and metadata are already committed.
-            }
-        }
-
-        /// <summary>Moves managed playback into the selected native hierarchy using verified immutable publication.</summary>
-        /// <param name="root">The selected native media root.</param>
-        /// <param name="source">The already validated completed file.</param>
-        /// <param name="cancellationToken">Cancels hashing and copying before publication.</param>
-        /// <returns>The reusable original legacy file or the selected root's canonical object.</returns>
-        private async Task<string> PublishNativeMediaAsync(string root, string source, CancellationToken cancellationToken)
-        {
-            var normalizedRoot = Path.GetFullPath(root);
-            var absolute = Path.GetFullPath(source);
-            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            var relativeSource = Path.GetRelativePath(normalizedRoot, absolute).Replace('\\', '/');
-            if (relativeSource.StartsWith("Cache/Objects/", StringComparison.OrdinalIgnoreCase) || relativeSource.StartsWith("Cache/Net/", comparison))
-            {
-                return absolute;
-            }
-            string hash;
-            long length;
-            await using (var input = File.OpenRead(absolute))
-            {
-                length = input.Length;
-                hash = Convert.ToHexStringLower(await SHA256.HashDataAsync(input, cancellationToken).ConfigureAwait(false));
-            }
-            var destination = Path.Combine(normalizedRoot, MajdataPlayCatalog.GetObjectRelativePath(hash));
-            if (File.Exists(destination))
-            {
-                if (!await MatchesSharedFileAsync(destination, hash, length, cancellationToken).ConfigureAwait(false))
+                if (mediaVersion is { } version)
                 {
-                    throw new InvalidDataException("媒体目录中的本地文件校验失败。");
+                    EnsureLocalMediaVersion(track, version);
                 }
-                return destination;
-            }
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            var temporary = destination + "." + Guid.NewGuid().ToString("N") + ".partial";
-            try
-            {
-                await using (var input = File.OpenRead(absolute))
-                await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous))
+                var access = _mediaStorageAccess ?? throw new NotSupportedException("请重新选择媒体目录并授予读写权限。");
+                await using var stream = File.OpenRead(path);
+                var length = stream.Length;
+                var hash = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, token).ConfigureAwait(false));
+                var relative = MediaObjectRelativePath(hash);
+                var existing = await access.FindAsync(root, relative, false, token).ConfigureAwait(false);
+                if (existing is not null)
                 {
-                    await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-                    await output.FlushAsync(cancellationToken).ConfigureAwait(false);
-                }
-                cancellationToken.ThrowIfCancellationRequested();
-                try
-                {
-                    File.Move(temporary, destination);
-                }
-                catch (IOException) when (File.Exists(destination))
-                {
-                    if (!await MatchesSharedFileAsync(destination, hash, length, cancellationToken).ConfigureAwait(false))
+                    // An old, unclaimed document must not silently become managed media.
+                    var descriptor = cover ? track.Cover : track.Audio;
+                    var owned = descriptor?.ManagedStorageRoot == root && descriptor.LocalPath == existing
+                        && string.Equals(descriptor.Sha256, hash, StringComparison.OrdinalIgnoreCase);
+                    if (!owned)
                     {
-                        throw;
+                        owned = await FindOwnedDocumentAsync(hash, token).ConfigureAwait(false) == existing;
                     }
+                    if (!owned || !await MatchesMediaFileAsync(existing, hash, length, token).ConfigureAwait(false))
+                    {
+                        throw new IOException("媒体目录存在同名文件，请选择空的 Music 媒体目录。");
+                    }
+                    return existing;
                 }
-                return destination;
+                return await access.PublishFileAsync(root, relative, path, token).ConfigureAwait(false);
             }
             finally
             {
-                File.Delete(temporary);
+                _mediaWrites.Release();
             }
         }
 
-        /// <summary>Deletes verified shared objects and compatible legacy Net files while excluding every MaiCharts source.</summary>
-        /// <param name="track">The captured online owner.</param>
-        /// <param name="protectedHashes">Objects still referenced by other music or game entries.</param>
-        /// <param name="cancellationToken">Cancels validation and provider access.</param>
-        /// <returns>Detached audio, cover and chart flags plus the number of removed physical files.</returns>
-        private async Task<(bool[] Removed, int Deleted)> RemoveSharedMediaAsync(MusicTrack track, IReadOnlySet<string> protectedHashes, CancellationToken cancellationToken)
-        {
-            await _sharedMediaWrites.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                return await RemoveSharedMediaCoreAsync(track, protectedHashes, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                _sharedMediaWrites.Release();
-            }
-        }
-
-        /// <summary>Removes only verified owned resources while holding the shared-publication gate.</summary>
-        /// <param name="track">The captured online owner.</param>
-        /// <param name="protectedHashes">The complete protected public-resource digest set.</param>
-        /// <param name="cancellationToken">Cancels provider reads and deletion.</param>
-        /// <returns>Per-resource removal flags and the physical file count.</returns>
-        private async Task<(bool[] Removed, int Deleted)> RemoveSharedMediaCoreAsync(MusicTrack track, IReadOnlySet<string> protectedHashes, CancellationToken cancellationToken)
+        /// <summary>Finds a document claimed by Music's own library in the selected media root.</summary>
+        /// <param name="hash">The validated content identity.</param>
+        /// <param name="token">Cancels the private library lookup and document traversal.</param>
+        /// <returns>The claimed document reference, or null when Music has no ownership record.</returns>
+        private async Task<string?> FindOwnedDocumentAsync(string hash, CancellationToken token)
         {
             var root = GetMediaStorageRoot();
-            var descriptors = new[] { track.Audio, track.Cover, track.Chart };
-            var removed = new bool[3];
-            var deleted = 0;
-            for (var index = 0; index < descriptors.Length; index++)
+            if (!DocumentReference.IsContentUri(root) || _mediaStorageAccess is not { } access)
             {
-                var resource = descriptors[index];
-                if (resource?.Sha256 is not { Length: 64 } hash || !hash.All(Uri.IsHexDigit))
+                return null;
+            }
+            var library = await _library.SearchAsync(null, token).ConfigureAwait(false);
+            var claimed = library.Where(RequiresManagedMedia).SelectMany(item => new[] { item.Audio, item.Cover }).OfType<MediaResource>()
+                .Where(item => item.ManagedStorageRoot == root && item.LocalPath is not null
+                    && string.Equals(item.Sha256, hash, StringComparison.OrdinalIgnoreCase))
+                .Select(item => item.LocalPath).ToHashSet(StringComparer.Ordinal);
+            if (claimed.Count == 0)
+            {
+                return null;
+            }
+            var found = await access.FindAsync(root, MediaObjectRelativePath(hash), false, token).ConfigureAwait(false);
+            return found is not null && claimed.Contains(found) ? found : null;
+        }
+
+        /// <summary>Removes only Music-published documents whose content is no longer referenced by another Music entry.</summary>
+        /// <param name="track">The current source-owned entry.</param>
+        /// <param name="protectedHashes">Content still used by other Music entries.</param>
+        /// <param name="token">Cancels provider access.</param>
+        private async Task<(bool[] Removed, int Deleted)> RemoveMediaDocumentsAsync(MusicTrack track, IReadOnlySet<string> protectedHashes, CancellationToken token)
+        {
+            var resources = new[] { track.Audio, track.Cover };
+            var removed = new bool[2];
+            var deleted = 0;
+            if (!DocumentReference.IsContentUri(GetMediaStorageRoot()) || _mediaStorageAccess is null)
+            {
+                return (removed, deleted);
+            }
+            await _mediaWrites.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                for (var index = 0; index < resources.Length; index++)
                 {
-                    continue;
-                }
-                if (protectedHashes.Contains(hash))
-                {
-                    continue;
-                }
-                var relative = MajdataPlayCatalog.GetObjectRelativePath(hash);
-                var reference = await FindStorageItemAsync(root, relative, false, cancellationToken).ConfigureAwait(false);
-                if (reference is null && !DocumentReference.IsContentUri(root) && resource.LocalPath is { } legacy && File.Exists(legacy))
-                {
-                    var candidate = Path.GetRelativePath(Path.GetFullPath(root), Path.GetFullPath(legacy)).Replace('\\', '/');
-                    if (candidate.StartsWith("Cache/Net/", StringComparison.Ordinal)
-                        && !candidate.Split('/').Any(segment => segment is "." or "..")
-                        && Path.GetFileName(candidate) is "track.mp3" or "track.ogg" or "track.opus" or "track.aac" or "track.wav" or "bg.jpg" or "bg.png" or "bg_fullSize.jpg" or "maidata.txt")
+                    var resource = resources[index];
+                    if (resource?.Sha256 is not { } hash || resource.LocalPath is not { } reference || !DocumentReference.IsContentUri(reference))
                     {
-                        reference = legacy;
+                        continue;
                     }
-                }
-                if (reference is null || !await MatchesSharedFileAsync(reference, hash, resource.Length, cancellationToken).ConfigureAwait(false))
-                {
-                    continue;
-                }
-                if (DocumentReference.IsContentUri(root))
-                {
-                    await (_sharedStorageAccess ?? throw new NotSupportedException("共享储存不可用。"))
-                        .DeleteFileAsync(root, relative, cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    File.Delete(reference);
-                    if (reference.Replace('\\', '/').Contains("/Cache/Net/", StringComparison.Ordinal))
+                    var owned = await FilterOwnedResourceAsync(resource, token).ConfigureAwait(false);
+                    if (owned.LocalPath is null || !await MatchesMediaFileAsync(reference, hash, resource.Length, token).ConfigureAwait(false))
                     {
-                        File.Delete(reference + ".sha256");
+                        continue;
                     }
+                    removed[index] = true;
+                    if (protectedHashes.Contains(hash))
+                    {
+                        continue;
+                    }
+                    await _mediaStorageAccess.DeleteFileAsync(resource.ManagedStorageRoot!, MediaObjectRelativePath(hash), token).ConfigureAwait(false);
+                    deleted++;
                 }
-                removed[index] = true;
-                deleted++;
+            }
+            finally
+            {
+                _mediaWrites.Release();
             }
             return (removed, deleted);
         }
 
-        /// <summary>Checks the actual bytes of a public immutable object before playback or reuse.</summary>
-        /// <param name="reference">The original file path or granted document URI.</param>
-        /// <param name="hash">The expected SHA-256.</param>
-        /// <param name="length">The expected size when supplied.</param>
-        /// <param name="cancellationToken">Cancels reading.</param>
-        /// <returns>Whether both integrity checks succeed.</returns>
-        private async Task<bool> MatchesSharedFileAsync(string reference, string hash, long? length, CancellationToken cancellationToken)
+        /// <summary>Checks the actual bytes of one owned native or document resource.</summary>
+        private async Task<bool> MatchesMediaFileAsync(string reference, string hash, long? length, CancellationToken token)
         {
-            await using var stream = await OpenMediaReadAsync(reference, cancellationToken).ConfigureAwait(false);
+            await using var stream = await OpenMediaReadAsync(reference, token).ConfigureAwait(false);
             if (length is { } expected && stream.CanSeek && stream.Length != expected)
             {
                 return false;
             }
-            var actual = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
-            return Convert.ToHexStringLower(actual).Equals(hash, StringComparison.OrdinalIgnoreCase);
+            return Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, token).ConfigureAwait(false)).Equals(hash, StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>Opens original media without translating document URIs into local paths.</summary>
-        /// <param name="reference">The original readable file or document.</param>
-        /// <param name="cancellationToken">Cancels provider access.</param>
-        /// <returns>A caller-owned readable stream.</returns>
-        private Task<Stream> OpenMediaReadAsync(string reference, CancellationToken cancellationToken)
+        /// <summary>Opens an authorized document or an already selected ordinary media file.</summary>
+        private Task<Stream> OpenMediaReadAsync(string reference, CancellationToken token)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            token.ThrowIfCancellationRequested();
             return DocumentReference.IsContentUri(reference)
-                ? (_sharedStorageAccess?.OpenReadAsync(reference, cancellationToken)
-                    ?? (_documentStorage ?? throw new NotSupportedException("文档储存不可用。")).OpenReadAsync(reference, cancellationToken))
-                : Task.FromResult<Stream>(File.OpenRead(reference));
+                ? (_mediaStorageAccess ?? throw new NotSupportedException("媒体目录访问不可用。")).OpenReadAsync(reference, token)
+                : Task.FromResult<Stream>(new FileStream(reference, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan));
         }
 
-        /// <summary>Predownloads the original chart text alongside an explicit music download without enabling chart preview.</summary>
-        /// <param name="track">The descriptor containing the source's original maidata resource.</param>
-        /// <param name="cancellationToken">Cancels this explicit predownload.</param>
-        /// <returns>A task representing chart publication and its local metadata update.</returns>
-        private async Task PreserveSharedChartAsync(MusicTrack track, CancellationToken cancellationToken)
+        /// <summary>Rejects a resource publication superseded by a different media-directory choice.</summary>
+        /// <param name="root">The root captured before resolution.</param>
+        /// <exception cref="OperationCanceledException">The selected media directory changed.</exception>
+        private void EnsureMediaStorageRoot(string root)
         {
-            if (track.RemoteId is null || track.Chart is not { } chart)
+            if (!SameMediaDirectory(root, GetMediaStorageRoot()))
             {
-                return;
-            }
-            var version = LocalMediaVersion(track);
-            var source = track with { Audio = chart };
-            var original = await GetMediaAsync(source, false, true, cancellationToken).ConfigureAwait(false);
-            var path = await PublishSharedMediaAsync(source, false, original, cancellationToken, version).ConfigureAwait(false);
-            await _metadataGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                var current = await _library.FindTrackAsync(track.Id, cancellationToken).ConfigureAwait(false);
-                EnsureLocalMediaVersion(track, version);
-                if (current is not null && SameRevision(current, track))
-                {
-                    await _library.UpsertTracksAsync([current with { Chart = chart with { LocalPath = path } }], cancellationToken).ConfigureAwait(false);
-                }
-            }
-            finally
-            {
-                _metadataGate.Release();
-            }
-            if (path != original)
-            {
-                await ReleasePrivateTransferAsync(source, false, original, chart.Sha256, cancellationToken).ConfigureAwait(false);
+                throw new OperationCanceledException("The Music media directory changed during resolution.");
             }
         }
 
-        /// <summary>Releases all media-root owners after active operations have drained.</summary>
+        /// <summary>Compares native media roots or exact provider-owned tree references.</summary>
+        private static bool SameMediaDirectory(string first, string second)
+        {
+            return DocumentReference.IsContentUri(first) || DocumentReference.IsContentUri(second)
+                ? first == second
+                : string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(first)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(second)), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        }
+
+        /// <summary>Releases directory owners only after active workspace operations have drained.</summary>
         private void DisposeMediaStorage()
         {
             _defaultCache.Dispose();
@@ -513,11 +276,8 @@ namespace MajMusic.Infrastructure.Application
                 cache.Dispose();
             }
             _mediaStorageCaches.Clear();
-            _mediaStorageRefresh.Dispose();
-            _portablePlaylistWrites.Dispose();
-            _sharedMediaWrites.Dispose();
+            _mediaWrites.Dispose();
             _localMediaLookups.Dispose();
-            _sharedCatalogReads.Dispose();
         }
     }
 }

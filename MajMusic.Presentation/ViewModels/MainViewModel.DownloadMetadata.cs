@@ -104,7 +104,7 @@ namespace MajMusic.Presentation.ViewModels
             var token = request.Cancellation.Token;
             try
             {
-                var updated = await _metadata!.EnrichAsync(track, token).ConfigureAwait(false);
+                var updated = await EnrichLocalMetadataAsync(track, token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
                 if (!SameMetadataOwner(track, updated))
                 {

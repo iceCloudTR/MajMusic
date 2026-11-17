@@ -49,9 +49,9 @@ namespace MajMusic.Android
             _apiClient = CreateClient(TimeSpan.FromSeconds(100));
             _resourceClient = CreateClient(TimeSpan.FromMinutes(5));
             var documents = new AvaloniaDocumentStorage(CurrentStorageProvider, Path.Combine(directory, "DocumentCovers"));
-            var sharedStorage = new AvaloniaSharedStorageAccess(CurrentStorageProvider, RenameSharedDocumentAsync);
+            var mediaStorage = new AvaloniaMediaStorageAccess(CurrentStorageProvider, RenameMediaDocumentAsync);
             _workspace = new MusicWorkspace(directory, _apiClient, _resourceClient,
-                credentialStore: new AndroidCredentialStore(context), documentStorage: documents, sharedStorageAccess: sharedStorage);
+                credentialStore: new AndroidCredentialStore(context), documentStorage: documents, mediaStorageAccess: mediaStorage);
             try
             {
                 var settings = _workspace.LoadSettingsAsync().GetAwaiter().GetResult();
@@ -83,7 +83,7 @@ namespace MajMusic.Android
             {
                 DataContext = _viewModel,
                 DirectoryReferenceResolver = RetainDirectoryReferenceAsync,
-                SharedDirectoryReferenceResolver = RetainSharedDirectoryReferenceAsync
+                MediaDirectoryReferenceResolver = RetainMediaDirectoryReferenceAsync
             };
             TopLevel.SetAutoSafeAreaPadding(view, false);
             _currentView = new WeakReference<Control>(view);
@@ -175,10 +175,10 @@ namespace MajMusic.Android
             return reference;
         }
 
-        /// <summary>Retains read and write access only for a media root explicitly selected through the shared-storage picker.</summary>
+        /// <summary>Retains read and write access only for a media root explicitly selected through the media-directory picker.</summary>
         /// <param name="folder">The user-selected media root, independent of ordinary read-only library grants.</param>
         /// <returns>The persisted writable document-tree URI or ordinary accessible path.</returns>
-        private static async Task<string> RetainSharedDirectoryReferenceAsync(IStorageFolder folder)
+        private static async Task<string> RetainMediaDirectoryReferenceAsync(IStorageFolder folder)
         {
             var reference = folder.Path.AbsoluteUri;
             var converted = AndroidStorageAccess.Instance.ResolveFileSystemPath(reference);
@@ -208,7 +208,7 @@ namespace MajMusic.Android
         /// <param name="name">The immutable final SHA-256 filename.</param>
         /// <param name="cancellationToken">Cancels before the native commit begins.</param>
         /// <returns>The renamed completed document URI.</returns>
-        private static Task<string> RenameSharedDocumentAsync(string reference, string name, CancellationToken cancellationToken)
+        private static Task<string> RenameMediaDocumentAsync(string reference, string name, CancellationToken cancellationToken)
         {
             return Task.Run(() =>
             {
@@ -218,7 +218,7 @@ namespace MajMusic.Android
                 var resolver = global::Android.App.Application.Context.ContentResolver
                     ?? throw new InvalidOperationException("Android document permissions are unavailable.");
                 using var renamed = global::Android.Provider.DocumentsContract.RenameDocument(resolver, uri, name)
-                    ?? throw new IOException("无法提交完整的共享媒体文件。");
+                    ?? throw new IOException("无法提交完整的媒体文件。");
                 return renamed.ToString() ?? throw new IOException("文件提交未返回有效地址。");
             }, cancellationToken);
         }

@@ -129,7 +129,7 @@ namespace MajMusic.Presentation.ViewModels
             PreviousCommand = CreateTransportCommand(() => _playback.PreviousAsync(_lifetime.Token), () => CanPlay && _playback.Queue.Tracks.Count > 0);
             ToggleFavoriteCommand = CreateCommand(ToggleFavoriteAsync, () => HasFavorites && SelectedTrack is not null);
             OpenFavoritesCommand = CreateCommand(OpenFavoritesAsync, () => HasFavorites);
-            RescanCommand = CreateCommand(RescanAsync, () => _workspace is IMajdataPlayWorkspace || _settings.LocalDirectorySources.Count > 0);
+            RescanCommand = CreateCommand(RescanAsync, () => _settings.LocalDirectorySources.Count > 0);
             InitializeSourceCommands();
             InitializeMetadataCommands();
             InitializeAccountCommands();
@@ -396,7 +396,7 @@ namespace MajMusic.Presentation.ViewModels
                 await PrepareCardLayoutSettingsAsync();
                 _settings = LocalDirectorySettings.Normalize(await _workspace.LoadSettingsAsync(_lifetime.Token));
                 await PrepareMediaStorageSettingsAsync();
-                InitializeMajdataPlaySettings();
+                InitializeMediaStorageSettings();
                 _lifetime.Token.ThrowIfCancellationRequested();
                 RestoreAppearanceSettings(_settings.Appearance);
                 RestoreCardLayoutSettings(_settings.CardLayout);
@@ -405,17 +405,6 @@ namespace MajMusic.Presentation.ViewModels
                     ?? _settings.Endpoints.FirstOrDefault();
                 ReloadEndpointProfiles(endpoint?.Id);
                 ReloadDirectorySources();
-                if (_workspace is IMajdataPlayWorkspace mediaStorage)
-                {
-                    try
-                    {
-                        await mediaStorage.RefreshMajdataPlayAsync(_lifetime.Token);
-                    }
-                    catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException or System.Data.Common.DbException)
-                    {
-                        System.Diagnostics.Trace.TraceWarning("The selected media directory could not be refreshed: {0}", exception.GetType().Name);
-                    }
-                }
                 OnPropertyChanged(nameof(LocalDirectoriesText));
                 await ReloadPlaylistsAsync();
                 InitializeHomeState();

@@ -16,7 +16,7 @@ namespace MajMusic.Infrastructure.Collections
         /// <summary>Identifies the built-in favorites view consistently across portable imports.</summary>
         public const string FavoritesPlaylistId = "local:favorites";
 
-        /// <summary>Defines the portable favorites file name used by MajdataPlay.</summary>
+        /// <summary>Defines the standard Maj favorites filename.</summary>
         public const string FavoritesFileName = "MyFavorites.json";
 
         /// <summary>Limits a single local collection document while allowing large libraries.</summary>
@@ -450,15 +450,6 @@ namespace MajMusic.Infrastructure.Collections
         {
             return id is { Length: > 0 and <= 512 } && id == id.Trim()
                 && !id.StartsWith("cloud:", StringComparison.OrdinalIgnoreCase) && !id.Any(char.IsControl);
-        }
-
-        /// <summary>Gets the collision-resistant app-owned mirror filename while leaving MyFavorites and imported sources untouched.</summary>
-        /// <param name="id">The exact local playlist identity.</param>
-        /// <returns>The generated JSON filename recognized by MajdataPlay's ordinary collection scanner.</returns>
-        public static string GetPortableFileName(string id)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(id);
-            return "MajMusic-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(id))) + ".json";
         }
 
         /// <summary>Creates a report without exposing source contents.</summary>

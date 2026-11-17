@@ -145,9 +145,10 @@ namespace MajMusic.Presentation.ViewModels
 
             var state = _downloadState;
             var version = state.Version;
-            var located = await _cache.ResolveLocalTrackAsync(track, token);
-            var path = state.LocalPath ?? track.Audio.LocalPath;
-            path = located.Audio.LocalPath ?? path;
+            var candidate = state.LocalPath is { Length: > 0 } remembered && remembered != track.Audio.LocalPath
+                ? track with { Audio = track.Audio with { LocalPath = remembered } } : track;
+            var located = await _cache.ResolveLocalTrackAsync(candidate, token);
+            var path = located.Audio.LocalPath;
             var available = !string.IsNullOrWhiteSpace(path)
                 && (DocumentReference.IsContentUri(path) || await Task.Run(() => File.Exists(path), token));
             token.ThrowIfCancellationRequested();
@@ -156,7 +157,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 if (located.Audio != track.Audio || located.Cover != track.Cover)
                 {
-                    _track = _track with { Audio = located.Audio, Cover = located.Cover, Chart = located.Chart };
+                    _track = _track with { Audio = located.Audio, Cover = located.Cover };
                     PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(Track)));
                 }
                 state.IsAvailable = available;

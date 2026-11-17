@@ -15,6 +15,35 @@ namespace MajMusic.Infrastructure.Downloads
             return GetManagedHash(path) is not null;
         }
 
+        /// <summary>Checks the private index's ownership claim without trusting a descriptor's external local path.</summary>
+        /// <param name="resource">The resource identity or canonical managed path.</param>
+        /// <param name="cancellationToken">Cancels the private index read.</param>
+        /// <returns>Whether Music's index owns this content identity.</returns>
+        public async Task<bool> IsOwnedResourceAsync(MediaResource resource, CancellationToken cancellationToken = default)
+        {
+            if (resource.LocalPath is { Length: > 0 } path && !IsManagedPath(path))
+            {
+                return false;
+            }
+            var hash = NormalizeHash(resource.Sha256) ?? GetManagedHash(resource.LocalPath);
+            if (resource.LocalPath is { } canonical && GetManagedHash(canonical) != hash)
+            {
+                return false;
+            }
+            var key = GetUriKey(resource);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var index = await LoadIndexAsync(cancellationToken).ConfigureAwait(false);
+                hash ??= key is null ? null : index.GetValueOrDefault(key)?.ContentHash;
+                return hash is not null && index.Values.Any(entry => entry.ContentHash == hash);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         /// <summary>Gets this cache's canonical filename for a verified content digest without requiring an existing alias.</summary>
         /// <param name="hash">The complete SHA-256 digest.</param>
         /// <returns>The managed filename in this cache's selected media root.</returns>
@@ -57,7 +86,7 @@ namespace MajMusic.Infrastructure.Downloads
                         var index = await LoadIndexAsync(cancellationToken).ConfigureAwait(false);
                         var hashes = descriptors.SelectMany(item => new[] { item.Hash,
                             item.UriKey is null ? null : index.GetValueOrDefault(item.UriKey)?.ContentHash })
-                            .OfType<string>().ToHashSet(StringComparer.Ordinal);
+                            .OfType<string>().Where(hash => !_requireIndexOwnership || index.Values.Any(entry => entry.ContentHash == hash)).ToHashSet(StringComparer.Ordinal);
                         if (!hashes.Any(hash => _validationReaders.ContainsKey(hash)))
                         {
                             var candidate = new Dictionary<string, CacheEntry>(index, StringComparer.Ordinal);
@@ -71,7 +100,7 @@ namespace MajMusic.Infrastructure.Downloads
                                 }
 
                                 removed[position] = item.UriKey is not null && candidate.Remove(item.UriKey)
-                                    || item.Hash is not null && File.Exists(GetObjectPath(item.Hash));
+                                    || item.Hash is not null && hashes.Contains(item.Hash) && File.Exists(GetObjectPath(item.Hash));
                             }
 
                             var delete = new List<string>();

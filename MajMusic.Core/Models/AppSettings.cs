@@ -29,12 +29,6 @@ namespace MajMusic.Core.Models
         /// <summary>Gets the directory configuration version used to migrate legacy music roots exactly once.</summary>
         public int LocalDirectoryFormatVersion { get; init; }
 
-        /// <summary>Gets whether media uses the explicitly selected MajdataPlay shared root.</summary>
-        public bool UseMajdataPlayStorage { get; init; }
-
-        /// <summary>Gets the selected MajdataPlay root, or null for the platform's suggested game directory.</summary>
-        public string? MajdataPlayDirectory { get; init; }
-
         /// <summary>Gets the independent media root, or null for the application's own data directory.</summary>
         public string? MediaStorageDirectory { get; init; }
 

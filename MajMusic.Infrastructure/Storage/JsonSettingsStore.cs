@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using MajMusic.Core.Abstractions;
 using MajMusic.Core.Models;
@@ -45,8 +46,36 @@ namespace MajMusic.Infrastructure.Storage
             {
                 await using var stream = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.Read,
                     4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
-                var settings = await JsonSerializer.DeserializeAsync<AppSettings>(stream, SerializerOptions, cancellationToken)
-                    .ConfigureAwait(false) ?? throw new InvalidDataException("The settings document is empty.");
+                var document = await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false) as JsonObject
+                    ?? throw new InvalidDataException("The settings document is empty.");
+                var usedLegacyStorage = false;
+                string? legacyRoot = null;
+                foreach (var key in document.Select(field => field.Key).ToArray())
+                {
+                    if (key.Equals("useMajdataPlayStorage", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (document[key] is JsonValue legacyEnabled && !legacyEnabled.TryGetValue<bool>(out usedLegacyStorage))
+                        {
+                            throw new InvalidDataException("The legacy storage preference is invalid.");
+                        }
+                        document.Remove(key);
+                    }
+                    else if (key.Equals("majdataPlayDirectory", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (document[key] is JsonValue legacyDirectory && !legacyDirectory.TryGetValue<string>(out legacyRoot))
+                        {
+                            throw new InvalidDataException("The legacy storage directory is invalid.");
+                        }
+                        document.Remove(key);
+                    }
+                }
+                var settings = document.Deserialize<AppSettings>(SerializerOptions)
+                    ?? throw new InvalidDataException("The settings document is empty.");
+                if (usedLegacyStorage || legacyRoot is not null && settings.MediaStorageDirectory is { } selected &&
+                    LocalDirectorySettings.NormalizePath(legacyRoot).Equals(LocalDirectorySettings.NormalizePath(selected), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                {
+                    settings = settings with { MediaStorageDirectory = null };
+                }
                 settings = LocalDirectorySettings.Normalize(settings);
                 Validate(settings);
                 return settings;
@@ -107,7 +136,7 @@ namespace MajMusic.Infrastructure.Storage
         /// <exception cref="InvalidDataException">A preference or endpoint is invalid.</exception>
         internal static void Validate(AppSettings settings)
         {
-            foreach (var root in new[] { settings.MajdataPlayDirectory, settings.MediaStorageDirectory })
+            foreach (var root in new[] { settings.MediaStorageDirectory })
             {
                 if (root is not null && (root.Length > 16384 || root.Contains('\0')
                     || !DocumentReference.IsContentUri(root) && !Path.IsPathFullyQualified(root)))

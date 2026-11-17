@@ -179,7 +179,7 @@ namespace MajMusic.Presentation.ViewModels
                     {
                         await _browseMetadataGate.WaitAsync(cancellation.Token);
                         entered = true;
-                        var updated = PreferDownloadedMetadata(_metadata is null ? track : await _metadata.EnrichAsync(track, cancellation.Token));
+                        var updated = PreferDownloadedMetadata(await EnrichLocalMetadataAsync(track, cancellation.Token));
                         cancellation.Token.ThrowIfCancellationRequested();
                         if (updated != track)
                         {

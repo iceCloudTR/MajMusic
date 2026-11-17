@@ -1,5 +1,7 @@
 # 开发验证
 
+当前版本使用 Music 独立媒体存储。文末保留的 Play 共享、数据库只读和自动镜像章节均为已移除功能的历史；本轮检查范围见“独立媒体存储”。
+
 ## 构建与回归
 
 ```sh
@@ -158,7 +160,7 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- document
 
 锁屏媒体按钮、耳机与音频焦点、实际目录提供者待在对应设备验证。
 
-## 共享媒体与手动清理
+## 历史：共享媒体与手动清理（功能已移除）
 
 2026-11-17，媒体储存支持独立目录与 MajdataPlay 共享目录，分别保留路径；桌面配置、数据库与媒体地址索引仍在 exe 目录。媒体使用 `MaiCharts`、`Cache/Objects/xx/SHA256` 和 `Runtime` 层级。本地歌单以标准 Maj JSON 镜像到 `MaiCharts/MajMusic-*.json`，自有标记保留原列表 ID，更新与删除只修改自己的镜像。
 
@@ -172,7 +174,7 @@ Android 共享树使用独立的读写授权；普通曲库仍只读。对象先
 
 结果：桌面 Release 为 0 警告、0 错误；最终 Android 包 38.89 MiB，无 C# 编译警告，通过发布包检查。覆盖安装 `Success`，冷启动 `Status: ok`、约 1.93 秒；截图确认主页、封面与“已在本地”状态显示。
 
-## 共享目录刷新与 PC 实测
+## 历史：共享目录刷新与 PC 实测（功能已移除）
 
 2026-11-17，Windows PC 的 `shared-play-storage` 与显式 `shared-play-storage-live` 均通过。合成回归先启动 Music 并保留云端卡片，再由外部写入不同接入点目录名下的旧版 `maidata.txt` 与音频，不提供 SHA sidecar；再次搜索即附加本地文件，原卡片更新为“已在本地”，在线曲目身份保持不变。旧文件先按 maidata MD5、谱面版本与目录哈希确认归属，再检查完整文件并计算媒体 SHA-256；已有资源摘要时严格比对。错误 maidata、未完成分片和匿名来源音频冲突均被拒绝，已知正确摘要可消歧。搜索刷新只读公共元数据，文件校验限于初始批次与可见卡片。
 
@@ -188,7 +190,7 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- director
 
 本轮 Android 存储改为普通路径与“文件权限”主入口，授权返回后在原操作中保存并扫描；SAF 选择器保留为备选，选目录后也立即应用。设置区分生效的媒体目录与私有配置目录，“读取全部”包含共享曲库。ARM64 最终包位于 `artifacts/android-arm64-20261117-062123-892e2957/`，38.91 MiB，无 C# 编译警告，通过签名、单 ARM64 ABI 和 16 KB 原生库对齐检查。按用户要求，本轮未安装或进行设备验证。
 
-## Play 数据库只读边界
+## 历史：Play 数据库只读边界（随后已移除读取）
 
 2026-11-17，移除共享资源登记入口及音频解析中的两次调用。Music 不再创建、迁移或更新 Play 的 `Runtime/runtime.db`；读取曲目与清理引用保护仍使用 `SqliteOpenMode.ReadOnly`。Music 自己的索引与音乐、封面、谱面文件预缓存继续保留。上文的资源登记实现为历史记录，已由本节替代；本次没有回写或清理玩家既有 Play 数据库。
 
@@ -199,3 +201,21 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- director
 本次桌面 Release 编译通过（0 警告、0 错误）；Android ARM64 发布通过签名、ABI 与 16 KB 对齐检查，包位于 `artifacts/android-arm64-20261117-163347-346d3772/`，38.90 MiB，未安装或实机验证。正在使用的桌面 Debug 进程保持运行，未覆盖其二进制；Rider 下一次运行会编译新的源码。
 
 扩展运行 `audio-download-progress` 时，已有的 `ValidatePlaybackProgressAsync` 在第 240 行等待首段下载超时。在隔离的 `164c378` 基线副本单独运行该组，复现同一位置的超时；该失败早于本次数据库写入移除。本轮没有修改播放进度实现，也没有将该组报告为通过。
+
+## 独立媒体存储
+
+2026-11-17，删除 Play 共享模式、数据库与旧 Net 缓存读取、资源登记、谱面预缓存和自动 `MaiCharts` 歌单镜像。媒体只由 Music 自己的索引管理；旧共享配置退回默认媒体目录，旧在线曲目记录中的其他应用路径不再视为 Music 已下载文件。原文件保留。显式本地曲库导入、标准 Maj 歌单 JSON 导入导出、在线来源和云端收藏功能保持。
+
+上面共享目录、只读数据库和自动镜像的章节保留为历史记录，其命令与结果不代表当前功能；`shared-play-storage`、`shared-play-storage-live` 测试组及真实用户数据入口已删除。
+
+新增合成测试组：
+
+```sh
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- independent-media-storage
+```
+
+覆盖旧配置迁移、外部数据库锁定时的本地搜索、旧 Play 文件路径的卡片状态与离线播放拒绝、清理保留外部原文件、Music 下载与重启离线复用、单曲删除和 30 天／7 天／全部手动清理。另检查原生元数据读取不会绕过远程路径的归属检查、显式导入原曲库仍可解析音频参数、标准 Maj JSON 的显式导出与重新读取，以及普通保存歌单不生成外部镜像。所有数据均在临时目录创建，HTTP 使用模拟处理器，不读取用户账户、设备或原曲库。
+
+最终运行 `independent-media-storage`、`storage`、`directory-sources`、`document-storage`、`directory-ui`、`media-cache-concurrency`、`collection`、`playlist-management` 和 `playlist-mirrors`，九组全部通过。独立存储组另覆盖 SAF 目录内同 SHA 音频跨歌曲复用、持久归属标记，以及未归属旧文档不读不删。歌单互转断言分别核对 Music 的两个身份扩展字段和其余标准字段完整往返。
+
+桌面 Release 编译为 0 警告、0 错误；Android ARM64 发布通过签名、ABI 和 16 KB 对齐检查，最终包位于 `artifacts/android-arm64-20261117-174846-c1384aa5/`，38.87 MiB。本轮未安装或进行 Android 实机验证。上文已记录的 `audio-download-progress` 基线超时不在本轮修复范围。

@@ -7,8 +7,8 @@ using MajMusic.Core.Models;
 
 namespace MajMusic.Presentation.Storage
 {
-    /// <summary>Traverses granted trees and publishes immutable Maj media objects through provider-owned streams.</summary>
-    public sealed partial class AvaloniaSharedStorageAccess : ISharedStorageAccess
+    /// <summary>Traverses granted trees and publishes application-owned media objects through provider-owned streams.</summary>
+    public sealed class AvaloniaMediaStorageAccess : IMediaStorageAccess
     {
         /// <summary>Gets the currently attached provider without retaining a destroyed activity.</summary>
         private readonly Func<IStorageProvider?> _provider;
@@ -17,10 +17,10 @@ namespace MajMusic.Presentation.Storage
         /// <summary>Prevents concurrent local publishers from racing the same immutable destination.</summary>
         private readonly SemaphoreSlim _publications = new(1, 1);
 
-        /// <summary>Creates a shared-tree adapter without requesting permissions or touching user files.</summary>
+        /// <summary>Creates a media-directory adapter without requesting permissions or touching user files.</summary>
         /// <param name="provider">Gets the currently attached native storage provider.</param>
         /// <param name="rename">Renames a completed document within its parent and returns its new URI.</param>
-        public AvaloniaSharedStorageAccess(Func<IStorageProvider?> provider, Func<string, string, CancellationToken, Task<string>>? rename = null)
+        public AvaloniaMediaStorageAccess(Func<IStorageProvider?> provider, Func<string, string, CancellationToken, Task<string>>? rename = null)
         {
             ArgumentNullException.ThrowIfNull(provider);
             _provider = provider;
@@ -80,15 +80,15 @@ namespace MajMusic.Presentation.Storage
             try
             {
                 using var folder = await OpenFolderAsync(root, parts, parts.Length - 1, true, cancellationToken).ConfigureAwait(false)
-                    ?? throw new DirectoryNotFoundException("无法创建共享媒体目录。");
+                    ?? throw new DirectoryNotFoundException("无法创建媒体目录。");
                 using var existing = await FindChildAsync(folder, parts[^1], cancellationToken).ConfigureAwait(false);
                 if (existing is not null)
                 {
-                    throw new IOException("共享媒体对象已存在，请先校验并复用现有文件。");
+                    throw new IOException("媒体对象已存在，请先校验并复用现有文件。");
                 }
 
                 using var temporary = await folder.CreateFileAsync("." + parts[^1] + "." + Guid.NewGuid().ToString("N") + ".partial").ConfigureAwait(false)
-                    ?? throw new IOException("无法创建共享媒体临时文件。");
+                    ?? throw new IOException("无法创建媒体临时文件。");
                 temporaryReference = temporary.Path.AbsoluteUri;
                 await using (var source = new FileStream(localSourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
                 await using (var destination = await temporary.OpenWriteAsync().ConfigureAwait(false))
@@ -103,7 +103,7 @@ namespace MajMusic.Presentation.Storage
                 using var completed = await GetFileAsync(reference, CancellationToken.None).ConfigureAwait(false);
                 if (!completed.Name.Equals(parts[^1], StringComparison.Ordinal))
                 {
-                    throw new IOException("文档提供方更改了共享媒体文件名。");
+                    throw new IOException("文档提供方更改了媒体文件名。");
                 }
                 published = true;
                 return reference;
@@ -154,7 +154,7 @@ namespace MajMusic.Presentation.Storage
             }
             var provider = await ProviderAsync(token).ConfigureAwait(false);
             var current = await AvaloniaDocumentStorage.OpenGrantedFolderAsync(provider, root, token).ConfigureAwait(false)
-                ?? throw new DirectoryNotFoundException("共享目录不可访问，请重新浏览并选择目录。");
+                ?? throw new DirectoryNotFoundException("媒体目录不可访问，请重新浏览并选择目录。");
             try
             {
                 for (var index = 0; index < count; index++)
@@ -163,7 +163,7 @@ namespace MajMusic.Presentation.Storage
                     if (child is not null && child is not IStorageFolder)
                     {
                         child.Dispose();
-                        throw new IOException("共享目录路径已被同名文件占用。");
+                        throw new IOException("媒体目录路径已被同名文件占用。");
                     }
                     var next = child as IStorageFolder;
                     if (next is null && create)
@@ -217,7 +217,7 @@ namespace MajMusic.Presentation.Storage
             }
             var provider = await ProviderAsync(token).ConfigureAwait(false);
             return await provider.TryGetFileFromPathAsync(new Uri(reference)).ConfigureAwait(false)
-                ?? throw new FileNotFoundException("共享媒体文件不可访问。");
+                ?? throw new FileNotFoundException("媒体文件不可访问。");
         }
 
         /// <summary>Obtains the active provider without retaining an obsolete native activity.</summary>
@@ -245,12 +245,12 @@ namespace MajMusic.Presentation.Storage
             var parts = relativePath.Replace('\\', '/').Split('/');
             if (parts.Any(part => string.IsNullOrWhiteSpace(part) || part is "." or ".." || part.Contains(':') || part.Contains('\0')))
             {
-                throw new ArgumentException("Shared paths must remain relative to the selected directory.", nameof(relativePath));
+                throw new ArgumentException("Media paths must remain relative to the selected directory.", nameof(relativePath));
             }
             return parts;
         }
 
-        /// <summary>Limits all writes and deletions to the immutable Maj SHA-256 object namespace.</summary>
+        /// <summary>Limits all writes and deletions to the immutable SHA-256 object namespace.</summary>
         /// <param name="relativePath">The relative object path.</param>
         /// <returns>The validated cache namespace, shard and hash filename.</returns>
         private static string[] SplitObjectPath(string relativePath)
@@ -260,7 +260,7 @@ namespace MajMusic.Presentation.Storage
                 || parts[3].Any(character => character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
                 || parts[2] != parts[3][..2])
             {
-                throw new ArgumentException("Only immutable Maj SHA-256 cache objects may be published or deleted.", nameof(relativePath));
+                throw new ArgumentException("Only immutable SHA-256 cache objects may be published or deleted.", nameof(relativePath));
             }
             return parts;
         }

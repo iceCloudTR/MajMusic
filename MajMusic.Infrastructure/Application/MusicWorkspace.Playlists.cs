@@ -84,7 +84,6 @@ namespace MajMusic.Infrastructure.Application
             {
                 _metadataGate.Release();
             }
-            await DeletePortablePlaylistMirrorAsync(playlist.Id, cancellationToken).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
@@ -134,7 +133,6 @@ namespace MajMusic.Infrastructure.Application
             {
                 _metadataGate.Release();
             }
-            await MirrorPortablePlaylistAsync(updated, cancellationToken).ConfigureAwait(false);
         }
 
         /// <inheritdoc />

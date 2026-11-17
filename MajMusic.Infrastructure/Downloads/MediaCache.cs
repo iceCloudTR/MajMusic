@@ -19,6 +19,9 @@ namespace MajMusic.Infrastructure.Downloads
         /// <summary>Keeps MajMusic's private aliases beside its own application data when media is shared.</summary>
         private readonly string _indexRoot;
 
+        /// <summary>Requires the application's private alias index to claim an object before it can be reused.</summary>
+        private readonly bool _requireIndexOwnership;
+
         /// <summary>Transports explicit downloads; its ownership stays with the composition root.</summary>
         private readonly HttpClient _client;
 
@@ -52,15 +55,17 @@ namespace MajMusic.Infrastructure.Downloads
         /// <param name="policy">The shared online/offline gate.</param>
         /// <param name="bodyIdleTimeout">The maximum response-read idle interval, or null for thirty seconds.</param>
         /// <param name="indexDirectory">The private alias directory, or null to retain the original cache-local index.</param>
+        /// <param name="requireIndexOwnership">Whether an unindexed object must remain outside this cache's ownership.</param>
         /// <exception cref="ArgumentException">The directory is empty.</exception>
         /// <exception cref="ArgumentOutOfRangeException">The idle interval is not positive.</exception>
-        public MediaCache(string root, HttpClient client, NetworkAccessPolicy policy, TimeSpan? bodyIdleTimeout = null, string? indexDirectory = null)
+        public MediaCache(string root, HttpClient client, NetworkAccessPolicy policy, TimeSpan? bodyIdleTimeout = null, string? indexDirectory = null, bool requireIndexOwnership = false)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(root);
             ArgumentNullException.ThrowIfNull(client);
             ArgumentNullException.ThrowIfNull(policy);
             _root = Path.GetFullPath(root);
             _indexRoot = Path.GetFullPath(indexDirectory ?? root);
+            _requireIndexOwnership = requireIndexOwnership;
             _client = client;
             _policy = policy;
             _bodyIdleTimeout = bodyIdleTimeout ?? TimeSpan.FromSeconds(30);
@@ -146,6 +151,10 @@ namespace MajMusic.Infrastructure.Downloads
             ArgumentNullException.ThrowIfNull(resource);
             var expectedHash = NormalizeHash(resource.Sha256);
             keepOffline = true;
+            if (_requireIndexOwnership && resource.LocalPath is { Length: > 0 } && !await IsOwnedResourceAsync(resource, cancellationToken).ConfigureAwait(false))
+            {
+                resource = resource with { LocalPath = null };
+            }
             if (resource.LocalPath is { Length: > 0 } localPath && File.Exists(localPath))
             {
                 var absolutePath = Path.GetFullPath(localPath);
@@ -229,6 +238,10 @@ namespace MajMusic.Infrastructure.Downloads
                         lifetime.Token.ThrowIfCancellationRequested();
                         Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
                         var objectAlreadyExisted = File.Exists(finalPath);
+                        if (_requireIndexOwnership && objectAlreadyExisted && !index.Values.Any(entry => entry.ContentHash == contentHash))
+                        {
+                            throw new IOException("The media directory contains an unmanaged file at the destination.");
+                        }
                         File.Move(partialPath, finalPath, true);
                         try
                         {
@@ -295,7 +308,7 @@ namespace MajMusic.Infrastructure.Downloads
             {
                 var index = await LoadIndexAsync(cancellationToken).ConfigureAwait(false);
                 objectHash = expectedHash ?? index.GetValueOrDefault(key)?.ContentHash;
-                if (objectHash is null || !File.Exists(GetObjectPath(objectHash)))
+                if (objectHash is null || _requireIndexOwnership && !index.Values.Any(entry => entry.ContentHash == objectHash) || !File.Exists(GetObjectPath(objectHash)))
                 {
                     return null;
                 }

@@ -139,12 +139,9 @@
                 <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
                     <Border Classes="mobilePanel" Padding="10">
                         <StackPanel Spacing="8">
-                            <Grid ColumnDefinitions="80,*,88" ColumnSpacing="8">
-                                <TextBlock Text="媒体储存" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                <arc:Select x:Name="MobileMediaStorageModePicker" Grid.Column="1" Size="Medium" Height="44" ItemsSource="{Binding MediaStorageModes}"
-                                            TextSelector="{x:Static converters:MusicSelectLabels.MediaStorageMode}"
-                                            SelectedItem="{Binding SelectedMediaStorageMode, Mode=TwoWay}" IsEnabled="{Binding IsIdle}" />
-                                <arcm:Button Grid.Column="2" Content="文件权限" Variant="Tinted" Command="{Binding RequestFileAccessCommand}" />
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <TextBlock Text="媒体目录" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <arcm:Button Grid.Column="1" Content="文件权限" Variant="Tinted" Command="{Binding RequestFileAccessCommand}" />
                             </Grid>
                             <Grid ColumnDefinitions="*,44,88" ColumnSpacing="8">
                                 <arcm:TextField x:Name="MobileMediaStoragePathBox" Text="{Binding MediaStoragePath, Mode=TwoWay}" PlaceholderText="媒体目录" IsEnabled="{Binding IsIdle}" />

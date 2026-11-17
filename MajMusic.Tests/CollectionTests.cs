@@ -3,6 +3,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using MajMusic.Core.Models;
 using MajMusic.Infrastructure.Collections;
 
@@ -73,7 +74,15 @@ namespace MajMusic.Tests
             await service.WriteAsync(output, playlist, [first, second]);
             using var exported = JsonDocument.Parse(output.ToArray());
             using var original = JsonDocument.Parse(input);
-            TestAssert.True(JsonElement.DeepEquals(original.RootElement, exported.RootElement), "Unchanged collections round-trip all portable fields.");
+            TestAssert.Equal(playlist.Id, exported.RootElement.GetProperty("MajMusicPlaylistId").GetString(),
+                "Explicit export retains the Music identity without changing standard Maj fields.");
+            TestAssert.Equal(playlist.IsFavorite, exported.RootElement.GetProperty("MajMusicIsFavorite").GetBoolean(),
+                "Explicit export retains the favorite role independently of the standard Maj playlist fields.");
+            var portable = JsonNode.Parse(output.ToArray())!.AsObject();
+            portable.Remove("MajMusicPlaylistId");
+            portable.Remove("MajMusicIsFavorite");
+            using var portableDocument = JsonDocument.Parse(portable.ToJsonString());
+            TestAssert.True(JsonElement.DeepEquals(original.RootElement, portableDocument.RootElement), "Unchanged collections round-trip all portable fields.");
             TestAssert.True(!exported.RootElement.TryGetProperty("SourceFilePath", out _), "Local source paths must never leak into portable JSON.");
 
             await using var reorderedOutput = new MemoryStream();

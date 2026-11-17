@@ -186,7 +186,7 @@ namespace MajMusic.Infrastructure.Application
             ArgumentNullException.ThrowIfNull(track);
             if (track.RemoteId is null || !IsOnline)
             {
-                return await _library.FindTrackAsync(track.Id, cancellationToken).ConfigureAwait(false) ?? track;
+                return await FilterOwnedTrackAsync(await _library.FindTrackAsync(track.Id, cancellationToken).ConfigureAwait(false) ?? track, cancellationToken).ConfigureAwait(false);
             }
 
             var endpoint = GetEndpointForTrack(track);
@@ -195,7 +195,7 @@ namespace MajMusic.Infrastructure.Application
             var details = await connection.Provider.GetTrackAsync(track.RemoteId, lifetime.Token).ConfigureAwait(false);
             if (details is null || details.SourceId != track.SourceId)
             {
-                return track;
+                return await FilterOwnedTrackAsync(track, cancellationToken).ConfigureAwait(false);
             }
 
             details = details with
@@ -205,7 +205,7 @@ namespace MajMusic.Infrastructure.Application
                 Revision = string.IsNullOrWhiteSpace(details.Revision) ? track.Revision : details.Revision
             };
             await UpdateTrackMetadataAsync(details, lifetime.Token).ConfigureAwait(false);
-            return await _library.FindTrackAsync(track.Id, lifetime.Token).ConfigureAwait(false) ?? track;
+            return await FilterOwnedTrackAsync(await _library.FindTrackAsync(track.Id, lifetime.Token).ConfigureAwait(false) ?? track, lifetime.Token).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
@@ -226,8 +226,7 @@ namespace MajMusic.Infrastructure.Application
                 var merged = current with
                 {
                     Duration = track.Duration ?? current.Duration,
-                            LocalMediaSavedAt = current.LocalMediaSavedAt,
-                            MajInfoJson = track.MajInfoJson ?? current.MajInfoJson,
+                    LocalMediaSavedAt = current.LocalMediaSavedAt,
                     AudioInfo = MergeStreamInfo(track.AudioInfo, current.AudioInfo),
                     AudioMetadataLength = track.AudioMetadataLength ?? current.AudioMetadataLength,
                     AudioMetadataLastWriteUtcTicks = track.AudioMetadataLastWriteUtcTicks ?? current.AudioMetadataLastWriteUtcTicks
@@ -250,8 +249,14 @@ namespace MajMusic.Infrastructure.Application
         private async Task<string> GetMediaAsync(MusicTrack track, bool cover, bool keepOffline, CancellationToken cancellationToken,
             IProgress<MediaTransferProgress>? progress = null)
         {
-            var resource = ScopeResourceForCache(track, (cover ? track.Cover : track.Audio)!);
-            var cached = await TryResolveSharedMediaAsync(track, cover, cancellationToken).ConfigureAwait(false)
+            track = await FilterOwnedTrackAsync(track, cancellationToken).ConfigureAwait(false);
+            var selected = (cover ? track.Cover : track.Audio)!;
+            if (!RequiresManagedMedia(track) && selected.LocalPath is { } imported && File.Exists(imported))
+            {
+                return imported;
+            }
+            var resource = ScopeResourceForCache(track, selected);
+            var cached = await TryResolveMediaDocumentAsync(track, cover, cancellationToken).ConfigureAwait(false)
                 ?? await _cache.TryGetCachedAsync(resource, true, cancellationToken).ConfigureAwait(false)
                 ?? await _defaultCache.TryGetCachedAsync(resource, true, cancellationToken).ConfigureAwait(false);
             if (cached is not null)
@@ -299,10 +304,8 @@ namespace MajMusic.Infrastructure.Application
                         {
                             Audio = MergeResource(track.Audio, current.Audio),
                             Cover = track.Cover is null ? null : MergeResource(track.Cover, current.Cover),
-                            Chart = track.Chart is null ? current.Chart : MergeResource(track.Chart, current.Chart),
                             Duration = track.Duration ?? current.Duration,
                             LocalMediaSavedAt = current.LocalMediaSavedAt,
-                            MajInfoJson = track.MajInfoJson ?? current.MajInfoJson,
                             AudioInfo = MergeStreamInfo(track.AudioInfo, current.AudioInfo),
                             AudioMetadataLength = current.AudioMetadataLength,
                             AudioMetadataLastWriteUtcTicks = current.AudioMetadataLastWriteUtcTicks
@@ -314,7 +317,7 @@ namespace MajMusic.Infrastructure.Application
                     {
                         if (current is not null)
                         {
-                            AddOfflineCopy(updates, current);
+                            AddOfflineCopy(updates, await FilterOwnedTrackAsync(current, cancellationToken).ConfigureAwait(false));
                         }
 
                         updates.Add(track);
@@ -323,7 +326,7 @@ namespace MajMusic.Infrastructure.Application
                 }
 
                 await _library.UpsertTracksAsync(updates, cancellationToken).ConfigureAwait(false);
-                return mapped;
+                return await Task.WhenAll(mapped.Select(item => FilterOwnedTrackAsync(item, cancellationToken))).ConfigureAwait(false);
             }
             finally
             {

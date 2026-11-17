@@ -4,7 +4,7 @@ using MajMusic.Core.Models;
 
 namespace MajMusic.Core.Abstractions
 {
-    /// <summary>Discovers completed local media from a selected shared root without making network requests.</summary>
+    /// <summary>Discovers completed local media from Music-owned media storage without making network requests.</summary>
     public interface ILocalTrackMediaResolver
     {
         /// <summary>Refreshes local media paths for one known source revision while retaining its online identity.</summary>

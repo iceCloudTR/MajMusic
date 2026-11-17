@@ -285,26 +285,11 @@ namespace MajMusic.Presentation.ViewModels
             var tracks = 0;
             var lists = 0;
             var issues = 0;
-            var media = _workspace as IMajdataPlayWorkspace;
-            if (media is not null && EnsureFileAccessAsync is { } authorize && !await authorize(AppliedMediaStoragePath))
-            {
-                return;
-            }
             InvalidateMediaStorageBrowse(false);
             try
             {
-                if (media is not null)
-                {
-                    var result = await media.RefreshMajdataPlayAsync(_lifetime.Token);
-                    tracks += result.Tracks.Count;
-                    issues += result.Issues.Count;
-                }
                 foreach (var source in _settings.LocalDirectorySources.OrderBy(item => item.Kind).ToArray())
                 {
-                    if (media is not null && IsMediaStorageChartsSource(source.Path))
-                    {
-                        continue;
-                    }
                     try
                     {
                         if (EnsureFileAccessAsync is { } ensure && !await ensure(source.Path))
@@ -331,22 +316,6 @@ namespace MajMusic.Presentation.ViewModels
                 }
             }
             Status = $"已更新 {tracks} 首音乐、{lists} 个列表" + (issues > 0 ? $"，跳过 {issues} 项" : string.Empty);
-        }
-
-        /// <summary>Avoids reading an ordinary charts subtree a second time after the media-root scan.</summary>
-        /// <param name="path">The independently configured source path.</param>
-        /// <returns>Whether the current media scan already covers this ordinary source subtree.</returns>
-        private bool IsMediaStorageChartsSource(string path)
-        {
-            var root = AppliedMediaStoragePath;
-            if (DocumentReference.IsContentUri(root) || DocumentReference.IsContentUri(path))
-            {
-                return false;
-            }
-            var charts = Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.Combine(root, "MaiCharts")));
-            var candidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-            return string.Equals(charts, candidate, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
-                || IsWithinDirectory(candidate, charts);
         }
 
         /// <summary>Formats an operation result without exposing implementation policy in the interface.</summary>

@@ -15,11 +15,11 @@ namespace MajMusic.Core.Models
         /// <summary>Gets the managed or externally referenced local file path.</summary>
         public string? LocalPath { get; init; }
 
+        /// <summary>Gets the selected Music media root that published a managed document resource.</summary>
+        public string? ManagedStorageRoot { get; init; }
+
         /// <summary>Gets the SHA-256 digest of the file, when known.</summary>
         public string? Sha256 { get; init; }
-
-        /// <summary>Gets the source's MD5 compatibility digest for MajdataPlay's public resource catalog.</summary>
-        public string? Md5 { get; init; }
 
         /// <summary>Gets the expected file length in bytes, when known.</summary>
         public long? Length { get; init; }

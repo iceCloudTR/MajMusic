@@ -12,8 +12,6 @@ namespace MajMusic.Presentation.Converters
         public static Func<object?, string?> Appearance { get; } = static item => (item as AppearanceOption)?.Name;
         /// <summary>Gets the localized name of a spacious, compact or small card layout.</summary>
         public static Func<object?, string?> CardLayout { get; } = static item => (item as CardLayoutOption)?.Name;
-        /// <summary>Gets the visible label of an independent or shared media location.</summary>
-        public static Func<object?, string?> MediaStorageMode { get; } = static item => (item as MediaStorageModeOption)?.Name;
         /// <summary>Gets the visible range used by an explicitly requested local-music cleanup.</summary>
         public static Func<object?, string?> LocalMediaCleanup { get; } = static item => (item as LocalMediaCleanupOption)?.Name;
         /// <summary>Gets the display label of an independent endpoint and its current account.</summary>
