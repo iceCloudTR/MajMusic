@@ -252,6 +252,7 @@
                             <arc:Select x:Name="MobileCardLayoutPicker" Size="Medium" Height="44" ItemsSource="{Binding CardLayoutChoices}"
                                         TextSelector="{x:Static converters:MusicSelectLabels.CardLayout}"
                                         SelectedItem="{Binding SelectedCardLayoutOption, Mode=TwoWay}" />
+                            <arc:Checkbox Content="谱面背景 PV" IsChecked="{Binding ShowPreviewVideo, Mode=TwoWay}" />
                         </StackPanel>
                     </Border>
                     <Border Classes="mobilePanel">

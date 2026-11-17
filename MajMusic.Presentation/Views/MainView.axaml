@@ -248,7 +248,7 @@
             <TabItem x:Name="SettingsTab" Header="设置">
                 <StackPanel Margin="0" Spacing="10">
                     <Border x:Name="AppearanceSettingsPanel" Classes="card" Padding="10">
-                        <Grid RowDefinitions="Auto,Auto" RowSpacing="8" ColumnDefinitions="80,*" ColumnSpacing="10">
+                        <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnDefinitions="80,*" ColumnSpacing="10">
                             <TextBlock Text="外观" FontWeight="SemiBold" VerticalAlignment="Center" />
                             <arc:Select x:Name="AppearancePicker" Grid.Column="1" ItemsSource="{Binding AppearanceOptions}"
                                         TextSelector="{x:Static converters:MusicSelectLabels.Appearance}"
@@ -257,6 +257,8 @@
                             <arc:Select x:Name="CardLayoutPicker" Grid.Row="1" Grid.Column="1" ItemsSource="{Binding CardLayoutChoices}"
                                         TextSelector="{x:Static converters:MusicSelectLabels.CardLayout}"
                                         SelectedItem="{Binding SelectedCardLayoutOption, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                            <arc:Checkbox Grid.Row="2" Grid.ColumnSpan="2" Content="谱面背景 PV"
+                                          IsChecked="{Binding ShowPreviewVideo, Mode=TwoWay}" />
                         </Grid>
                     </Border>
                     <Border x:Name="AudioSettingsPanel" Classes="card" Padding="10">
