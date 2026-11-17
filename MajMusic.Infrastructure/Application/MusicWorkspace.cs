@@ -395,15 +395,13 @@ namespace MajMusic.Infrastructure.Application
                 path = await PublishSharedMediaAsync(resolved, false, path, cancellationToken, mediaVersion).ConfigureAwait(false);
                 await RememberLocalResourceAsync(resolved, path, false, cancellationToken, mediaVersion).ConfigureAwait(false);
                 EnsureLocalMediaVersion(track, mediaVersion);
-                var registered = await RegisterSharedTrackAsync(resolved, cancellationToken).ConfigureAwait(false);
                 if (keepOffline)
                 {
                     await PreserveOfflineCoverAsync(resolved, cancellationToken).ConfigureAwait(false);
                     await PreserveSharedChartAsync(resolved, cancellationToken).ConfigureAwait(false);
                 }
-                registered = await RegisterSharedTrackAsync(resolved, cancellationToken).ConfigureAwait(false);
                 EnsureLocalMediaVersion(track, mediaVersion);
-                if (path != original && registered)
+                if (path != original)
                 {
                     await ReleasePrivateTransferAsync(resolved, false, original, resolved.Audio.Sha256, cancellationToken).ConfigureAwait(false);
                 }

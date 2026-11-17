@@ -102,11 +102,182 @@ namespace MajMusic.Tests
                 await ValidateRejectedLegacyAsync(Path.Combine(root, "wrong-maidata"), true, timeout.Token);
                 await ValidateRejectedLegacyAsync(Path.Combine(root, "unfinished-chunk"), false, timeout.Token);
                 await ValidateAmbiguousLegacyAsync(Path.Combine(root, "ambiguous"), timeout.Token);
+                await ValidateFileOnlyPublicationAsync(Path.Combine(root, "existing-play-database"), true, timeout.Token);
+                await ValidateFileOnlyPublicationAsync(Path.Combine(root, "absent-play-database"), false, timeout.Token);
             }
             finally
             {
                 DeleteGeneratedFixture(root);
             }
+        }
+
+        /// <summary>Publishes complete offline media through the real audio path without registering anything in another application's database.</summary>
+        /// <param name="root">The generated publication fixture.</param>
+        /// <param name="existingDatabase">Whether Play already owns a compatible database with unrelated sentinel data.</param>
+        /// <param name="token">Cancels generated-file setup and media resolution.</param>
+        /// <returns>A task representing first publication, reuse and independent database ownership.</returns>
+        private static async Task ValidateFileOnlyPublicationAsync(string root, bool existingDatabase, CancellationToken token)
+        {
+            var (endpoint, cloud, maidata) = CreateLegacySeed();
+            var game = Path.Combine(root, "game");
+            var data = Path.Combine(root, "music");
+            Directory.CreateDirectory(game);
+            var database = Path.Combine(game, "Runtime", "runtime.db");
+            PlayDatabaseFingerprint? original = null;
+            if (existingDatabase)
+            {
+                await CreatePlaySentinelDatabaseAsync(database, token);
+                original = await CapturePlayDatabaseAsync(database, token);
+            }
+
+            var audioBytes = "complete private audio ready for file-only prefetch"u8.ToArray();
+            var coverBytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jEuoAAAAASUVORK5CYII=");
+            var audio = await WritePrivateMediaAsync(data, cloud.Audio, audioBytes, token);
+            var cover = await WritePrivateMediaAsync(data, new MediaResource
+            {
+                RemoteUri = new Uri(endpoint.BaseUri, "maichart/" + cloud.RemoteId + "/image"),
+                CacheVersion = cloud.Revision
+            }, coverBytes, token);
+            var chart = await WritePrivateMediaAsync(data, new MediaResource
+            {
+                RemoteUri = new Uri(endpoint.BaseUri, "maichart/" + cloud.RemoteId + "/chart"),
+                CacheVersion = cloud.Revision
+            }, maidata, token);
+            var seed = cloud with { Audio = audio, Cover = cover, Chart = chart };
+            using var transport = new RejectNetworkHandler();
+            using var client = new HttpClient(transport, false);
+            var credentials = new RejectCredentials();
+            using var workspace = await CreateWorkspaceAsync(data,
+                new AppSettings { UseMajdataPlayStorage = true, MajdataPlayDirectory = game, Endpoints = [endpoint] },
+                seed, client, credentials, token);
+
+            var resolved = await workspace.ResolveAudioAsync(seed, true, token);
+            var stored = await new SqliteLibraryRepository(Path.Combine(data, "library.db")).FindTrackAsync(seed.Id, token)
+                ?? throw new InvalidOperationException("Music must retain its own local-media index.");
+            var expectedAudio = CanonicalFixturePath(game, audio.Sha256!);
+            TestAssert.True(SamePath(resolved, expectedAudio) && stored.Audio.LocalPath is { } saved && SamePath(saved, expectedAudio)
+                && stored.Audio.Sha256 == audio.Sha256 && stored.LocalMediaSavedAt is not null,
+                "Explicit prefetch must publish the canonical audio object and retain its availability in Music's own index.");
+            TestAssert.True(stored.RemoteId == seed.RemoteId && stored.SourceId == seed.SourceId && stored.EndpointId == seed.EndpointId,
+                "File-only publication cannot turn an online song into a separate local-import identity.");
+            TestAssert.True(stored.Cover is not null && stored.Chart is not null,
+                "Explicit offline prefetch must retain its available optional artwork and chart descriptors.");
+            foreach (var resource in new[] { stored.Audio, stored.Cover!, stored.Chart! })
+            {
+                TestAssert.True(resource.LocalPath is { } path && resource.Sha256 is { } hash
+                    && SamePath(path, CanonicalFixturePath(game, hash))
+                    && (await FingerprintAsync(path, token)).Sha256 == hash,
+                    "Audio, optional artwork and optional maidata must remain complete canonical files.");
+            }
+            TestAssert.True(SamePath(await workspace.ResolveAudioAsync(stored, true, token), expectedAudio),
+                "A repeated explicit prefetch must reuse the complete shared file without registering Play metadata.");
+            if (original is not null)
+            {
+                TestAssert.True(original == await CapturePlayDatabaseAsync(database, token),
+                    "File-only prefetch must preserve Play's database bytes, schema, sentinel and existing public table contents.");
+            }
+            else
+            {
+                TestAssert.True(!File.Exists(database) && !File.Exists(database + "-wal") && !File.Exists(database + "-shm")
+                    && !File.Exists(database + "-journal"), "File-only prefetch cannot create a Play database or SQLite side files.");
+            }
+            TestAssert.True(transport.RequestCount == 0 && credentials.Calls == 0,
+                "Publishing and reusing completed private media must stay offline and avoid credentials.");
+        }
+
+        /// <summary>Seeds a completed private object while retaining real resource digests and ownership descriptors.</summary>
+        /// <param name="data">The generated Music data directory.</param>
+        /// <param name="resource">The remote identity of this audio, image or chart.</param>
+        /// <param name="bytes">The complete fixture bytes.</param>
+        /// <param name="token">Cancels file creation.</param>
+        /// <returns>The same resource with a validated private local path and both content digests.</returns>
+        private static async Task<MediaResource> WritePrivateMediaAsync(string data, MediaResource resource, byte[] bytes, CancellationToken token)
+        {
+            var sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes));
+            var path = CanonicalFixturePath(data, sha256);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await File.WriteAllBytesAsync(path, bytes, token);
+            return resource with { LocalPath = path, Sha256 = sha256, Md5 = Convert.ToHexStringLower(MD5.HashData(bytes)), Length = bytes.LongLength };
+        }
+
+        /// <summary>Locates the shared immutable object hierarchy used by both applications.</summary>
+        /// <param name="root">The generated Music or game root.</param>
+        /// <param name="sha256">The normalized full content digest.</param>
+        /// <returns>The canonical object path.</returns>
+        private static string CanonicalFixturePath(string root, string sha256)
+        {
+            return Path.Combine(root, "Cache", "Objects", sha256[..2], sha256);
+        }
+
+        /// <summary>Creates a fully compatible generated Play schema so obsolete resource-registration code would really modify it.</summary>
+        /// <param name="database">The generated game database.</param>
+        /// <param name="token">Cancels fixture creation.</param>
+        /// <returns>A task representing a closed database containing unrelated sentinel data.</returns>
+        private static async Task CreatePlaySentinelDatabaseAsync(string database, CancellationToken token)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(database)!);
+            await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = database,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = false
+            }.ToString());
+            await connection.OpenAsync(token);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                PRAGMA journal_mode=DELETE;
+                PRAGMA user_version=73;
+                CREATE TABLE OnlineChartCache (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ChartId VARCHAR, Server VARCHAR, ChartHash VARCHAR, Detail VARCHAR, LevelHashes VARCHAR,
+                    IsResolved INTEGER, MaidataMd5 VARCHAR, MaidataSha256 VARCHAR, TrackMd5 VARCHAR, TrackSha256 VARCHAR,
+                    VideoMd5 VARCHAR, VideoSha256 VARCHAR, CoverArtMd5 VARCHAR, CoverArtSha256 VARCHAR,
+                    ThumbnailMd5 VARCHAR, ThumbnailSha256 VARCHAR, IsListed INTEGER, ListOrder BIGINT,
+                    IsDeletedOnServer INTEGER, UpdatedAtTicks BIGINT
+                );
+                CREATE UNIQUE INDEX IX_OnlineChartCache_ChartId_Server ON OnlineChartCache(ChartId, Server);
+                CREATE TABLE OnlineServers (Endpoint VARCHAR PRIMARY KEY, Server VARCHAR, UpdatedAtTicks BIGINT);
+                CREATE TABLE FixtureSentinel (Id INTEGER PRIMARY KEY, Value TEXT NOT NULL);
+                INSERT INTO FixtureSentinel VALUES (1, 'Owned only by the game');
+                CREATE VIEW FixtureSentinelView AS SELECT Id, Value FROM FixtureSentinel;
+                """;
+            await command.ExecuteNonQueryAsync(token);
+        }
+
+        /// <summary>Captures independent physical, schema and logical sentinels from a genuinely read-only connection.</summary>
+        /// <param name="database">The generated game-owned database.</param>
+        /// <param name="token">Cancels read-only inspection.</param>
+        /// <returns>A value-comparable fingerprint capable of detecting unrelated table, schema and metadata writes.</returns>
+        private static async Task<PlayDatabaseFingerprint> CapturePlayDatabaseAsync(string database, CancellationToken token)
+        {
+            var file = await FingerprintAsync(database, token);
+            await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = database,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
+            }.ToString());
+            await connection.OpenAsync(token);
+            var schema = new StringBuilder();
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT type, name, tbl_name, COALESCE(sql, '') FROM sqlite_master ORDER BY type, name;";
+                await using var reader = await command.ExecuteReaderAsync(token);
+                while (await reader.ReadAsync(token))
+                {
+                    for (var index = 0; index < reader.FieldCount; index++)
+                    {
+                        schema.Append(reader.GetString(index)).Append('\0');
+                    }
+                    schema.Append('\n');
+                }
+            }
+            await using var logical = connection.CreateCommand();
+            logical.CommandText = "SELECT Value, (SELECT COUNT(*) FROM OnlineChartCache), (SELECT COUNT(*) FROM OnlineServers) FROM FixtureSentinel WHERE Id=1;";
+            await using var values = await logical.ExecuteReaderAsync(token);
+            TestAssert.True(await values.ReadAsync(token), "The game-owned sentinel row must remain present.");
+            return new PlayDatabaseFingerprint(file, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(schema.ToString()))),
+                values.GetString(0), values.GetInt64(1), values.GetInt64(2));
         }
 
         /// <summary>Rejects a misleading chart-directory name and an unfinished transfer without falsely promoting a card.</summary>
@@ -544,6 +715,14 @@ namespace MajMusic.Tests
         /// <param name="LastWriteTicks">The original UTC write timestamp.</param>
         /// <param name="Sha256">The digest of the original bytes.</param>
         private sealed record FileFingerprint(long Length, long LastWriteTicks, string Sha256);
+
+        /// <summary>Detects physical writes as well as schema or row changes in a generated game-owned database.</summary>
+        /// <param name="File">The complete original file fingerprint.</param>
+        /// <param name="SchemaSha256">The digest of every SQLite schema definition.</param>
+        /// <param name="Sentinel">The unrelated game-owned sentinel value.</param>
+        /// <param name="ChartRows">The existing public chart row count.</param>
+        /// <param name="ServerRows">The existing public server row count.</param>
+        private sealed record PlayDatabaseFingerprint(FileFingerprint File, string SchemaSha256, string Sentinel, long ChartRows, long ServerRows);
 
         /// <summary>Records and rejects every attempted request before any socket or real source can be used.</summary>
         private sealed class RejectNetworkHandler : HttpMessageHandler

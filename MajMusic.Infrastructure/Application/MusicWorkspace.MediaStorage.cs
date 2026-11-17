@@ -504,43 +504,6 @@ namespace MajMusic.Infrastructure.Application
             }
         }
 
-        /// <summary>Registers verified media with MajdataPlay so its normal startup scan retains these referenced objects.</summary>
-        /// <param name="track">The completed online entry.</param>
-        /// <param name="cancellationToken">Cancels the public metadata transaction.</param>
-        /// <returns>A task representing source-scoped registration without accessing account tables.</returns>
-        private async Task<bool> RegisterSharedTrackAsync(MusicTrack track, CancellationToken cancellationToken)
-        {
-            var root = GetMediaStorageRoot();
-            if (track.RemoteId is null || DocumentReference.IsContentUri(root))
-            {
-                return true;
-            }
-            EndpointConfiguration? endpoint;
-            lock (_stateGate)
-            {
-                endpoint = _settings.Endpoints.FirstOrDefault(item => item.Id == track.EndpointId);
-            }
-            if (endpoint is null)
-            {
-                return false;
-            }
-            var current = await _library.FindTrackAsync(track.Id, cancellationToken).ConfigureAwait(false) ?? track;
-            try
-            {
-                if (!await new MajdataPlayCatalog(root).RegisterResourcesAsync(current, endpoint, cancellationToken).ConfigureAwait(false))
-                {
-                    System.Diagnostics.Trace.TraceWarning("MajdataPlay resource registration kept a different source revision.");
-                    return false;
-                }
-                return true;
-            }
-            catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
-            {
-                System.Diagnostics.Trace.TraceWarning("MajdataPlay resource registration could not complete: {0}", exception.GetType().Name);
-                return false;
-            }
-        }
-
         /// <summary>Releases all media-root owners after active operations have drained.</summary>
         private void DisposeMediaStorage()
         {

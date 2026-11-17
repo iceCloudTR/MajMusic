@@ -569,6 +569,21 @@ namespace MajMusic.Infrastructure.Shared
             return value is { Length: 64 } && value.All(char.IsAsciiHexDigit) ? value.ToLowerInvariant() : null;
         }
 
+        /// <summary>Normalizes the server's hexadecimal or Base64 MD5 representation for legacy resource verification.</summary>
+        /// <param name="value">The server-provided MD5 digest.</param>
+        /// <returns>A lowercase hexadecimal MD5 digest, or null.</returns>
+        private static string? NormalizeMd5(string? value)
+        {
+            if (value is { Length: 32 } && value.All(char.IsAsciiHexDigit))
+            {
+                return value.ToLowerInvariant();
+            }
+
+            Span<byte> bytes = stackalloc byte[16];
+            return value is not null && Convert.TryFromBase64String(value, bytes, out var count) && count == 16
+                ? Convert.ToHexStringLower(bytes) : null;
+        }
+
         /// <summary>Projects an optional known schema column without requiring a game migration.</summary>
         /// <param name="columns">The existing schema.</param>
         /// <param name="name">A fixed reader-owned column name.</param>
