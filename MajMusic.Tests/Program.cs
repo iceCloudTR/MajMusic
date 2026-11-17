@@ -26,9 +26,9 @@ namespace MajMusic.Tests
                 ("mobile-player-gesture", MobilePlayerGestureTests.RunAsync, true),
                 ("mobile-safe-area", MobileSafeAreaTests.RunAsync, true),
                 ("endpoint-cards", EndpointCardPresentationTests.RunAsync, true),
-                ("endpoint-cards-layout", EndpointCardsLayoutTests.RunAsync, true),
+                Headless("endpoint-cards-layout", EndpointCardsLayoutTests.RunAsync),
                 ("directory-sources", DirectorySourceTests.RunAsync, true),
-                ("document-storage", DocumentStorageTests.RunAsync, true),
+                Headless("document-storage", DocumentStorageTests.RunAsync),
                 ("directory-ui", DirectoryPresentationTests.RunAsync, true),
                 ("network", NetworkTests.RunAsync, true),
                 ("source-transport", SourceTransportTests.RunAsync, true),
@@ -47,7 +47,7 @@ namespace MajMusic.Tests
                 ("audio-download-progress", AudioDownloadProgressTests.RunAsync, true),
                 ("download-metadata", DownloadMetadataPresentationTests.RunAsync, true),
                 ("card-download-ui", CardDownloadPresentationTests.RunAsync, true),
-                ("card-download-layout", CardDownloadLayoutTests.RunAsync, true),
+                Headless("card-download-layout", CardDownloadLayoutTests.RunAsync),
                 ("audio-output", AudioOutputTests.RunAsync, true),
                 ("audio-settings-ui", AudioSettingsPresentationTests.RunAsync, true),
                 ("workspace", WorkspaceTests.RunAsync, true),
@@ -62,43 +62,43 @@ namespace MajMusic.Tests
                 ("presentation", PresentationTests.RunAsync, true),
                 ("library-ui", LibraryExperienceTests.RunAsync, true),
                 ("home-ui", HomeExperienceTests.RunAsync, true),
-                ("cover-ui", CoverPresentationTests.RunAsync, true),
+                Headless("cover-ui", CoverPresentationTests.RunAsync),
                 ("cover-resources", CoverResourceTests.RunAsync, true),
-                ("card-covers-ui", CardCoverPresentationTests.RunAsync, true),
+                Headless("card-covers-ui", CardCoverPresentationTests.RunAsync),
                 ("browse-metadata", BrowseMetadataTests.RunAsync, true),
                 ("panel-paging", PanelPagingTests.RunAsync, true),
                 ("playback-modes-ui", PlaybackModePresentationTests.RunAsync, true),
                 ("metadata-ui", MetadataPresentationTests.RunAsync, true),
                 ("headless", HeadlessTests.RunAsync, true),
-                ("alignment", AlignmentTests.RunAsync, true),
+                Headless("alignment", AlignmentTests.RunAsync),
                 ("surface-geometry", SurfaceGeometryTests.RunAsync, true),
-                ("scroll-gutters", ScrollGutterLayoutTests.RunAsync, true),
-                ("arc-responsive", ArcResponsiveLayoutTests.RunAsync, true),
-                ("arc-motion", ArcMotionTests.RunAsync, true),
-                ("rapid-nav-icons", RapidNavigationIconTests.RunAsync, true),
-                ("appearance", AppearanceTests.RunAsync, true),
-                ("surface-motion", SurfaceMotionTests.RunAsync, true),
-                ("browse-loading", BrowseLoadingPresentationTests.RunAsync, true),
-                ("browse-placeholder-lifecycle", BrowsePlaceholderLifecycleTests.RunAsync, true),
-                ("cover-preload", CoverPreloadTests.RunAsync, true),
-                ("browse-entry", BrowseEntryPreparationTests.RunAsync, true),
+                Headless("scroll-gutters", ScrollGutterLayoutTests.RunAsync),
+                Headless("arc-responsive", ArcResponsiveLayoutTests.RunAsync),
+                Headless("arc-motion", ArcMotionTests.RunAsync),
+                Headless("rapid-nav-icons", RapidNavigationIconTests.RunAsync),
+                Headless("appearance", AppearanceTests.RunAsync),
+                Headless("surface-motion", SurfaceMotionTests.RunAsync),
+                Headless("browse-loading", BrowseLoadingPresentationTests.RunAsync),
+                Headless("browse-placeholder-lifecycle", BrowsePlaceholderLifecycleTests.RunAsync),
+                Headless("cover-preload", CoverPreloadTests.RunAsync),
+                Headless("browse-entry", BrowseEntryPreparationTests.RunAsync),
                 ("browse-rows", BrowseRowsPresentationTests.RunAsync, true),
                 ("song-card-row-reuse", SongCardRowReuseTests.RunAsync, true),
                 ("catalog-memory", CatalogMemoryTests.RunAsync, true),
-                ("presentation-retention", PresentationRetentionTests.RunAsync, true),
-                ("catalog-read-ordering", CatalogReadOrderingTests.RunAsync, true),
+                Headless("presentation-retention", PresentationRetentionTests.RunAsync),
+                Headless("catalog-read-ordering", CatalogReadOrderingTests.RunAsync),
                 ("recommendation-paging", RecommendationPagingTests.RunAsync, true),
-                ("recommendation-paging-layout", RecommendationPagingLayoutTests.RunAsync, true),
+                Headless("recommendation-paging-layout", RecommendationPagingLayoutTests.RunAsync),
                 ("recommendation-playback", RecommendationPlaybackTests.RunAsync, true),
-                ("card-feedback", SongCardFeedbackTests.RunAsync, true),
+                Headless("card-feedback", SongCardFeedbackTests.RunAsync),
                 ("cover-play-feedback", CoverPlayFeedbackTests.RunAsync, true),
                 ("context-actions", ContextActionTests.RunAsync, true),
-                ("playback-region-motion", PlaybackRegionMotionTests.RunAsync, true),
+                Headless("playback-region-motion", PlaybackRegionMotionTests.RunAsync),
                 ("playlist-mirrors", PlaylistMirrorTests.RunAsync, true),
-                ("context-menus-layout", ContextMenusLayoutTests.RunAsync, true),
+                Headless("context-menus-layout", ContextMenusLayoutTests.RunAsync),
                 ("desktop-audio", DesktopAudioTests.RunAsync, false),
                 ("desktop-output", DesktopAudioTests.RunOutputAsync, false),
-                ("desktop-integration", LocalPlaybackIntegrationTests.RunAsync, false),
+                Headless("desktop-integration", LocalPlaybackIntegrationTests.RunAsync, runByDefault: false),
                 ("desktop-metadata", MetadataTests.RunNativeAsync, false),
                 ("native-vault", CredentialStoreTests.RunNativeAsync, false),
                 ("desktop-audio-controls", AudioOutputTests.RunNativeAsync, false)
@@ -127,6 +127,16 @@ namespace MajMusic.Tests
 
             Console.WriteLine($"Passed {selected.Length} regression groups.");
             return 0;
+        }
+
+        /// <summary>Registers a group with its own Avalonia application and dispatcher lifetime.</summary>
+        /// <param name="name">The registered group name.</param>
+        /// <param name="run">The group's UI assertions.</param>
+        /// <param name="runByDefault">Whether the default suite includes the group.</param>
+        /// <returns>The process-isolated regression group.</returns>
+        private static (string Name, Func<Task> Run, bool RunByDefault) Headless(string name, Func<Task> run, bool runByDefault = true)
+        {
+            return (name, () => HeadlessProcessIsolation.RunAsync(name, run), runByDefault);
         }
     }
 }

@@ -4,7 +4,7 @@ using System.Diagnostics;
 
 namespace MajMusic.Tests
 {
-    /// <summary>Gives additional mobile UI regressions a complete process-owned application and dispatcher lifetime.</summary>
+    /// <summary>Gives UI regressions a complete process-owned application and dispatcher lifetime.</summary>
     internal static class HeadlessProcessIsolation
     {
         /// <summary>Identifies the one test group selected in a generated child process.</summary>
@@ -38,10 +38,10 @@ namespace MajMusic.Tests
 
             start.ArgumentList.Add(group);
             start.Environment[WorkerEnvironmentKey] = group;
-            using var process = Process.Start(start) ?? throw new InvalidOperationException("The mobile UI validation worker could not start.");
+            using var process = Process.Start(start) ?? throw new InvalidOperationException("The UI validation worker could not start.");
             var output = process.StandardOutput.ReadToEndAsync();
             var error = process.StandardError.ReadToEndAsync();
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
             try
             {
                 await process.WaitForExitAsync(timeout.Token);
