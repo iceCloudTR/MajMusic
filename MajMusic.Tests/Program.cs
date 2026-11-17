@@ -71,6 +71,7 @@ namespace MajMusic.Tests
                 ("scroll-gutters", ScrollGutterLayoutTests.RunAsync, true),
                 ("arc-responsive", ArcResponsiveLayoutTests.RunAsync, true),
                 ("arc-motion", ArcMotionTests.RunAsync, true),
+                ("rapid-nav-icons", RapidNavigationIconTests.RunAsync, true),
                 ("appearance", AppearanceTests.RunAsync, true),
                 ("surface-motion", SurfaceMotionTests.RunAsync, true),
                 ("browse-loading", BrowseLoadingPresentationTests.RunAsync, true),

@@ -31,6 +31,11 @@ namespace MajMusic.Diagnostics.NativeNavigation
         /// <summary>Gets the uniquely owned generated-data and measurement directory.</summary>
         public static string OutputDirectory { get; private set; } = string.Empty;
 
+        /// <summary>Gets whether to exercise interrupted home transitions instead of isolated navigation.</summary>
+        public static bool IsRapidRun { get; private set; }
+        /// <summary>Gets whether to launch the compact layout in its own native window.</summary>
+        public static bool IsCompactRapidRun { get; private set; }
+
         /// <summary>Runs only the diagnostic's own desktop lifetime.</summary>
         /// <param name="args">An optional absolute artifact destination.</param>
         /// <returns>Zero after successful measurement, or one after a recorded diagnostic failure.</returns>
@@ -41,7 +46,9 @@ namespace MajMusic.Diagnostics.NativeNavigation
             {
                 throw new PlatformNotSupportedException("This diagnostic requires actual Windows windowing.");
             }
-            OutputDirectory = Path.GetFullPath(args.FirstOrDefault() ?? Path.Combine(Environment.CurrentDirectory, "artifacts",
+            IsCompactRapidRun = args.Contains("--rapid-mobile", StringComparer.Ordinal);
+            IsRapidRun = IsCompactRapidRun || args.Contains("--rapid", StringComparer.Ordinal);
+            OutputDirectory = Path.GetFullPath(args.FirstOrDefault(argument => argument is not ("--rapid" or "--rapid-mobile")) ?? Path.Combine(Environment.CurrentDirectory, "artifacts",
                 "native-navigation-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N")[..8]));
             Directory.CreateDirectory(OutputDirectory);
             return AppBuilder.Configure<DiagnosticApplication>().UsePlatformDetect().WithInterFont()
@@ -67,8 +74,8 @@ namespace MajMusic.Diagnostics.NativeNavigation
                 var window = new Window
                 {
                     Title = "MajMusic · synthetic navigation diagnostics",
-                    Width = 1377,
-                    Height = 900,
+                    Width = Program.IsCompactRapidRun ? 420 : 1377,
+                    Height = Program.IsCompactRapidRun ? 820 : 900,
                     Content = new TextBlock { Text = "Preparing generated music…", Margin = new Thickness(24) }
                 };
                 desktop.MainWindow = window;
@@ -77,7 +84,14 @@ namespace MajMusic.Diagnostics.NativeNavigation
                     var exit = 0;
                     try
                     {
-                        await NavigationRunner.RunAsync(window, Program.OutputDirectory);
+                        if (Program.IsRapidRun)
+                        {
+                            await RapidNavigationRunner.RunAsync(window, Program.OutputDirectory);
+                        }
+                        else
+                        {
+                            await NavigationRunner.RunAsync(window, Program.OutputDirectory);
+                        }
                     }
                     catch (Exception exception)
                     {

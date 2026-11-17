@@ -86,7 +86,7 @@ namespace MajMusic.Tests
                     window.Show();
                     await AdvanceAsync(clock, window, 450, timeout.Token);
                     var browser = view.GetVisualDescendants().OfType<BrowseTracksView>().Single();
-                    var list = browser.FindControl<ListBox>("CardRowsList")!;
+                    var list = browser.ActiveList;
                     var surface = browser.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!;
                     var skeleton = browser.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!;
                     TestAssert.True(model.MaterializedCardCount > 0 && model.MaterializedCardCount < 100,
@@ -106,7 +106,7 @@ namespace MajMusic.Tests
                     var obsolete = model.HomeUpdate;
                     TestAssert.True(model.IsBrowseLoading && model.IsRecommendationsMode && model.BrowseTransitionVersion > transition,
                         "The actual mode click must announce its target and loading presentation before awaiting the network.");
-                    TestAssert.True(!list.IsVisible && !browser.FindControl<Grid>("BrowseContentPresentation")!.IsEnabled,
+                    TestAssert.True(!browser.ActiveList.IsVisible && list.GetVisualParent() is Grid { IsHitTestVisible: false },
                         "Old songs must immediately stop accepting interaction while the target loads.");
                     await firstStarted.Task.WaitAsync(timeout.Token);
                     await AdvanceAsync(clock, window, 110, timeout.Token);
@@ -148,11 +148,11 @@ namespace MajMusic.Tests
                         && skeleton.Opacity == 1 && skeleton.RenderTransform is null,
                         "Completed songs must replace their placeholders immediately without a second fade, scale or vertical entrance.");
                     await AdvanceAsync(clock, window, 420, timeout.Token);
-                    TestAssert.True(!model.IsBrowseLoading && model.Tracks.Count == 50 && list.IsVisible
-                        && model.MaterializedCardCount < 50 && skeleton.PlaceholderCount == 0,
+                    TestAssert.True(!model.IsBrowseLoading && model.Tracks.Count == 50 && browser.ActiveList.IsVisible
+                        && model.MaterializedCardCount < 100 && skeleton.PlaceholderCount == 0,
                         "Completion must replace bounded placeholders with only the first viewport of the current account's songs.");
                     TestAssert.True(browser.ContentViewport == stableLane
-                        && browser.GetVisualDescendants().OfType<SongCard>().Where(card => card.IsEffectivelyVisible)
+                        && browser.ActiveList.GetVisualDescendants().OfType<SongCard>().Where(card => card.IsEffectivelyVisible)
                             .All(card => Math.Abs(card.Bounds.Width - stableCard.Width) <= 1 && Math.Abs(card.Bounds.Height - stableCard.Height) <= 1),
                         "Replacing placeholders with the full overflowing page must not shrink the lane or reposition card contents.");
                     var completed = Capture(window, "ui-browse-loading-completed.png");

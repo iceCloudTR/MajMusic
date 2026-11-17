@@ -105,7 +105,7 @@ namespace MajMusic.Tests
                     await viewModel.HomeUpdate;
                     await viewModel.MetadataRefresh;
                     SaveFrame(window, Path.Combine(output, "ui-library-cards-dark.png"));
-                    var trackList = view.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "CardRowsList");
+                    var trackList = view.GetVisualDescendants().OfType<BrowseTracksView>().Single().ActiveList;
                     var visibleCards = trackList.GetVisualDescendants().OfType<SongCard>().Where(item =>
                     {
                         var position = item.TranslatePoint(default, trackList);
@@ -321,7 +321,7 @@ namespace MajMusic.Tests
             await WaitForBrowseCoversAsync(view);
             TestAssert.True(viewModel.SelectedTrack is null && viewModel.CardTracks.Any(card => card.Cover is not null),
                 "Visible artwork must load before a song is selected or played.");
-            var cardsList = view.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "CardRowsList");
+            var cardsList = view.GetVisualDescendants().OfType<BrowseTracksView>().Single().ActiveList;
             var initialCards = cardsList.GetVisualDescendants().OfType<SongCard>().ToArray();
             TestAssert.True(initialCards.Length < viewModel.CardTracks.Count,
                 "A long artwork feed must realize only the viewport and its nearby rows.");
@@ -645,7 +645,7 @@ namespace MajMusic.Tests
 
             foreach (var list in view.GetVisualDescendants().OfType<ListBox>().Where(item => item.IsEffectivelyVisible))
             {
-                if (list.Name == "CardRowsList")
+                if (list is BrowseCardListBox)
                 {
                     continue;
                 }

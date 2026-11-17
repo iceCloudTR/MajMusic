@@ -49,6 +49,9 @@
             <Setter Property="Width" Value="44" />
             <Setter Property="Height" Value="44" />
         </Style>
+        <Style Selector="arcm|TabbarItem">
+            <Setter Property="arc:ArcMotion.Level" Value="Reduced" />
+        </Style>
         <Style Selector="arcm|SegmentedItem">
             <Setter Property="MinHeight" Value="44" />
         </Style>
@@ -102,8 +105,8 @@
                     <Border Height="44" ClipToBounds="True">
                         <arcm:Searchbar x:Name="MobileSearchBox" Text="{Binding SearchText, Mode=TwoWay}" PlaceholderText="搜索音乐" Height="44" Padding="8,0,44,0" ShowClearButton="False" Submitted="OnSearchSubmitted" />
                     </Border>
-                    <arcm:IconButton x:Name="MobileSearchButton" Icon="{StaticResource MobileSearchIcon}" Variant="Plain" Transitions="{x:Null}" Click="OnSearchClicked" AutomationProperties.Name="搜索音乐" />
-                    <arcm:IconButton x:Name="MobileCancelSearchButton" Icon="{StaticResource MobileCloseIcon}" Variant="Plain" Transitions="{x:Null}" Click="OnSearchClicked" AutomationProperties.Name="关闭搜索" />
+                    <arcm:IconButton x:Name="MobileSearchButton" Icon="{StaticResource MobileSearchIcon}" Variant="Plain" RenderTransform="{x:Null}" Transitions="{x:Null}" Click="OnSearchClicked" AutomationProperties.Name="搜索音乐" />
+                    <arcm:IconButton x:Name="MobileCancelSearchButton" Icon="{StaticResource MobileCloseIcon}" Variant="Plain" RenderTransform="{x:Null}" Transitions="{x:Null}" Click="OnSearchClicked" AutomationProperties.Name="关闭搜索" />
                 </theme:SearchRevealPanel>
                 <views:BrowseTracksView x:Name="MobileSongBrowser" Grid.Row="2" ForceSingleColumn="True" />
                 <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="8">
@@ -315,7 +318,7 @@
         <arcm:Page.Footer>
             <Grid RowDefinitions="Auto,Auto">
                 <Border x:Name="MobileMiniPlayer" Background="{DynamicResource MusicPanelBrush}" CornerRadius="12" Margin="12,6" Padding="12,6">
-                    <Grid RowDefinitions="44,44,Auto">
+                    <Grid RowDefinitions="44,44,14">
                         <Grid ColumnDefinitions="*,44,44,44" ColumnSpacing="2">
                             <theme:MetadataTransition ChangeKey="{Binding PlaybackTitle}" SecondaryKey="{Binding PlaybackArtist}" VerticalAlignment="Center" HorizontalContentAlignment="Stretch">
                                 <StackPanel VerticalAlignment="Center" Spacing="2">
@@ -323,7 +326,7 @@
                                     <TextBlock Text="{Binding PlaybackArtist}" Classes="mobileLabel" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                             </theme:MetadataTransition>
-                            <arcm:IconButton x:Name="MobilePreviousButton" Grid.Column="1" Icon="{StaticResource MobilePreviousIcon}" Variant="Plain" Command="{Binding PreviousCommand}" AutomationProperties.Name="上一首" />
+                            <arcm:IconButton x:Name="MobilePreviousButton" Grid.Column="1" Icon="{StaticResource MobilePreviousIcon}" Variant="Plain" RenderTransform="{x:Null}" Command="{Binding PreviousCommand}" AutomationProperties.Name="上一首" />
                             <arcm:Button x:Name="MobilePlayPauseButton" Grid.Column="2" Variant="Tinted" Command="{Binding TogglePlayPauseCommand}" Padding="0" RenderTransform="{x:Null}" AutomationProperties.Name="{Binding TransportButtonText}">
                                 <theme:PlayPauseTransition x:Name="MobileTransportGlyphTransition" IsPlaying="{Binding IsPlaying}" Width="20" Height="20">
                                     <Canvas Width="20" Height="20">
@@ -332,7 +335,7 @@
                                     </Canvas>
                                 </theme:PlayPauseTransition>
                             </arcm:Button>
-                            <arcm:IconButton x:Name="MobileNextButton" Grid.Column="3" Icon="{StaticResource MobileNextIcon}" Variant="Plain" Command="{Binding NextCommand}" AutomationProperties.Name="下一首" />
+                            <arcm:IconButton x:Name="MobileNextButton" Grid.Column="3" Icon="{StaticResource MobileNextIcon}" Variant="Plain" RenderTransform="{x:Null}" Command="{Binding NextCommand}" AutomationProperties.Name="下一首" />
                         </Grid>
                         <Grid Grid.Row="1" ColumnDefinitions="36,*,36" ColumnSpacing="6">
                             <TextBlock Text="{Binding PositionText}" Classes="mobileLabel" FontSize="10" VerticalAlignment="Center" />
@@ -340,8 +343,8 @@
                             <TextBlock Grid.Column="2" Text="{Binding DurationText}" Classes="mobileLabel" FontSize="10" VerticalAlignment="Center" HorizontalAlignment="Right" />
                         </Grid>
                         <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="8">
-                            <TextBlock Text="{Binding Status}" IsVisible="{Binding HasStatus}" Classes="mobileLabel" FontSize="10" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Grid.Column="1" Text="{Binding PlaybackHint}" IsVisible="{Binding HasPlaybackHint}" Classes="mobileLabel" FontSize="10" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding Status}" IsVisible="{Binding HasStatus}" Classes="mobileLabel" FontSize="10" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="{Binding PlaybackHint}" IsVisible="{Binding HasPlaybackHint}" Classes="mobileLabel" FontSize="10" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                         </Grid>
                     </Grid>
                 </Border>
@@ -373,12 +376,12 @@
                             <arcm:Button x:Name="MobileExpandDetailsButton" Grid.Column="2" Content="↗" Variant="Plain" Command="{Binding OpenExpandedSongDetailsCommand}" AutomationProperties.Name="展开详情" />
                         </Grid>
                         <Grid ColumnDefinitions="44,*,*,*,44" ColumnSpacing="4">
-                            <arcm:IconButton x:Name="MobileShuffleButton" Classes="playbackMode" Classes.active="{Binding IsShuffle}" Icon="{StaticResource MobileShuffleIcon}" Variant="Plain" Command="{Binding ToggleShuffleCommand}" AutomationProperties.Name="{Binding ShuffleModeText}" />
+                            <arcm:IconButton x:Name="MobileShuffleButton" Classes="playbackMode" Classes.active="{Binding IsShuffle}" Icon="{StaticResource MobileShuffleIcon}" Variant="Plain" RenderTransform="{x:Null}" Command="{Binding ToggleShuffleCommand}" AutomationProperties.Name="{Binding ShuffleModeText}" />
                             <arcm:Button x:Name="MobileDetailLikeButton" Grid.Column="1" Content="{Binding FavoriteButtonText}" FontSize="12" Padding="3,0" Variant="Tinted" Command="{Binding ToggleFavoriteCommand}" />
                             <arcm:Button x:Name="MobileDetailDownloadButton" Grid.Column="2" Content="下载" FontSize="12" Padding="3,0" Variant="Tinted" Command="{Binding DownloadCommand}" />
                             <arcm:Button x:Name="MobileDetailPlayButton" Grid.Column="3" Content="播放这首" FontSize="12" Padding="3,0" Click="OnPlaySelectedClicked" IsEnabled="{Binding CanPlay}" />
                             <Grid Grid.Column="4">
-                                <arcm:IconButton x:Name="MobileRepeatButton" Classes="playbackMode" Classes.active="{Binding IsRepeating}" Icon="{StaticResource MobileRepeatIcon}" Variant="Plain" Command="{Binding CycleRepeatModeCommand}" AutomationProperties.Name="{Binding RepeatModeText}" />
+                                <arcm:IconButton x:Name="MobileRepeatButton" Classes="playbackMode" Classes.active="{Binding IsRepeating}" Icon="{StaticResource MobileRepeatIcon}" Variant="Plain" RenderTransform="{x:Null}" Command="{Binding CycleRepeatModeCommand}" AutomationProperties.Name="{Binding RepeatModeText}" />
                                 <TextBlock Text="1" IsVisible="{Binding IsRepeatOne}" FontSize="9" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="{DynamicResource MusicAccentBrush}" />
                             </Grid>
                         </Grid>

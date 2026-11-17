@@ -5,10 +5,13 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using MajMusic.Presentation.Theme;
+using MajMusic.Presentation.ViewModels;
+using MajMusic.Presentation.Views;
 using SkiaSharp;
 using TKCode.Arc.Motion;
 
@@ -39,6 +42,8 @@ namespace MajMusic.Tests
                 };
                 var root = new Border { Background = Brushes.Black, Child = gesture };
                 var window = new Window { Width = 400, Height = 200, Background = Brushes.Black, Content = root };
+                IPointer? input = null;
+                window.AddHandler(InputElement.PointerPressedEvent, (_, args) => input = args.Pointer, RoutingStrategies.Tunnel);
                 var plays = 0;
                 gesture.PlayRequested += (_, _) => plays++;
                 try
@@ -105,6 +110,43 @@ namespace MajMusic.Tests
                     await FramesAsync(window, 320);
                     TestAssert.True(ReadGlyph(window, gesture).Peak > 240 && gesture.Progress == 0 && plays == 5,
                         "Detaching and reattaching must discard the previous restore callback and retain one stable resting icon.");
+
+                    var end = new Point(point.X + 225, point.Y);
+                    window.MouseDown(point, MouseButton.Left);
+                    window.MouseMove(end, RawInputModifiers.LeftMouseButton);
+                    await UntilAsync(window, () => gesture.Progress > .15, "A capture interruption must start with the icon in flight.");
+                    var atCaptureLoss = gesture.Progress;
+                    TestAssert.True(ReferenceEquals(input?.Captured, gesture), "The actual pointer must be captured by the moving icon.");
+                    input!.Capture(null);
+                    TestAssert.Equal(atCaptureLoss, gesture.Progress, "Losing capture must retain the current icon position before rolling back.");
+                    window.MouseUp(end, MouseButton.Left);
+                    await UntilAsync(window, () => gesture.Progress == 0 && gesture.TransitionUpdate.IsCompleted,
+                        "Losing capture must return the icon along its existing path.");
+                    TestAssert.Equal(5, plays, "Interrupted pointer capture must not play the song.");
+
+                    window.Content = null;
+                    var strip = new ResidentBrowseStrip { Children = { root, new Border(), new Border() } };
+                    strip.InitializePages();
+                    window.Content = strip;
+                    Pump(window);
+                    point = gesture.TranslatePoint(ReadGlyph(window, gesture).Bounds.Center, window)!.Value;
+                    end = new Point(point.X + 225, point.Y);
+                    window.MouseDown(point, MouseButton.Left);
+                    window.MouseMove(end, RawInputModifiers.LeftMouseButton);
+                    await UntilAsync(window, () => gesture.Progress > .15, "A held quick-play drag must paint its intermediate geometry.");
+                    var before = gesture.Progress;
+                    strip.Navigate(HomeBrowseMode.Playlists, animate: true);
+                    TestAssert.Equal(before, gesture.Progress, "Navigation must not snap a held icon to another position.");
+                    window.MouseUp(end, MouseButton.Left);
+                    strip.Navigate(HomeBrowseMode.Recommendations, animate: true);
+                    await UntilAsync(window, () => gesture.Progress == 0 && gesture.TransitionUpdate.IsCompleted,
+                        "Taking input away must smoothly roll back the uncommitted drag.");
+                    TestAssert.Equal(5, plays, "A release over a different resident page must never start playback.");
+
+                    Tap(window, point);
+                    strip.Navigate(HomeBrowseMode.Library, animate: true);
+                    await UntilAsync(window, () => plays == 6,
+                        "A quick-play click committed before navigation must still play once after its exit.");
                 }
                 finally
                 {

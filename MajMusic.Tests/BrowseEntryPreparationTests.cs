@@ -136,7 +136,7 @@ namespace MajMusic.Tests
                 AssertSkeletonEntry(window, browser, surface, "query");
                 query.TrySetResult(workspace.Inner.Library.ToArray());
                 await coverStarted.Task.WaitAsync(token);
-                var observingCard = model.CardTracks[^1];
+                var observingCard = model.GetBrowsePage(HomeBrowseMode.Library).CardTracks[^1];
                 var ready = observingCard.ActivateAsync();
                 cover.TrySetResult(newCover);
                 await ready.WaitAsync(token);
@@ -157,31 +157,30 @@ namespace MajMusic.Tests
                 var requests = workspace.CoverRequests[target.Id];
                 workspace.Inner.SearchOverride = null;
                 await model.BrowsePreloadUpdate.WaitAsync(token);
-                Tap(window, view.FindControl<SegmentedControl>("HomeModeSegments")!.ContainerFromIndex(2)!);
-                TestAssert.Equal(12, model.CardTracks.Count, "A warm library entry must first publish its bounded prepared prefix.");
-                var preparedRows = model.BrowseRows.ToArray();
-                var expansion = new List<NotifyCollectionChangedEventArgs>();
-                void OnLibraryExpanded(object? sender, NotifyCollectionChangedEventArgs args)
+                var library = model.GetBrowsePage(HomeBrowseMode.Library);
+                var preparedCatalog = library.CardTracks;
+                var preparedRows = library.Rows.ToArray();
+                var changes = new List<NotifyCollectionChangedEventArgs>();
+                void OnLibraryChanged(object? sender, NotifyCollectionChangedEventArgs args)
                 {
-                    expansion.Add(args);
+                    changes.Add(args);
                 }
 
-                model.BrowseRows.CollectionChanged += OnLibraryExpanded;
+                library.Rows.CollectionChanged += OnLibraryChanged;
                 try
                 {
+                    Tap(window, view.FindControl<SegmentedControl>("HomeModeSegments")!.ContainerFromIndex(2)!);
+                    TestAssert.True(ReferenceEquals(preparedCatalog, model.CardTracks) && model.CardTracks.Count > 25,
+                        "A warm library switch must use the complete prepared catalog before its first frame.");
                     Advance(clock, window, 420);
                     await model.HomeUpdate.WaitAsync(token);
                 }
                 finally
                 {
-                    model.BrowseRows.CollectionChanged -= OnLibraryExpanded;
+                    library.Rows.CollectionChanged -= OnLibraryChanged;
                 }
-                TestAssert.True(expansion.Count == 1 && expansion[0].Action == NotifyCollectionChangedAction.Add
-                    && expansion[0].NewStartingIndex == preparedRows.Length
-                    && expansion[0].NewItems!.Count == model.BrowseRows.Count - preparedRows.Length,
-                    "Completing a prepared library prefix must append its full tail once without resetting existing virtualized rows.");
-                TestAssert.True(preparedRows.Select((row, index) => ReferenceEquals(row, model.BrowseRows[index])).All(retained => retained),
-                    "Prepared first-screen rows must keep their presentation identities when the complete catalog arrives.");
+                TestAssert.True(changes.Count == 0 && preparedRows.SequenceEqual(model.BrowseRows),
+                    "A prepared page must move and settle without rebinding or extending its rows.");
                 var skeleton = browser.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!;
                 var reusedBeforeEntry = skeleton.ReusedPlaceholderCount;
                 var createdBeforeEntry = skeleton.CreatedPlaceholderCount;
@@ -277,7 +276,8 @@ namespace MajMusic.Tests
                     obsoleteStarted.TrySetResult();
                     return obsoleteRead.Task;
                 };
-                Tap(window, view.FindControl<SegmentedControl>("HomeModeSegments")!.ContainerFromIndex(2)!);
+                model.BeginSearchCommand.Execute(null);
+                model.SearchText = "Obsolete query";
                 var obsoleteUpdate = model.HomeUpdate;
                 await obsoleteStarted.Task.WaitAsync(token);
                 workspace.Inner.SearchOverride = null;
@@ -439,7 +439,7 @@ namespace MajMusic.Tests
         private static void AssertSkeletonEntry(Window window, BrowseTracksView browser, MusicSurfaceHost surface, string phase, SKColor? lateColor = null)
         {
             TestAssert.True(surface.TransitionProgress is > 0 and < 1 && browser.FindControl<Grid>("BrowseSkeletonPresentation")!.IsVisible
-                && !browser.FindControl<ListBox>("CardRowsList")!.IsVisible,
+                && !browser.ActiveList.IsVisible,
                 "The incoming skeleton must stay fixed until the complete mode slide finishes: " + phase);
             TestAssert.True(!ContainsTargetColor(window, "ui-entry-" + phase + ".png", lateColor),
                 "A completed late cover must not suddenly paint over the entering skeleton: " + phase);

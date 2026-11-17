@@ -114,7 +114,8 @@ namespace MajMusic.Tests
         /// <returns>A task representing stable artwork geometry checks.</returns>
         private static async Task ValidateArtworkStabilityAsync(Window window, MainView view, CancellationToken token)
         {
-            var card = view.GetVisualDescendants().OfType<SongCard>().Single();
+            var card = view.GetVisualDescendants().OfType<BrowseTracksView>().Single().ActiveList
+                .GetVisualDescendants().OfType<SongCard>().Single();
             var button = card.GetVisualDescendants().OfType<ArcButton>().Single();
             var point = Center(button, window);
             window.MouseDown(point, MouseButton.Left);

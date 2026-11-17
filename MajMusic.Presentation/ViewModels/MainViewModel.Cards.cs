@@ -11,70 +11,76 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Shares bounded thumbnail requests among all card controls in this view.</summary>
         private CoverThumbnailCache? _cardCovers;
         /// <summary>Preserves one card for each currently browsed source-scoped music identity.</summary>
-        private Dictionary<(string Id, string Source, string? Endpoint), SongCardViewModel> _cards = new();
+        private readonly Dictionary<(string Id, string Source, string? Endpoint), SongCardViewModel> _cards = new();
         /// <summary>Locates entries without constructing presentations for unvisited songs.</summary>
         private Dictionary<(string Id, string Source, string? Endpoint), int> _cardIndexes = new();
         /// <summary>Retains canceled checks belonging to cards removed from the query until they finish.</summary>
         private readonly List<Task> _retiredCardResources = new();
 
         /// <summary>Gets current music cards in the same order as the browsed music collection.</summary>
-        public IReadOnlyList<SongCardViewModel> CardTracks { get; private set; } = Array.Empty<SongCardViewModel>();
+        public IReadOnlyList<SongCardViewModel> CardTracks => ActiveBrowsePage.CardTracks;
         /// <summary>Gets the number of materialized song presentations retained by the current catalog.</summary>
         public int MaterializedCardCount => _cards.Count;
 
         /// <summary>Reconciles the browsed entries in one binding update while reusing unchanged card instances.</summary>
+        /// <param name="page">The page whose content was actually replaced.</param>
         /// <param name="snapshot">The prepared catalog and its background-built identity index.</param>
         /// <param name="preparedCovers">The first-screen artwork adopted before any row binding becomes visible.</param>
-        private void RefreshCardTracks(BrowseSnapshot? snapshot = null, CoverThumbnailCache.PreloadBatch? preparedCovers = null)
+        private void RefreshCardTracks(HomeBrowsePage page, BrowseSnapshot snapshot, CoverThumbnailCache.PreloadBatch? preparedCovers)
         {
             _retiredCardResources.RemoveAll(task => task.IsCompletedSuccessfully);
-            var tracks = snapshot?.Tracks ?? Tracks.ToArray();
-            _cardIndexes = snapshot?.Indexes ?? tracks.Select((track, index) => (track, index))
-                .ToDictionary(item => (item.track.Id, item.track.SourceId, item.track.EndpointId), item => item.index);
-            var next = new Dictionary<(string, string, string?), SongCardViewModel>();
-            var retained = new List<(SongCardViewModel Card, MusicTrack Track)>();
-            var retired = new List<SongCardViewModel>();
+            page.Snapshot = snapshot;
+            page.CardTracks = new LazyCardList(snapshot.Tracks, track => MaterializeCard(page, snapshot, track));
+            foreach (var (key, card) in _cards.ToArray())
+            {
+                if (snapshot.Indexes.TryGetValue(key, out var index))
+                {
+                    var track = snapshot.Tracks[index];
+                    if (track != card.Track)
+                    {
+                        card.UpdateTrack(track);
+                    }
+                    RestoreCardDownloadProgress(card);
+                }
+                else if (!_browsePages.Any(candidate => candidate.Snapshot?.Indexes.ContainsKey(key) == true))
+                {
+                    _cards.Remove(key);
+                    card.Dispose();
+                    if (!card.ResourceCompletion.IsCompletedSuccessfully)
+                    {
+                        _retiredCardResources.Add(card.ResourceCompletion);
+                    }
+                }
+            }
+
+            UpdateResidentCoverPins();
+            AdoptResidentCovers(page, preparedCovers);
+            RefreshBrowseRows(page);
+        }
+
+        private void AdoptResidentCovers(HomeBrowsePage page, CoverThumbnailCache.PreloadBatch? covers)
+        {
+            if (covers is null)
+            {
+                return;
+            }
+
+            for (var index = 0; index < Math.Min(PreviewTrackLimit, page.CardTracks.Count); index++)
+            {
+                var card = page.CardTracks[index];
+                card.RetainCoverWhileDetached = true;
+                card.AdoptPreloadedCover(covers);
+                card.ResumeCoverLoading();
+            }
+        }
+
+        private void UpdateResidentCoverPins()
+        {
             foreach (var (key, card) in _cards)
             {
-                if (_cardIndexes.TryGetValue(key, out var index))
-                {
-                    next[key] = card;
-                    retained.Add((card, tracks[index]));
-                }
-                else
-                {
-                    retired.Add(card);
-                }
+                card.RetainCoverWhileDetached = _browsePages.Any(page => page.Snapshot?.Indexes.TryGetValue(key, out var index) == true
+                    && index < PreviewTrackLimit);
             }
-
-            _cards = next;
-            CardTracks = new LazyCardList(tracks, MaterializeCard);
-            foreach (var (card, track) in retained)
-            {
-                card.UpdateTrack(track);
-                RestoreCardDownloadProgress(card);
-            }
-
-            foreach (var card in retired)
-            {
-                card.Dispose();
-                if (!card.ResourceCompletion.IsCompletedSuccessfully)
-                {
-                    _retiredCardResources.Add(card.ResourceCompletion);
-                }
-            }
-
-            if (preparedCovers is not null)
-            {
-                for (var index = 0; index < Math.Min(PreviewTrackLimit, CardTracks.Count); index++)
-                {
-                    CardTracks[index].AdoptPreloadedCover(preparedCovers);
-                }
-            }
-
-            RefreshCardSelection();
-            OnPropertyChanged(nameof(CardTracks));
-            RefreshBrowseRows();
         }
 
         /// <summary>Finds the current row index without walking or materializing the entire catalog.</summary>
@@ -87,9 +93,11 @@ namespace MajMusic.Presentation.ViewModels
         }
 
         /// <summary>Creates a presentation only when a visible row or explicit user action requests its song.</summary>
+        /// <param name="page">The current owner of the lazy collection.</param>
+        /// <param name="snapshot">The catalog that the requesting row captured.</param>
         /// <param name="track">The descriptor captured by the requesting catalog.</param>
         /// <returns>The current stable presentation, or an inert presentation for a retired catalog.</returns>
-        private SongCardViewModel MaterializeCard(MusicTrack track)
+        private SongCardViewModel MaterializeCard(HomeBrowsePage page, BrowseSnapshot snapshot, MusicTrack track)
         {
             var key = (track.Id, track.SourceId, track.EndpointId);
             if (_cards.TryGetValue(key, out var existing))
@@ -97,10 +105,10 @@ namespace MajMusic.Presentation.ViewModels
                 return existing;
             }
 
-            var current = _cardIndexes.TryGetValue(key, out var index);
+            var current = ReferenceEquals(page.Snapshot, snapshot) && snapshot.Indexes.TryGetValue(key, out _);
             if (current)
             {
-                track = Tracks[index];
+                track = page.Tracks[snapshot.Indexes[key]];
             }
 
             _cardCovers ??= new CoverThumbnailCache(_workspace, _lifetime.Token);
@@ -159,7 +167,14 @@ namespace MajMusic.Presentation.ViewModels
 
             _cards.Clear();
             _cardIndexes.Clear();
-            CardTracks = Array.Empty<SongCardViewModel>();
+            foreach (var page in _browsePages)
+            {
+                page.Snapshot = null;
+                page.Target = null;
+                page.CardTracks = [];
+                page.MutableRows.Clear();
+                page.Tracks.Clear();
+            }
             await Task.WhenAll(resources);
             _retiredCardResources.Clear();
             if (_cardCovers is not null)
@@ -171,7 +186,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Retains the prepared immutable catalog and its source-scoped identity lookup.</summary>
         /// <param name="Tracks">The next complete catalog in display order.</param>
         /// <param name="Indexes">The index prepared away from the presentation thread.</param>
-        private sealed record BrowseSnapshot(MusicTrack[] Tracks, Dictionary<(string, string, string?), int> Indexes);
+        internal sealed record BrowseSnapshot(MusicTrack[] Tracks, Dictionary<(string, string, string?), int> Indexes);
 
         /// <summary>Defers song presentations until a visible row requests a specific catalog entry.</summary>
         private sealed class LazyCardList : IReadOnlyList<SongCardViewModel>

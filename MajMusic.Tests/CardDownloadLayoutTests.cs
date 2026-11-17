@@ -97,7 +97,7 @@ namespace MajMusic.Tests
                             window.Height = size.Height;
                             window.UpdateLayout();
                             Dispatcher.UIThread.RunJobs();
-                            var list = view.GetVisualDescendants().OfType<ListBox>().Single(control => control.Name == "CardRowsList");
+                            var list = view.GetVisualDescendants().OfType<BrowseTracksView>().Single().ActiveList;
                             list.ScrollIntoView(model.BrowseRows[0]);
                             window.UpdateLayout();
                             Dispatcher.UIThread.RunJobs();

@@ -79,7 +79,12 @@ namespace MajMusic.Presentation.ViewModels
             _homeVersion++;
             _homeUpdateCancellation?.Cancel();
             var loadingOwner = BeginBrowseLoad(true, direction, notifyPlaceholder: false);
-            if (!TryPublishPreparedPreview(loadingOwner))
+            if (TryActivateBrowsePage())
+            {
+                _residentBrowseVersion = _homeVersion;
+                FinishBrowseLoad(loadingOwner);
+            }
+            else
             {
                 OnPropertyChanged(nameof(IsBrowsePlaceholderVisible));
             }
@@ -154,21 +159,39 @@ namespace MajMusic.Presentation.ViewModels
                     break;
                 }
             }
+
+            if (_previewLibrary is { } library && collected.Any(track => !library.ContainsKey(track.Id)))
+            {
+                var indexed = await _workspace.SearchAsync(null, cancellationToken);
+                var refreshed = await Task.Run(() => indexed.ToDictionary(track => track.Id, StringComparer.Ordinal), cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (CurrentRecommendationOwner() == owner && ReferenceEquals(library, _previewLibrary))
+                {
+                    UpdatePreviewLibrary(refreshed);
+                }
+            }
         }
 
         /// <summary>Refreshes numbered pages and availability without replacing the current cards or scroll offset.</summary>
         private void NotifyRecommendationPagination()
         {
-            var pages = new RecommendationPageItem[RecommendationPageCount];
-            for (var index = 0; index < pages.Length; index++)
+            var residentPage = GetBrowsePage(HomeBrowseMode.Recommendations);
+            residentPage.SetRecommendationFooter(residentPage.IsReady && residentPage.CardTracks.Count == RecommendationCurrentPageTrackCount
+                && RecommendationPageCount > 1);
+            if (_recommendationPages.Count != RecommendationPageCount
+                || _recommendationPages.Count > 0 && !_recommendationPages[_recommendationPageIndex].IsSelected)
             {
-                var selectedIndex = index;
-                pages[index] = new RecommendationPageItem(index + 1, index == _recommendationPageIndex,
-                    CreateRecommendationPageCommand(() => selectedIndex));
-            }
+                var pages = new RecommendationPageItem[RecommendationPageCount];
+                for (var index = 0; index < pages.Length; index++)
+                {
+                    var selectedIndex = index;
+                    pages[index] = new RecommendationPageItem(index + 1, index == _recommendationPageIndex,
+                        CreateRecommendationPageCommand(() => selectedIndex));
+                }
 
-            _recommendationPages = pages;
-            OnPropertyChanged(nameof(RecommendationPages));
+                _recommendationPages = pages;
+                OnPropertyChanged(nameof(RecommendationPages));
+            }
             OnPropertyChanged(nameof(RecommendationPageNumber));
             OnPropertyChanged(nameof(RecommendationPageCount));
             OnPropertyChanged(nameof(RecommendationTotalCount));

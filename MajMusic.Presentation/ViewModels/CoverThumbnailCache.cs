@@ -116,11 +116,12 @@ namespace MajMusic.Presentation.ViewModels
         /// <param name="tracks">The next catalog in display order; at most its first twelve entries are prepared.</param>
         /// <param name="deadline">The finite time allowed for this caller's cover preparation.</param>
         /// <param name="cancellationToken">Cancels this navigation's interest without canceling another consumer.</param>
+        /// <param name="limit">The maximum number of leading cards to prepare.</param>
         /// <returns>A disposable snapshot containing ready cover pins and stable unavailable placeholders.</returns>
         /// <exception cref="ArgumentOutOfRangeException">The deadline is not a positive finite cancellation interval.</exception>
         /// <exception cref="OperationCanceledException">Navigation or the cache lifetime is canceled.</exception>
         public async Task<PreloadBatch> PreloadAsync(IReadOnlyList<MusicTrack> tracks, TimeSpan deadline,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken, int limit = MaximumPreloadedCovers)
         {
             ArgumentNullException.ThrowIfNull(tracks);
             if (deadline <= TimeSpan.Zero || deadline.TotalMilliseconds > uint.MaxValue - 1d)
@@ -138,7 +139,7 @@ namespace MajMusic.Presentation.ViewModels
             cancellationToken.ThrowIfCancellationRequested();
             using var preparation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime);
             preparation.CancelAfter(deadline);
-            var descriptors = tracks.Take(MaximumPreloadedCovers).DistinctBy(Identity).ToArray();
+            var descriptors = tracks.Take(limit).DistinctBy(Identity).ToArray();
             var prepared = new Lease?[descriptors.Length];
             try
             {
@@ -174,13 +175,14 @@ namespace MajMusic.Presentation.ViewModels
         }
 
         /// <summary>Captures only already completed cached artwork without resolving, queuing or waiting for resources.</summary>
-        /// <param name="tracks">The target catalog; at most its first twelve entries contribute distinct identities.</param>
+        /// <param name="tracks">The target catalog in display order.</param>
+        /// <param name="limit">The maximum number of leading cards to capture.</param>
         /// <returns>An independently pinned ready-image snapshot with explicit placeholders for unavailable images.</returns>
         /// <exception cref="ObjectDisposedException">The thumbnail cache has already closed.</exception>
-        public PreloadBatch CaptureReady(IReadOnlyList<MusicTrack> tracks)
+        public PreloadBatch CaptureReady(IReadOnlyList<MusicTrack> tracks, int limit = MaximumPreloadedCovers)
         {
             ArgumentNullException.ThrowIfNull(tracks);
-            var identities = tracks.Take(MaximumPreloadedCovers).Select(Identity).Distinct().ToArray();
+            var identities = tracks.Take(limit).Select(Identity).Distinct().ToArray();
             var prepared = new (CoverIdentity Identity, Lease? Lease)[identities.Length];
             lock (_gate)
             {

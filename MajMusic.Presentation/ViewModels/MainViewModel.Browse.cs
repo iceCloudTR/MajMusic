@@ -59,12 +59,18 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Lets another visible control retry after the current request owner's viewport interest ends.</summary>
         private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _browseMetadataPending = new(StringComparer.Ordinal);
         /// <summary>Retains indexed row slots and publishes only changes to the complete row count.</summary>
-        private readonly SnapshotCollection<SongCardRow> _browseRows = new();
+        private readonly HomeBrowsePage[] _browsePages = [new(), new(), new()];
+        private HomeBrowsePage ActiveBrowsePage => GetBrowsePage(_homeMode);
+
+        /// <summary>Gets the page state retained for the workspace lifetime.</summary>
+        /// <param name="mode">The home mode owning the page.</param>
+        /// <returns>The stable page whose catalog changes only when its content changes.</returns>
+        public HomeBrowsePage GetBrowsePage(HomeBrowseMode mode) => _browsePages[(int)mode];
 
         /// <summary>Gets whether browsing uses the shared artwork-card presentation in every mode.</summary>
         public bool IsCardBrowse => true;
         /// <summary>Gets the rows rendered by the virtualized artwork list.</summary>
-        public ObservableCollection<SongCardRow> BrowseRows => _browseRows;
+        public ObservableCollection<SongCardRow> BrowseRows => ActiveBrowsePage.Rows;
         /// <summary>Gets the responsive number of card columns.</summary>
         public int BrowseColumns => _browseColumns;
         /// <summary>Gets the committed mode or search generation used to reset only a new browsing query.</summary>
@@ -107,31 +113,38 @@ namespace MajMusic.Presentation.ViewModels
             if (columns != _browseColumns)
             {
                 _browseColumns = columns;
-                RefreshBrowseRows();
+                foreach (var page in _browsePages)
+                {
+                    RefreshBrowseRows(page);
+                }
+
+                OnPropertyChanged(nameof(BrowseColumns));
             }
         }
 
         /// <summary>Updates stable row slots and changes only their tail when the displayed catalog grows or shrinks.</summary>
-        private void RefreshBrowseRows()
+        private void RefreshBrowseRows(HomeBrowsePage page)
         {
-            var count = (CardTracks.Count + _browseColumns - 1) / _browseColumns;
+            var cards = page.CardTracks;
+            var currentRows = page.MutableRows;
+            var count = (cards.Count + _browseColumns - 1) / _browseColumns;
             var rows = new SongCardRow[count];
             for (var index = 0; index < count; index++)
             {
                 var start = index * _browseColumns;
-                var length = Math.Min(_browseColumns, CardTracks.Count - start);
-                if (index < BrowseRows.Count && BrowseRows[index].Columns == _browseColumns
-                    && BrowseRows[index].Tracks is CardSlice previous && previous.Matches(CardTracks, start, length))
+                var length = Math.Min(_browseColumns, cards.Count - start);
+                if (index < currentRows.Count && currentRows[index].Columns == _browseColumns
+                    && currentRows[index].Tracks is CardSlice previous && previous.Matches(cards, start, length))
                 {
-                    previous.Rebind(CardTracks, start);
-                    rows[index] = BrowseRows[index];
+                    previous.Rebind(cards, start);
+                    rows[index] = currentRows[index];
                     continue;
                 }
 
-                var slice = new CardSlice(CardTracks, start, length);
-                if (index < BrowseRows.Count)
+                var slice = new CardSlice(cards, start, length);
+                if (index < currentRows.Count)
                 {
-                    rows[index] = BrowseRows[index];
+                    rows[index] = currentRows[index];
                     rows[index].Update(slice, _browseColumns);
                 }
                 else
@@ -139,13 +152,7 @@ namespace MajMusic.Presentation.ViewModels
                     rows[index] = new SongCardRow(slice, _browseColumns);
                 }
             }
-            _browseRows.ResizeMatchingPrefix(rows);
-
-            OnPropertyChanged(nameof(BrowseColumns));
-            OnPropertyChanged(nameof(BrowseSummary));
-            OnPropertyChanged(nameof(SelectedBrowseTrack));
-            OnPropertyChanged(nameof(SelectedBrowseCard));
-            OnPropertyChanged(nameof(BrowseNavigationVersion));
+            currentRows.ResizeMatchingPrefix(rows);
         }
 
         /// <summary>Enriches a visible song without opening or changing the playback backend.</summary>

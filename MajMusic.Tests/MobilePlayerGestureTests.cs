@@ -100,7 +100,7 @@ namespace MajMusic.Tests
                     }
 
                     var browser = mobile.GetVisualDescendants().OfType<BrowseTracksView>().Single();
-                    var list = browser.FindControl<ListBox>("CardRowsList")!;
+                    var list = browser.ActiveList;
                     var point = list.TranslatePoint(new Point(8, Math.Min(220, list.Bounds.Height * .7)), window)!.Value;
                     window.MouseWheel(point, new Vector(0, -8), RawInputModifiers.None);
                     Layout(window);

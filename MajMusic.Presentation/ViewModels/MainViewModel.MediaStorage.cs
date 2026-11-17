@@ -130,10 +130,12 @@ namespace MajMusic.Presentation.ViewModels
             _previewWarmCancellation?.Cancel();
             Interlocked.Increment(ref _browseReadVersion);
             _homeVersion++;
-            _publishedPreviewVersion = -1;
+            _residentBrowseVersion = -1;
             DisposeBrowsePreviews();
-            _previewLibrary = [];
-            _previewLibraryById = new(StringComparer.Ordinal);
+            foreach (var page in _browsePages)
+            {
+                InvalidateBrowsePage(page);
+            }
             if (rootChanged)
             {
                 CancelDownloadedMetadata();

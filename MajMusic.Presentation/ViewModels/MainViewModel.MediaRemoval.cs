@@ -123,11 +123,17 @@ namespace MajMusic.Presentation.ViewModels
                 }
             }
 
-            for (var index = 0; index < Tracks.Count; index++)
+            foreach (var page in _browsePages)
             {
-                if (byOwner.TryGetValue(DownloadOwner(Tracks[index]), out var result))
+                foreach (var result in byOwner.Values)
                 {
-                    Tracks[index] = result.UpdatedTrack;
+                    var updated = result.UpdatedTrack;
+                    if (page.Snapshot?.Indexes.TryGetValue((updated.Id, updated.SourceId, updated.EndpointId), out var index) == true
+                        && SameMetadataOwner(page.Tracks[index], updated))
+                    {
+                        page.Snapshot.Tracks[index] = updated;
+                        page.Tracks[index] = updated;
+                    }
                 }
             }
             for (var index = 0; index < VisibleTracks.Count; index++)

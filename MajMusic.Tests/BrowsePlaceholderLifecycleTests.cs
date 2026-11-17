@@ -67,6 +67,7 @@ namespace MajMusic.Tests
             var window = new Window { Content = view, Width = 1100, Height = 760 };
             var pending = new TaskCompletionSource<IReadOnlyList<MusicTrack>>(TaskCreationOptions.RunContinuationsAsynchronously);
             var obsolete = new TaskCompletionSource<IReadOnlyList<MusicTrack>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var refresh = new TaskCompletionSource<IReadOnlyList<MusicTrack>>(TaskCreationOptions.RunContinuationsAsynchronously);
             try
             {
                 await model.InitializeAsync();
@@ -77,12 +78,12 @@ namespace MajMusic.Tests
                 await AdvanceAsync(clock, window, 500, token);
                 await model.BrowsePreloadUpdate.WaitAsync(token);
                 var browser = view.GetVisualDescendants().OfType<BrowseTracksView>().Single();
-                var list = browser.FindControl<ListBox>("CardRowsList")!;
+                var list = browser.GetResidentList(HomeBrowseMode.Recommendations);
                 var overlay = browser.FindControl<Grid>("BrowseSkeletonPresentation")!;
                 var skeleton = browser.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!;
                 TestAssert.True(CountColor(window, browser, true) > 500, "The source fixture must actually paint old red artwork before navigation.");
                 model.OnlineEnabled = true;
-                await model.AutomaticLogin;
+                await model.AutomaticLogin.WaitAsync(token);
                 workspace.RecommendationOverride = (_, _, _) => pending.Task;
                 TapMode(window, view, 0);
                 var update = model.HomeUpdate;
@@ -120,7 +121,6 @@ namespace MajMusic.Tests
                 TestAssert.True(!model.IsBrowsePlaceholderVisible && list.IsVisible && skeleton.PlaceholderCount == 0
                     && CountColor(window, browser, false) > 500, "Only a complete real current-target snapshot may replace the persistent placeholders.");
 
-                var refresh = new TaskCompletionSource<IReadOnlyList<MusicTrack>>(TaskCreationOptions.RunContinuationsAsynchronously);
                 var refreshStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 workspace.RecommendationOverride = (_, _, _) =>
                 {
@@ -157,7 +157,7 @@ namespace MajMusic.Tests
                 obsolete.TrySetResult([Track("late-other-owner", greenPath, second)]);
                 await superseded.WaitAsync(token);
                 await AdvanceAsync(clock, window, 450, token);
-                TestAssert.True(model.IsLibraryMode && !model.IsBrowsePlaceholderVisible && list.IsVisible && skeleton.PlaceholderCount == 0,
+                TestAssert.True(model.IsLibraryMode && !model.IsBrowsePlaceholderVisible && browser.ActiveList.IsVisible && skeleton.PlaceholderCount == 0,
                     "An old recommendation request finishing after navigation cannot restore its placeholders or replace the library.");
                 TestAssert.Equal(0, CountColor(window, browser, false), "A settled library viewport cannot retain obsolete recommendation artwork.");
             }
@@ -165,6 +165,7 @@ namespace MajMusic.Tests
             {
                 pending.TrySetResult([]);
                 obsolete.TrySetResult([]);
+                refresh.TrySetResult([]);
                 window.Close();
                 await model.DisposeAsync();
                 var parent = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;

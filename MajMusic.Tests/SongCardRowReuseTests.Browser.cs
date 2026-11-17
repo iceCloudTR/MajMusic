@@ -70,7 +70,7 @@ namespace MajMusic.Tests
                     && BrowserCards(view.GetVisualDescendants().OfType<BrowseTracksView>().Single()).Any(card => ((SongCardViewModel)card.DataContext!).Cover is not null),
                     "The first real playlist must realize its local artwork before recording control references.");
                 var browser = view.GetVisualDescendants().OfType<BrowseTracksView>().Single();
-                var list = browser.FindControl<ListBox>("CardRowsList")!;
+                var list = browser.ActiveList;
                 var original = new HashSet<SongCard>(BrowserCards(browser), ReferenceEqualityComparer.Instance);
                 TestAssert.True(original.Count > 0 && list.GetVisualDescendants().OfType<VirtualizingStackPanel>().Any(),
                     "The fixture must use actual realized song controls under the native virtualizing panel.");
@@ -144,7 +144,7 @@ namespace MajMusic.Tests
         /// <returns>The real visible child-control prefix.</returns>
         private static IReadOnlyList<SongCard> BrowserCards(BrowseTracksView browser)
         {
-            return browser.GetVisualDescendants().OfType<SongCard>()
+            return browser.ActiveList.GetVisualDescendants().OfType<SongCard>()
                 .Where(card => card.IsVisible && card.IsBrowsingActive && card.DataContext is SongCardViewModel).ToArray();
         }
 
@@ -154,7 +154,7 @@ namespace MajMusic.Tests
         /// <param name="layout">The expected density applied to each existing child.</param>
         private static void ValidateBrowserRows(BrowseTracksView browser, int columns, SongCardLayout layout)
         {
-            var rows = browser.GetVisualDescendants().OfType<SongCardRowView>()
+            var rows = browser.ActiveList.GetVisualDescendants().OfType<SongCardRowView>()
                 .Where(row => row.IsEffectivelyVisible && row.DataContext is SongCardRow).ToArray();
             TestAssert.True(rows.Length > 0, "Responsive grouping must retain actual realized music rows.");
             foreach (var row in rows)

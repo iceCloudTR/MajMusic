@@ -8,6 +8,8 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Rendering;
+using Avalonia.VisualTree;
+using MajMusic.Presentation.Views;
 using TKCode.Arc.Motion;
 
 namespace MajMusic.Presentation.Theme
@@ -77,6 +79,8 @@ namespace MajMusic.Presentation.Theme
         private double _restoreOpacity = 1;
         /// <summary>Tracks the pointer whose initial press hit the cover-corner circle.</summary>
         private IPointer? _pointer;
+        /// <summary>Tracks the resident page's input gate only while a pointer is held.</summary>
+        private Control? _pointerPage;
         /// <summary>Stores the pointer's initial position independently of the animated circle.</summary>
         private Point _pressPosition;
         /// <summary>Distinguishes a deliberate horizontal drag from an ordinary click.</summary>
@@ -234,6 +238,12 @@ namespace MajMusic.Presentation.Theme
             _pressPosition = e.GetPosition(this);
             _pointer = e.Pointer;
             _dragging = false;
+            _pointerPage = this.GetVisualAncestors().OfType<Control>()
+                .FirstOrDefault(ancestor => ancestor.GetVisualParent() is ResidentBrowseStrip);
+            if (_pointerPage is not null)
+            {
+                _pointerPage.PropertyChanged += OnPointerPageChanged;
+            }
             Focus(NavigationMethod.Pointer);
             e.Pointer.Capture(this);
         }
@@ -299,7 +309,7 @@ namespace MajMusic.Presentation.Theme
             base.OnPointerCaptureLost(e);
             if (ReferenceEquals(_pointer, e.Pointer))
             {
-                ResetGesture();
+                RollBackPointerGesture();
             }
         }
 
@@ -626,11 +636,41 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Releases pointer ownership before the resulting capture notification can cancel a valid release.</summary>
         private void ReleasePointer()
         {
+            if (_pointerPage is not null)
+            {
+                _pointerPage.PropertyChanged -= OnPointerPageChanged;
+                _pointerPage = null;
+            }
             var pointer = _pointer;
             _pointer = null;
             if (pointer is not null && ReferenceEquals(pointer.Captured, this))
             {
                 pointer.Capture(null);
+            }
+        }
+
+        /// <summary>Rolls an uncommitted drag back along its path when navigation takes input away from its page.</summary>
+        /// <param name="sender">The resident page that owned the active drag.</param>
+        /// <param name="change">The page's current input gate.</param>
+        private void OnPointerPageChanged(object? sender, AvaloniaPropertyChangedEventArgs change)
+        {
+            if (change.Property == IsHitTestVisibleProperty && _pointerPage is { IsHitTestVisible: false })
+            {
+                RollBackPointerGesture();
+            }
+        }
+
+        /// <summary>Releases the held pointer and preserves the painted pose until the next animation frame.</summary>
+        private void RollBackPointerGesture()
+        {
+            ReleasePointer();
+            if (_progress > 0 && IsEffectivelyVisible)
+            {
+                _transitionUpdate = SettleAsync(false);
+            }
+            else
+            {
+                ResetGesture();
             }
         }
 

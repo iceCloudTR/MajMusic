@@ -4,42 +4,29 @@ using MajMusic.Core.Models;
 
 namespace MajMusic.Presentation.ViewModels
 {
-    /// <summary>Prepares bounded first-screen artwork and keeps each incoming surface stable throughout navigation.</summary>
     public sealed partial class MainViewModel
     {
-        /// <summary>Bounds preparation to a small first-screen prefix rather than the complete library.</summary>
-        private const int PreviewTrackLimit = 12;
-        /// <summary>Bounds independently pinned recommendation, library and playlist previews.</summary>
-        private const int PreviewCapacity = 6;
-        /// <summary>Bounds one foreground or background cover preparation without waiting for unresponsive sources.</summary>
+        /// <summary>Gets the number of leading card presentations and covers kept ready for each home mode.</summary>
+        public const int ResidentCardLimit = 25;
+        private const int PreviewTrackLimit = ResidentCardLimit;
+        private const int AlternatePreviewCapacity = 4;
         private static readonly TimeSpan CoverPreparationDeadline = TimeSpan.FromMilliseconds(400);
-        /// <summary>Retains only the library's first-screen descriptors already read for playlist classification.</summary>
-        private MusicTrack[] _previewLibrary = [];
-        /// <summary>Locates each saved playlist's bounded first screen without retaining the complete catalog.</summary>
-        private Dictionary<string, MusicTrack> _previewLibraryById = new(StringComparer.Ordinal);
-        /// <summary>Retains first-screen data and its independently pinned ready covers.</summary>
+        private static readonly TimeSpan ResidentCoverDeadline = TimeSpan.FromSeconds(20);
+        private IReadOnlyDictionary<string, MusicTrack>? _previewLibrary;
         private readonly Dictionary<PreviewKey, PreparedPreview> _browsePreviews = new();
-        /// <summary>Orders bounded prepared targets for eviction.</summary>
-        private long _previewStamp;
-        /// <summary>Identifies the home generation already displaying a prepared real prefix.</summary>
-        private long _publishedPreviewVersion = -1;
-        /// <summary>Indicates whether an active browsing viewport can consume speculative artwork.</summary>
         private bool _hasBrowseViewport;
-        /// <summary>Owns speculative work separately from the current navigation request.</summary>
         private CancellationTokenSource? _previewWarmCancellation;
-        /// <summary>Exposes the observed bounded warm-up batch.</summary>
+        private PreviewSpecification[] _previewWarmTargets = [];
         private Task _browsePreloadUpdate = Task.CompletedTask;
-        /// <summary>Identifies the transition whose actual view completion is registered.</summary>
         private long _browseCompletionVersion = -1;
-        /// <summary>Completes after the active view has finished painting its incoming surface.</summary>
         private Task _browseTransitionCompletion = Task.CompletedTask;
 
-        /// <summary>Gets completion of the most recently scheduled first-screen preparation.</summary>
+        /// <summary>Gets completion of the latest resident-page preparation batch.</summary>
         public Task BrowsePreloadUpdate => _browsePreloadUpdate;
 
-        /// <summary>Registers a real viewport so background preparation stays bounded to an active presentation.</summary>
-        /// <param name="width">The width used by the responsive browser, or zero on detachment.</param>
-        /// <param name="height">The visible browser height, or zero on detachment.</param>
+        /// <summary>Starts warm loading for an attached browsing surface and releases pending requests on detachment.</summary>
+        /// <param name="width">The measured browser width, or zero without a viewport.</param>
+        /// <param name="height">The measured browser height, or zero without a viewport.</param>
         public void SetBrowseViewportSize(double width, double height)
         {
             var available = double.IsFinite(width) && double.IsFinite(height) && width > 0 && height > 0;
@@ -59,9 +46,9 @@ namespace MajMusic.Presentation.ViewModels
             }
         }
 
-        /// <summary>Registers the actual surface animation without coupling the workspace to a view or animation toolkit.</summary>
-        /// <param name="version">The navigation generation owning the view transition.</param>
-        /// <param name="completion">Completes when the view has settled, detached or been superseded.</param>
+        /// <summary>Defers visible data changes until the current navigation has settled.</summary>
+        /// <param name="version">The navigation generation owned by the transition.</param>
+        /// <param name="completion">The task completed when the surface settles or is superseded.</param>
         public void SetBrowseTransitionCompletion(long version, Task completion)
         {
             ArgumentNullException.ThrowIfNull(completion);
@@ -72,41 +59,18 @@ namespace MajMusic.Presentation.ViewModels
             }
         }
 
-        /// <summary>Replaces preview metadata after a real catalog or playlist mutation.</summary>
-        /// <param name="library">The ordered library already read for playlist classification.</param>
         private void UpdatePreviewLibrary(IReadOnlyDictionary<string, MusicTrack> library)
         {
-            _previewLibrary = library.Values.Take(PreviewTrackLimit).ToArray();
-            var playlistPreviews = new Dictionary<string, MusicTrack>(StringComparer.Ordinal);
-            foreach (var playlist in Playlists)
-            {
-                var count = 0;
-                foreach (var id in playlist.TrackIds)
-                {
-                    if (!library.TryGetValue(id, out var track))
-                    {
-                        continue;
-                    }
-
-                    playlistPreviews[id] = track;
-                    if (++count == PreviewTrackLimit)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            _previewLibraryById = playlistPreviews;
+            _previewLibrary = library;
             foreach (var key in _browsePreviews.Keys.Where(key => key.Mode != HomeBrowseMode.Recommendations).ToArray())
             {
-                _browsePreviews[key].Dispose();
-                _browsePreviews.Remove(key);
+                _browsePreviews.Remove(key, out var previous);
+                previous?.Dispose();
             }
 
             QueueWarmBrowsePreviews();
         }
 
-        /// <summary>Prepares the few songs likely to be shown by the next home navigation.</summary>
         private void QueueWarmBrowsePreviews()
         {
             if (!_hasBrowseViewport || !_homeInitialized || Volatile.Read(ref _isDisposing))
@@ -114,56 +78,108 @@ namespace MajMusic.Presentation.ViewModels
                 return;
             }
 
+            var targets = new[] { PreviewFor(HomeBrowseMode.Library), PreviewFor(HomeBrowseMode.Playlists, true) }
+                .Concat(Enumerable.Range(0, RecommendationPageCount)
+                    .Select(index => PreviewFor(HomeBrowseMode.Recommendations, recommendationPage: index)))
+                .OfType<PreviewSpecification>().ToArray();
+            if (_previewWarmCancellation is { IsCancellationRequested: false }
+                && targets.Length == _previewWarmTargets.Length && targets.Zip(_previewWarmTargets).All(pair => MatchesTarget(pair.First, pair.Second)))
+            {
+                return;
+            }
+
             _previewWarmCancellation?.Cancel();
             var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             _previewWarmCancellation = cancellation;
-            var candidates = new List<PreviewSpecification?>
-            {
-                PreviewFor(HomeBrowseMode.Library), PreviewFor(HomeBrowseMode.Playlists, true)
-            };
-            for (var pageIndex = 0; pageIndex < RecommendationPageCount; pageIndex++)
-            {
-                candidates.Add(PreviewFor(HomeBrowseMode.Recommendations, recommendationPage: pageIndex));
-            }
-
-            var targets = candidates.OfType<PreviewSpecification>().ToArray();
+            _previewWarmTargets = targets;
+            var sourceNames = _settings.Endpoints.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
             _browsePreloadUpdate = RunTrackedAsync(async () =>
             {
+                var pending = new List<Task<PreparedPreview?>>(targets.Length);
                 try
                 {
                     await Task.Yield();
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    _cardCovers ??= new CoverThumbnailCache(_workspace, _lifetime.Token);
                     foreach (var target in targets)
                     {
-                        cancellation.Token.ThrowIfCancellationRequested();
-                        _browsePreviews.TryGetValue(target.Key, out var existing);
-                        if (existing is not null && ReferenceEquals(existing.Origin, target.Origin))
+                        var page = GetBrowsePage(target.Key.Mode);
+                        var committed = MatchesTarget(page.Target, target) ? page.Snapshot : null;
+                        if (committed is not null && page.ArtworkPrepared)
                         {
                             continue;
                         }
 
-                        _cardCovers ??= new CoverThumbnailCache(_workspace, _lifetime.Token);
-                        var covers = await _cardCovers.PreloadAsync(target.Tracks, CoverPreparationDeadline, cancellation.Token);
-                        if (cancellation.IsCancellationRequested)
+                        if (_browsePreviews.TryGetValue(target.Key, out var cached) && MatchesTarget(cached.Target, target))
                         {
-                            covers.Dispose();
+                            if (!ReferenceEquals(page, ActiveBrowsePage) && MatchesTarget(target, PreviewFor(target.Key.Mode, true)))
+                            {
+                                committed = cached.Snapshot;
+                            }
+                            else
+                            {
+                                continue;
+                            }
+                        }
+
+                        pending.Add(PreparePreviewAsync(target, committed, sourceNames, _cardCovers, cancellation.Token));
+                    }
+
+                    while (pending.Count > 0)
+                    {
+                        var completed = await Task.WhenAny(pending);
+                        pending.Remove(completed);
+                        var prepared = await completed;
+                        if (prepared is null)
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            await WaitForCurrentBrowseSurfaceAsync(cancellation.Token);
                             cancellation.Token.ThrowIfCancellationRequested();
-                        }
+                            var target = prepared.Target;
+                            var page = GetBrowsePage(target.Key.Mode);
+                            var current = PreviewFor(target.Key.Mode, true, target.Key.PageIndex);
+                            if (!MatchesTarget(target, current))
+                            {
+                                continue;
+                            }
 
-                        _browsePreviews.TryGetValue(target.Key, out var current);
-                        var nextTarget = PreviewFor(target.Key.Mode, true, target.Key.PageIndex);
-                        if (!ReferenceEquals(existing, current) || nextTarget is null || nextTarget.Key != target.Key
-                            || !ReferenceEquals(nextTarget.Origin, target.Origin))
+                            var active = ReferenceEquals(page, ActiveBrowsePage);
+                            if (MatchesTarget(target, PreviewFor(target.Key.Mode, !active)))
+                            {
+                                if (MatchesTarget(page.Target, target) || MatchesRecommendationPage(page, prepared))
+                                {
+                                    AdoptResidentCovers(page, prepared.Covers);
+                                    page.Target = target;
+                                    page.ArtworkPrepared = true;
+                                    continue;
+                                }
+
+                                if (!active)
+                                {
+                                    CommitBrowsePage(page, prepared.Snapshot, false, prepared.Covers, target, artworkPrepared: true);
+                                    if (_browsePreviews.Remove(target.Key, out var alternate))
+                                    {
+                                        alternate.Dispose();
+                                    }
+                                    continue;
+                                }
+                            }
+
+                            StorePreview(prepared);
+                            prepared = null;
+                        }
+                        finally
                         {
-                            covers.Dispose();
-                            continue;
+                            prepared?.Dispose();
                         }
-
-                        StorePreview(target, covers);
                     }
                 }
                 catch (OperationCanceledException)
                 {
-                    // A changed source, viewport or shutdown superseded this speculative prefix.
                 }
                 catch (Exception exception)
                 {
@@ -171,9 +187,21 @@ namespace MajMusic.Presentation.ViewModels
                 }
                 finally
                 {
+                    foreach (var incomplete in pending)
+                    {
+                        try
+                        {
+                            (await incomplete)?.Dispose();
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+
                     if (ReferenceEquals(_previewWarmCancellation, cancellation))
                     {
                         _previewWarmCancellation = null;
+                        _previewWarmTargets = [];
                     }
 
                     cancellation.Dispose();
@@ -181,89 +209,138 @@ namespace MajMusic.Presentation.ViewModels
             });
         }
 
-        /// <summary>Gets one current source-scoped first-screen target without creating card controls or making requests.</summary>
-        /// <param name="mode">The requested home mode.</param>
-        /// <param name="nextNavigation">Whether a playlist preview follows the next insertion target rather than the currently opened playlist.</param>
-        /// <param name="recommendationPage">The cached recommendation page to prepare, otherwise the currently selected page.</param>
-        /// <returns>The current preparation target, or null for an unavailable recommendation source.</returns>
+        private static async Task<PreparedPreview?> PreparePreviewAsync(PreviewSpecification target, BrowseSnapshot? committed,
+            IReadOnlyDictionary<string, string> sourceNames, CoverThumbnailCache cache, CancellationToken cancellationToken)
+        {
+            var snapshot = committed ?? await Task.Run(() => BuildBrowseSnapshot(target.GetTracks(), sourceNames, cancellationToken), cancellationToken)
+                .ConfigureAwait(false);
+            var covers = await cache.PreloadAsync(snapshot.Tracks, ResidentCoverDeadline, cancellationToken, PreviewTrackLimit).ConfigureAwait(false);
+            return new PreparedPreview(target, snapshot, covers);
+        }
+
+        private static bool MatchesRecommendationPage(HomeBrowsePage page, PreparedPreview preview)
+        {
+            return preview.Target.Key.Mode == HomeBrowseMode.Recommendations && page.Target?.Key == preview.Target.Key
+                && page.Snapshot is { } current && current.Tracks.Length == preview.Snapshot.Tracks.Length
+                && current.Tracks.Zip(preview.Snapshot.Tracks).All(pair => SameMetadataOwner(pair.First, pair.Second)
+                    && CoverThumbnailCache.Identity(pair.First) == CoverThumbnailCache.Identity(pair.Second));
+        }
+
         private PreviewSpecification? PreviewFor(HomeBrowseMode mode, bool nextNavigation = false, int? recommendationPage = null)
         {
             if (mode == HomeBrowseMode.Library)
             {
-                return new PreviewSpecification(new PreviewKey(mode, null, null, OnlineEnabled, 0), _previewLibrary, _previewLibrary.Take(PreviewTrackLimit).ToArray());
+                if (_previewLibrary is not { } library || IsSearching && mode == _homeMode)
+                {
+                    return null;
+                }
+
+                return new PreviewSpecification(new PreviewKey(mode, null, null, OnlineEnabled, 0), library, library, () => library.Values);
             }
 
             if (mode == HomeBrowseMode.Playlists)
             {
-                var playlist = nextNavigation ? SelectedPlaylist : Playlists.FirstOrDefault(item => item.Id == _activePlaylistId) ?? SelectedPlaylist;
-                return playlist is null ? null : new PreviewSpecification(new PreviewKey(mode, playlist.Id, null, OnlineEnabled, 0), playlist,
-                    playlist.TrackIds.Where(_previewLibraryById.ContainsKey).Take(PreviewTrackLimit).Select(id => _previewLibraryById[id]).ToArray());
+                if (_previewLibrary is not { } library)
+                {
+                    return null;
+                }
+
+                var playlist = nextNavigation ? SelectedPlaylist : Playlists.FirstOrDefault(item => item.Id == _activePlaylistId);
+                return new PreviewSpecification(new PreviewKey(mode, playlist?.Id, null, OnlineEnabled, 0), library, playlist,
+                    () => playlist?.TrackIds.Where(library.ContainsKey).Select(id => library[id]) ?? []);
             }
 
             var owner = CurrentRecommendationOwner();
             var pageIndex = recommendationPage ?? _recommendationPageIndex;
-            return owner is not null && _homeSnapshots.TryGetValue(owner, out var snapshot)
-                ? new PreviewSpecification(new PreviewKey(mode, null, owner, OnlineEnabled, pageIndex), snapshot.Tracks,
-                    snapshot.Tracks.Skip(pageIndex * RecommendationPageSize).Take(PreviewTrackLimit).ToArray()) : null;
+            if (owner is null || !_homeSnapshots.TryGetValue(owner, out var snapshot))
+            {
+                return null;
+            }
+
+            var tracks = snapshot.Tracks.Skip(pageIndex * RecommendationPageSize).Take(RecommendationPageSize).ToArray();
+            return new PreviewSpecification(new PreviewKey(mode, null, owner, OnlineEnabled, pageIndex), snapshot.Tracks, null, () => tracks);
         }
 
-        /// <summary>Installs a warm real first screen in the same input turn after the old surface has been captured.</summary>
-        /// <param name="loadingOwner">The loading presentation started for this navigation.</param>
-        /// <returns>Whether the current target's prepared real cards were published immediately.</returns>
-        private bool TryPublishPreparedPreview(long loadingOwner)
+        private static bool MatchesTarget(PreviewSpecification? first, PreviewSpecification? second)
         {
-            if (!_hasBrowseViewport || IsSearching || PreviewFor(_homeMode) is not { } target
-                || !_browsePreviews.TryGetValue(target.Key, out var prepared) || !ReferenceEquals(target.Origin, prepared.Origin))
+            return first is not null && second is not null && first.Key == second.Key
+                && ReferenceEquals(first.Origin, second.Origin) && ReferenceEquals(first.Selection, second.Selection);
+        }
+
+        private bool TryActivateBrowsePage()
+        {
+            if (!_hasBrowseViewport || IsSearching || PreviewFor(_homeMode) is not { } target)
             {
                 return false;
             }
 
-            var tracks = prepared.Tracks.Select(track => track.EndpointId is { } endpoint
-                && _settings.Endpoints.FirstOrDefault(item => item.Id == endpoint) is { } source
-                && source.Name != track.SourceName ? track with { SourceName = source.Name } : track).ToArray();
-            var indexes = new Dictionary<(string, string, string?), int>(tracks.Length);
-            for (var index = 0; index < tracks.Length; index++)
+            var page = ActiveBrowsePage;
+            if (page.IsReady && MatchesTarget(page.Target, target))
             {
-                var track = tracks[index];
-                indexes[(track.Id, track.SourceId, track.EndpointId)] = index;
+                PublishActiveBrowsePage(false, residentSwitch: true);
+                return true;
             }
-            var covers = _cardCovers!.CaptureReady(prepared.Tracks);
-            StorePreview(target with { Tracks = prepared.Tracks }, covers);
-            _publishedPreviewVersion = _homeVersion;
-            PublishBrowseSnapshot(new BrowseSnapshot(tracks, indexes), false, covers);
-            FinishBrowseLoad(loadingOwner);
-            return true;
+
+            if (_browsePreviews.TryGetValue(target.Key, out var prepared) && MatchesTarget(prepared.Target, target))
+            {
+                _browsePreviews.Remove(target.Key);
+                using (prepared)
+                {
+                    CommitBrowsePage(page, prepared.Snapshot, false, prepared.Covers, target, artworkPrepared: true);
+                }
+                PublishActiveBrowsePage(false, residentSwitch: true);
+                return true;
+            }
+
+            return false;
         }
 
-        /// <summary>Pins one bounded ready prefix and evicts the least recently used independent target.</summary>
-        /// <param name="target">The immutable target identity and metadata prefix.</param>
-        /// <param name="covers">The ready cover pins transferred to this cache.</param>
-        private void StorePreview(PreviewSpecification target, CoverThumbnailCache.PreloadBatch covers)
+        private void SaveUnfilteredLibraryPage()
         {
-            if (_browsePreviews.Remove(target.Key, out var previous))
+            var page = GetBrowsePage(HomeBrowseMode.Library);
+            if (page.Target is not { } target || page.Snapshot is not { } snapshot || _cardCovers is null)
+            {
+                return;
+            }
+
+            var covers = _cardCovers.CaptureReady(snapshot.Tracks, ResidentCardLimit);
+            StorePreview(new PreparedPreview(target, snapshot, covers));
+        }
+
+        private void StorePreview(PreparedPreview preview)
+        {
+            if (_browsePreviews.Remove(preview.Target.Key, out var previous))
             {
                 previous.Dispose();
             }
 
-            _browsePreviews.Add(target.Key, new PreparedPreview(target.Origin, target.Tracks, covers, ++_previewStamp));
-            while (_browsePreviews.Count > PreviewCapacity)
+            _browsePreviews.Add(preview.Target.Key, preview);
+            while (_browsePreviews.Count > AlternatePreviewCapacity)
             {
-                var victim = _browsePreviews.MinBy(item => item.Value.Stamp);
+                var victim = _browsePreviews.First();
                 victim.Value.Dispose();
                 _browsePreviews.Remove(victim.Key);
             }
         }
 
-        /// <summary>Waits for this target's actual view transition before replacing its stable incoming surface.</summary>
-        /// <param name="version">The surface generation captured by the query.</param>
-        /// <param name="cancellationToken">Cancels an obsolete navigation.</param>
-        /// <returns>A task representing completion of the registered visible movement.</returns>
-        private Task WaitForBrowseSurfaceAsync(long version, CancellationToken cancellationToken)
+        private async Task WaitForCurrentBrowseSurfaceAsync(CancellationToken cancellationToken)
         {
-            return version == _browseCompletionVersion ? _browseTransitionCompletion.WaitAsync(cancellationToken) : Task.CompletedTask;
+            while (_hasBrowseViewport)
+            {
+                var version = _browseTransitionVersion;
+                if (version != _browseCompletionVersion)
+                {
+                    return;
+                }
+
+                await _browseTransitionCompletion.WaitAsync(cancellationToken);
+                if (version == _browseTransitionVersion)
+                {
+                    return;
+                }
+            }
         }
 
-        /// <summary>Releases speculative target pins before the shared bitmap cache is disposed.</summary>
         private void DisposeBrowsePreviews()
         {
             foreach (var preview in _browsePreviews.Values)
@@ -272,51 +349,25 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             _browsePreviews.Clear();
+            _previewLibrary = null;
         }
 
-        /// <summary>Scopes previews to their mode, playlist, account and network permission.</summary>
-        /// <param name="Mode">The browsing surface to enter.</param>
-        /// <param name="Playlist">The opened playlist identity, when applicable.</param>
-        /// <param name="Owner">The selected recommendation account identity, when applicable.</param>
-        /// <param name="Online">The network permission associated with this preparation.</param>
-        /// <param name="PageIndex">The cached recommendation page, otherwise zero.</param>
-        private readonly record struct PreviewKey(HomeBrowseMode Mode, string? Playlist, string? Owner, bool Online, int PageIndex);
-        /// <summary>Retains a current source object and its bounded ordered metadata prefix.</summary>
-        /// <param name="Key">The destination and account-scoped cache identity.</param>
-        /// <param name="Origin">The immutable source object used to reject obsolete preparations.</param>
-        /// <param name="Tracks">The bounded first-screen metadata in display order.</param>
-        private sealed record PreviewSpecification(PreviewKey Key, object Origin, MusicTrack[] Tracks);
-
-        /// <summary>Owns one immutable first-screen prefix and its ready cover pins.</summary>
-        private sealed class PreparedPreview : IDisposable
+        private void InvalidateBrowsePage(HomeBrowsePage page)
         {
-            /// <summary>Constructs a cached prefix by taking ownership of its prepared pins.</summary>
-            /// <param name="origin">The catalog, playlist or account snapshot that produced the prefix.</param>
-            /// <param name="tracks">The prefix in display order.</param>
-            /// <param name="covers">The ready covers and stable unavailable placeholders.</param>
-            /// <param name="stamp">The cache access order.</param>
-            public PreparedPreview(object origin, MusicTrack[] tracks, CoverThumbnailCache.PreloadBatch covers, long stamp)
-            {
-                Origin = origin;
-                Tracks = tracks;
-                Covers = covers;
-                Stamp = stamp;
-            }
+            page.Target = null;
+            page.ArtworkPrepared = false;
+            page.SetReady(false);
+            page.SetRecommendationFooter(false);
+            page.Tracks.Clear();
+            RefreshCardTracks(page, new BrowseSnapshot([], new()), null);
+        }
 
-            /// <summary>Gets the immutable source object that invalidates a stale prefix.</summary>
-            public object Origin { get; }
-            /// <summary>Gets the bounded display descriptors.</summary>
-            public MusicTrack[] Tracks { get; }
-            /// <summary>Gets the independently pinned cover preparation.</summary>
-            public CoverThumbnailCache.PreloadBatch Covers { get; }
-            /// <summary>Gets or sets the most recent cache access order.</summary>
-            public long Stamp { get; set; }
+        internal readonly record struct PreviewKey(HomeBrowseMode Mode, string? Playlist, string? Owner, bool Online, int PageIndex);
+        internal sealed record PreviewSpecification(PreviewKey Key, object Origin, object? Selection, Func<IEnumerable<MusicTrack>> GetTracks);
 
-            /// <summary>Releases only this target's pins.</summary>
-            public void Dispose()
-            {
-                Covers.Dispose();
-            }
+        private sealed record PreparedPreview(PreviewSpecification Target, BrowseSnapshot Snapshot, CoverThumbnailCache.PreloadBatch Covers) : IDisposable
+        {
+            public void Dispose() => Covers.Dispose();
         }
     }
 }

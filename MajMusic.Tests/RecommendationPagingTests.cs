@@ -290,7 +290,7 @@ namespace MajMusic.Tests
             }
         }
 
-        /// <summary>Prepares the first twelve covers of each cached page only when a real browsing viewport is present.</summary>
+        /// <summary>Prepares the first twenty-five covers of each cached page only when a real browsing viewport is present.</summary>
         /// <returns>A task representing bounded per-page speculative artwork scope.</returns>
         private static async Task ValidatePreparedPagesAsync()
         {
@@ -310,10 +310,12 @@ namespace MajMusic.Tests
             TestAssert.Equal(0, requested.Count, "No unattached catalog may start speculative page-cover requests.");
             view.SetBrowseViewportSize(900, 480);
             await view.BrowsePreloadUpdate.WaitAsync(TimeSpan.FromSeconds(3));
-            var expected = Enumerable.Range(0, 3).SelectMany(page => Enumerable.Range(page * 50, 12))
+            var expected = Enumerable.Range(0, 3).SelectMany(page => Enumerable.Range(page * 50, MainViewModel.ResidentCardLimit))
                 .Select(index => "covers-" + index.ToString("D3")).ToHashSet(StringComparer.Ordinal);
-            TestAssert.True(requested.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(expected) && requested.Values.All(count => count == 1),
-                "A visible recommendation batch must warm each page's first twelve covers, never the remaining 114 songs.");
+            TestAssert.True(requested.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(expected)
+                && requested.Values.All(count => count <= 2),
+                "A visible recommendation batch must warm each page's first twenty-five covers, never the remaining 75 songs. "
+                + "The resident library may also attempt unavailable covers from its overlapping first page.");
             view.SetBrowseViewportSize(0, 0);
             AssertRequests(workspace, ("covers", 0));
         }

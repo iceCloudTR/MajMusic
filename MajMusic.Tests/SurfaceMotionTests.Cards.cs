@@ -79,7 +79,7 @@ namespace MajMusic.Tests
                         var browser = view.GetVisualDescendants().OfType<BrowseTracksView>().Single();
                         var surface = browser.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!;
                         var viewport = BoundsIn(surface, window);
-                        var card = browser.GetVisualDescendants().OfType<SongCard>()
+                        var card = browser.ActiveList.GetVisualDescendants().OfType<SongCard>()
                             .Single(control => control.DataContext is SongCardViewModel presentation && presentation.Track.Id == "slide-card-0");
                         var cardBounds = card.Bounds;
                         var columns = model.BrowseColumns;
@@ -130,7 +130,7 @@ namespace MajMusic.Tests
                         released.TrySetResult(workspace.Inner.Library.ToArray());
                         await model.HomeUpdate.WaitAsync(TimeSpan.FromSeconds(3));
                         Pump(window);
-                        var completed = browser.GetVisualDescendants().OfType<SongCard>()
+                        var completed = browser.ActiveList.GetVisualDescendants().OfType<SongCard>()
                             .Single(control => control.DataContext is SongCardViewModel presentation && presentation.Track.Id == "slide-card-0");
                         TestAssert.True(completed.Bounds.Size == cardBounds.Size && !surface.HasSnapshot
                             && browser.FindControl<Grid>("BrowseContentPresentation")!.Opacity == 1,

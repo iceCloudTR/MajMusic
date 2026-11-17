@@ -31,6 +31,25 @@ namespace MajMusic.Presentation.ViewModels
         private bool _isSelected;
         /// <summary>Rejects activation after the card leaves the owning view.</summary>
         private bool _disposed;
+        private bool _retainCoverWhileDetached;
+
+        internal bool RetainCoverWhileDetached
+        {
+            get => _retainCoverWhileDetached;
+            set
+            {
+                if (_retainCoverWhileDetached == value)
+                {
+                    return;
+                }
+
+                _retainCoverWhileDetached = value;
+                if (!value && _attachments == 0)
+                {
+                    StopThumbnail();
+                }
+            }
+        }
 
         /// <summary>Creates a card backed by its owning view's shared thumbnail cache.</summary>
         /// <param name="track">The music entry displayed by this card.</param>
@@ -89,6 +108,13 @@ namespace MajMusic.Presentation.ViewModels
             if (_disposed || !batch.TryAcquire(_track, out var candidate))
             {
                 return false;
+            }
+
+            if (_lease is { } current && current.Identity == CoverThumbnailCache.Identity(_track)
+                && (candidate?.Bitmap is null || ReferenceEquals(current.Bitmap, candidate.Bitmap)))
+            {
+                candidate?.Dispose();
+                return true;
             }
 
             _generation++;
@@ -168,6 +194,7 @@ namespace MajMusic.Presentation.ViewModels
         {
             _disposed = true;
             _attachments = 0;
+            _retainCoverWhileDetached = false;
             StopThumbnail();
         }
 
@@ -217,7 +244,8 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A task representing the observed shared request.</returns>
         private async Task LoadThumbnailAsync(MusicTrack track, int generation, CancellationToken token)
         {
-            if (_preparedCoverIdentity == CoverThumbnailCache.Identity(track))
+            var identity = CoverThumbnailCache.Identity(track);
+            if (_preparedCoverIdentity == identity || _lease?.Identity == identity)
             {
                 return;
             }
@@ -252,6 +280,10 @@ namespace MajMusic.Presentation.ViewModels
             _generation++;
             _activation?.Cancel();
             _activation = null;
+            if (_retainCoverWhileDetached)
+            {
+                return;
+            }
             var previous = _lease;
             _lease = null;
             if (previous is not null)

@@ -95,7 +95,8 @@ namespace MajMusic.Presentation.ViewModels
         }
 
         /// <summary>Shows one bounded result page and starts observed background enrichment.</summary>
-        private void RefreshVisibleTracks()
+        /// <param name="enrich">Whether this page owns independent metadata work.</param>
+        private void RefreshVisibleTracks(bool enrich = true)
         {
             CancelMetadataRefresh();
             VisibleTracks.Clear();
@@ -111,7 +112,7 @@ namespace MajMusic.Presentation.ViewModels
             OnPropertyChanged(nameof(HasMoreRecommendations));
             OnPropertyChanged(nameof(SelectedVisibleTrack));
             RefreshCommands();
-            if (_metadata is null && _onlineWorkspace is null)
+            if (!enrich || _metadata is null && _onlineWorkspace is null)
             {
                 return;
             }
@@ -255,14 +256,17 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             MusicTrack? selected = null;
-            for (var index = 0; index < Tracks.Count; index++)
+            var key = (updated.Id, updated.SourceId, updated.EndpointId);
+            foreach (var page in _browsePages)
             {
-                if (SameMetadataOwner(Tracks[index], updated))
+                if (page.Snapshot?.Indexes.TryGetValue(key, out var index) == true && SameMetadataOwner(page.Tracks[index], updated))
                 {
-                    Tracks[index] = MergeMetadataUpdate(Tracks[index], updated, completedAudio);
-                    if (SelectedTrack is { } selection && SameMetadataOwner(selection, updated))
+                    var merged = MergeMetadataUpdate(page.Tracks[index], updated, completedAudio);
+                    page.Snapshot.Tracks[index] = merged;
+                    page.Tracks[index] = merged;
+                    if (ReferenceEquals(page, ActiveBrowsePage) && SelectedTrack is { } selection && SameMetadataOwner(selection, updated))
                     {
-                        selected = Tracks[index];
+                        selected = merged;
                     }
                 }
             }

@@ -7,10 +7,10 @@ using MajMusic.Presentation.ViewModels;
 
 namespace MajMusic.Tests
 {
-    /// <summary>Checks that first-screen preparation does not retain an independently decoded complete music catalog.</summary>
+    /// <summary>Checks resident catalog snapshots without eagerly materializing the whole library.</summary>
     internal static class CatalogMemoryTests
     {
-        /// <summary>Exercises large metadata collection and sparse warm library and playlist navigation.</summary>
+        /// <summary>Exercises large metadata collection and resident library and playlist navigation.</summary>
         /// <returns>A task representing completed catalog-retention regressions.</returns>
         public static async Task RunAsync()
         {
@@ -28,12 +28,8 @@ namespace MajMusic.Tests
                 "Default offline recommendations must not expose the catalog used only to classify local playlists.");
 
             CollectUnreferencedMetadata();
-            TestAssert.True(catalog.IsAlive(0) && catalog.IsAlive(11) && catalog.IsAlive(9900) && catalog.IsAlive(9911)
-                && catalog.IsAlive(7000) && catalog.IsAlive(7010),
-                "Library and every saved playlist retain their actual resolved first screen, including songs far from the library prefix.");
-            TestAssert.True(!catalog.IsAlive(5000) && !catalog.IsAlive(9912) && !catalog.IsAlive(7011)
-                && catalog.AliveCount <= 36,
-                "A ten-thousand-song metadata read must retain only required first screens rather than the complete independently decoded catalog.");
+            TestAssert.True(catalog.IsAlive(0) && catalog.IsAlive(5000) && catalog.IsAlive(9999) && model.MaterializedCardCount == 0,
+                "The resident library keeps the ordered descriptors but does not materialize cards before a viewport is attached.");
             TestAssert.True(model.Playlists.Single(playlist => playlist.Id == "tail").TrackIds.SequenceEqual(tailIds)
                 && model.Playlists.Single(playlist => playlist.Id == "repeated").TrackIds.SequenceEqual(repeatedIds),
                 "Sparse artwork preparation cannot truncate full saved membership or remove unresolved and repeated playlist entries.");
@@ -42,32 +38,70 @@ namespace MajMusic.Tests
             await model.BrowsePreloadUpdate.WaitAsync(timeout.Token);
             model.SelectedPlaylist = model.Playlists.Single(playlist => playlist.Id == "tail");
             await model.BrowsePreloadUpdate.WaitAsync(timeout.Token);
-            await AssertPreparedNavigationAsync(model, workspace, catalog, HomeBrowseMode.Playlists, tailIds.Take(12).ToArray(), 100, timeout.Token);
+            await AssertPreparedNavigationAsync(model, workspace, catalog, HomeBrowseMode.Playlists, tailIds, 100, timeout.Token);
 
             model.SelectedPlaylist = model.Playlists.Single(playlist => playlist.Id == "repeated");
             await model.BrowsePreloadUpdate.WaitAsync(timeout.Token);
             await AssertPreparedNavigationAsync(model, workspace, catalog, HomeBrowseMode.Playlists,
-                repeatedIds.Where(id => id != "missing-generated-song").Take(12).ToArray(), repeatedIds.Length - 1, timeout.Token);
+                repeatedIds.Where(id => id != "missing-generated-song").ToArray(), repeatedIds.Length - 1, timeout.Token);
             await AssertPreparedNavigationAsync(model, workspace, catalog, HomeBrowseMode.Library,
-                Enumerable.Range(0, 12).Select(GeneratedCatalog.TrackId).ToArray(), GeneratedCatalog.TrackCount, timeout.Token);
+                Enumerable.Range(0, GeneratedCatalog.TrackCount).Select(GeneratedCatalog.TrackId).ToArray(), GeneratedCatalog.TrackCount, timeout.Token);
+            TestAssert.True(model.MaterializedCardCount >= MainViewModel.ResidentCardLimit && model.MaterializedCardCount < 100,
+                "Resident prefixes retain actual card models without realizing thousands of offscreen songs.");
+            await AssertLibraryAfterSearchAsync(model, workspace, catalog, timeout.Token);
             model.SetBrowseViewportSize(0, 0);
             GC.KeepAlive(model);
         }
 
-        /// <summary>Checks the real warm prefix before its separately held full catalog query is allowed to complete.</summary>
-        /// <param name="model">The initialized view model retaining sparse previews.</param>
-        /// <param name="workspace">The generated source whose next read can be held.</param>
-        /// <param name="catalog">The fresh metadata generator used to finish that read.</param>
+        private static async Task AssertLibraryAfterSearchAsync(MainViewModel model, LibraryExperienceTests.ExperienceWorkspace workspace,
+            GeneratedCatalog catalog, CancellationToken token)
+        {
+            var searches = 0;
+            workspace.SearchOverride = (query, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Interlocked.Increment(ref searches);
+                return query is not null
+                    ? Task.FromResult<IReadOnlyList<MusicTrack>>([new() { Id = "search-result", Title = "Search result", Audio = new MediaResource() }])
+                    : catalog.SearchAsync(query, cancellationToken);
+            };
+
+            try
+            {
+                model.BeginSearchCommand.Execute(null);
+                model.SearchText = "Search result";
+                await model.HomeUpdate.WaitAsync(token);
+                TestAssert.True(model.Tracks.Single().Id == "search-result", "A real search must be allowed to replace the library list.");
+                model.ShowPlaylistsModeCommand.Execute(null);
+                model.ShowLibraryModeCommand.Execute(null);
+                await model.HomeUpdate.WaitAsync(token);
+                TestAssert.True(model.IsLibraryMode && model.Tracks.Count == GeneratedCatalog.TrackCount && searches == 1,
+                    "Rapid navigation out of search and back must restore the complete warmed library without another storage read.");
+            }
+            finally
+            {
+                workspace.SearchOverride = catalog.SearchAsync;
+            }
+        }
+
+        /// <summary>Checks that a warm mode moves its ready page without querying or replacing its rows.</summary>
+        /// <param name="model">The initialized view model retaining complete resident pages.</param>
+        /// <param name="workspace">The generated source whose next read can be detected.</param>
+        /// <param name="catalog">The fixture that supplies complete library generations.</param>
         /// <param name="mode">The requested browsing target.</param>
-        /// <param name="expectedPrefix">The exact ready prefix in saved order.</param>
+        /// <param name="expectedTracks">The exact complete resident page in saved order.</param>
         /// <param name="completeCount">The full number of resolved songs expected after publication.</param>
         /// <param name="token">Cancels a stalled fixture.</param>
-        /// <returns>A task representing prefix and full-membership verification.</returns>
+        /// <returns>A task representing resident page and full-membership verification.</returns>
         private static async Task AssertPreparedNavigationAsync(MainViewModel model, LibraryExperienceTests.ExperienceWorkspace workspace,
-            GeneratedCatalog catalog, HomeBrowseMode mode, string[] expectedPrefix, int completeCount, CancellationToken token)
+            GeneratedCatalog catalog, HomeBrowseMode mode, string[] expectedTracks, int completeCount, CancellationToken token)
         {
-            var query = new TaskCompletionSource<IReadOnlyList<MusicTrack>>(TaskCreationOptions.RunContinuationsAsynchronously);
-            workspace.SearchOverride = (_, cancellationToken) => query.Task.WaitAsync(cancellationToken);
+            var reads = 0;
+            workspace.SearchOverride = (query, cancellationToken) =>
+            {
+                Interlocked.Increment(ref reads);
+                return catalog.SearchAsync(query, cancellationToken);
+            };
             try
             {
                 if (mode == HomeBrowseMode.Playlists)
@@ -79,17 +113,20 @@ namespace MajMusic.Tests
                     model.ShowLibraryModeCommand.Execute(null);
                 }
 
-                TestAssert.True(model.Tracks.Select(track => track.Id).SequenceEqual(expectedPrefix),
-                    "Sparse preparation must publish the complete correct first screen before a delayed storage read finishes.");
-                query.TrySetResult(await catalog.SearchAsync(null, token));
+                TestAssert.True(model.Tracks.Select(track => track.Id).SequenceEqual(expectedTracks),
+                    "The complete ordered catalog must already be in place in the same turn as its warm mode switch.");
+                var page = model.GetBrowsePage(mode);
+                var cards = page.CardTracks;
+                var row = page.Rows[0];
+                var version = page.NavigationVersion;
                 await model.HomeUpdate.WaitAsync(token);
-                TestAssert.Equal(completeCount, model.Tracks.Count,
-                    "Warm first screens cannot limit the authoritative library or playlist read.");
+                TestAssert.True(model.Tracks.Count == completeCount && ReferenceEquals(cards, page.CardTracks)
+                    && ReferenceEquals(row, page.Rows[0]) && page.NavigationVersion == version && reads == 0,
+                    "Warm modes retain the original cards and rows without reading or replacing the catalog after input.");
             }
             finally
             {
                 workspace.SearchOverride = catalog.SearchAsync;
-                query.TrySetCanceled(token);
             }
         }
 
@@ -111,8 +148,6 @@ namespace MajMusic.Tests
             private WeakReference<MusicTrack>[] _observed = [];
             /// <summary>Gets the number of complete independent catalog generations.</summary>
             public int ReadCount { get; private set; }
-            /// <summary>Gets the number of currently reachable descriptors from the last generated catalog.</summary>
-            public int AliveCount => _observed.Count(reference => reference.TryGetTarget(out _));
 
             /// <summary>Creates the stable generated identity for one catalog position.</summary>
             /// <param name="index">The zero-based generated position.</param>

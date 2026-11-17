@@ -76,12 +76,28 @@ namespace MajMusic.Presentation.Views
             {
                 return;
             }
-            var ownSurface = this.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!;
-            if (ownSurface.TransitionProgress < 1 || !ownSurface.TransitionUpdate.IsCompleted
-                || this.GetVisualAncestors().OfType<MusicSurfaceHost>().Any(host => host.IsEffectivelyVisible
-                    && (host.TransitionProgress < 1 || !host.TransitionUpdate.IsCompleted)))
+            var moving = this.GetVisualAncestors().OfType<MusicSurfaceHost>()
+                .Where(host => host.IsEffectivelyVisible)
+                .Select(host => host.TransitionUpdate)
+                .Append(_surface.TransitionUpdate)
+                .Append(ResidentTransitionUpdate)
+                .Where(update => !update.IsCompleted)
+                .ToArray();
+            if (moving.Length > 0)
             {
-                QueuePlaceholderWarmup();
+                _placeholderWarmupPending = true;
+                _ = Task.WhenAll(moving).ContinueWith(task =>
+                {
+                    _ = task.Exception;
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (version == _placeholderWarmupVersion)
+                        {
+                            _placeholderWarmupPending = false;
+                            QueuePlaceholderWarmup();
+                        }
+                    }, DispatcherPriority.Background);
+                }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                 return;
             }
             try

@@ -298,3 +298,13 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- mobile-p
 新增检查覆盖真实列表 Reset 后保留控件、正常切换无 Reset、同一行更新标题与实际封面像素、旧快捷播放取消、隐藏与分离时零新歌曲索引、重新激活只读最新切片、小型密度、手机列数、End 键、页码回收隔离，以及 24,000 首曲库的首屏扩展。图标检查包含内部 Path 与所有祖先变换，尺寸过渡覆盖动画末帧。冷加载用新到达的歌单阻塞查询；已预热目标则验证零占位借用。比例检查保留封面正方形断言，允许原生布局舍入的一物理像素误差。
 
 桌面 Release 编译为 0 警告、0 错误。最终 Android ARM64 包为 `artifacts/android-arm64-20261118-000721-1cdbff34/MajMusic-android-arm64.apk`，38.92 MiB，通过签名、单 ARM64 ABI 与 16 KB 对齐检查；未安装或进行 Android 实机验证。
+
+## 常驻主页与快速反向切换
+
+推荐、歌单、曲库各持有独立的列表状态和卡片视图。每页预载前 25 首的卡片数据，已解码的封面在页面离开视口后仍保留。同一条横移轴从当前画面重新定向；暖切换不截取旧页、不重查曲库、不替换列表，也不会在中途补齐列表尾部。只在页面内容实际改变时更新数据与滚动位置。
+
+[原生诊断](Tools/Diagnostics/NativeNavigation/README.md)在 Windows 桌面窗口和 420 逻辑像素宽的窄屏窗口各发送 12 次鼠标点击，其中 9 次打断上一段动画。先悬停实际卡片播放图标，底部保持播放状态。两种尺寸都在首切前准备了每页 25 张封面；切换中卡片、封面引用未替换，首屏控件持续挂载。固定图标测得位移为 0，封面图标只随整页横移。封面快捷播放的指针丢失用例另行检查，确保从当前姿态沿原轨迹返回。
+
+与前一版按相同步骤比较，重复切换的输入到选中反馈约由桌面 15–22 ms 降至 4–6 ms、窄屏 8–17 ms 降至 3–5 ms。数字是选中反馈耗时；窄屏使用 Windows 上的移动布局。报告见 `artifacts/native-navigation-rapid-resident-final/rapid-report.json` 和 `artifacts/native-navigation-rapid-mobile-resident-final/rapid-report.json`。
+
+26 组回归通过，覆盖快速切页图标、快捷播放回退、滚动槽、搜索恢复、推荐分页、加载占位和曲库延迟实例化。桌面 Release 零警告、零错误。Android ARM64 包为 `artifacts/android-arm64-20261118-022810-eabd3590/MajMusic-android-arm64.apk`，38.92 MiB，通过签名、ABI 与对齐检查。

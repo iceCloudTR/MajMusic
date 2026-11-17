@@ -31,10 +31,11 @@ namespace MajMusic.Tests
             var workspace = Workspace(24000);
             await using var view = View(workspace, new LibraryExperienceTests.ExperienceBackend());
             await view.InitializeAsync();
+            var library = view.GetBrowsePage(HomeBrowseMode.Library);
             var trackChanges = 0;
             var rowChanges = 0;
-            view.Tracks.CollectionChanged += (_, _) => trackChanges++;
-            view.BrowseRows.CollectionChanged += (_, _) => rowChanges++;
+            library.Tracks.CollectionChanged += (_, _) => trackChanges += library.Tracks.Count > 0 ? 1 : 0;
+            library.Rows.CollectionChanged += (_, _) => rowChanges += library.Rows.Count > 0 ? 1 : 0;
             await ExecuteHomeAsync(view, view.ShowLibraryModeCommand);
             TestAssert.True(view.BrowseTransitionDirection > 0,
                 "Moving from recommendations to the later library mode must enter from the right.");
@@ -50,15 +51,18 @@ namespace MajMusic.Tests
             view.SelectedTrack = last.Track;
             TestAssert.True(ReferenceEquals(last, view.SelectedBrowseCard) && view.MaterializedCardCount == 1,
                 "Selection and its sidebar lookup must not materialize unrelated catalog entries.");
-            trackChanges = 0;
-            rowChanges = 0;
+            var playlist = view.GetBrowsePage(HomeBrowseMode.Playlists);
+            var playlistTrackChanges = 0;
+            var playlistRowChanges = 0;
+            playlist.Tracks.CollectionChanged += (_, _) => playlistTrackChanges += playlist.Tracks.Count > 0 ? 1 : 0;
+            playlist.Rows.CollectionChanged += (_, _) => playlistRowChanges += playlist.Rows.Count > 0 ? 1 : 0;
             view.SelectedPlaylist = view.Playlists.Single(item => item.Id == "ordered");
             await ExecuteHomeAsync(view, view.ShowPlaylistsModeCommand);
             TestAssert.True(view.BrowseTransitionDirection < 0,
                 "Moving back from the library to playlists must enter from the left.");
             TestAssert.True(view.Tracks.Select(item => item.Id).SequenceEqual(["local-04", "local-02"])
-                && trackChanges == 1 && rowChanges == 1,
-                "Switching from a large library to a small ordered playlist must replace both snapshots once.");
+                && playlistTrackChanges == 1 && playlistRowChanges == 1 && trackChanges == 1 && rowChanges == 1,
+                "Loading the ordered playlist must publish once without replacing the resident library.");
         }
 
         /// <summary>Shows the target's loading state immediately and prevents an obsolete read from hiding its replacement skeleton.</summary>

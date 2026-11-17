@@ -89,7 +89,9 @@ namespace MajMusic.Tests
                 window.Show();
                 Pump(window);
                 var browser = view.GetVisualDescendants().OfType<BrowseTracksView>().Single();
-                var list = browser.FindControl<ListBox>("CardRowsList")!;
+                await model.BrowsePreloadUpdate.WaitAsync(token);
+                Pump(window);
+                var list = browser.ActiveList;
                 var surface = browser.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!;
                 var viewport = browser.Bounds;
                 var requests = workspace.RecommendationRequests.Count;
@@ -120,10 +122,10 @@ namespace MajMusic.Tests
                     "A real numbered footer click must immediately start the existing forward horizontal page entry.");
                 Advance(clock, window, 90);
                 TestAssert.Equal(songs + " 首推荐", model.BrowseSummary,
-                    "The recommendation batch count must stay stable while a twelve-song warm prefix enters.");
+                    "The recommendation batch count must stay stable while the next page enters.");
                 TestAssert.True(surface.TransitionProgress is > 0 and < 1 && surface.IncomingOffset > 0
                     && list.Items.Cast<object>().All(item => item is not RecommendationFooterRow),
-                    "The moving target must not display a footer beneath its temporary twelve-song warm prefix.");
+                    "The moving target must defer the footer until the page has settled.");
                 AssertStableLane(browser, scroll, lane, cardSize, "The entering warm prefix before its footer");
                 Save(window, $"ui-recommendation-pages-{width}-middle.png");
                 Advance(clock, window, 330);
@@ -168,10 +170,11 @@ namespace MajMusic.Tests
                 await model.HomeUpdate.WaitAsync(token);
                 Pump(window);
                 TestAssert.True(model.IsSearchExpanded && model.HomeMode == HomeBrowseMode.Library && !model.HasRecommendationPages
-                    && list.Items.Count == model.BrowseRows.Count && model.CardTracks.Count == localCount + songs,
-                    "Search opened during a page entry must own the library and discard the old recommendation footer and page result.");
-                TestAssert.True(model.MaterializedCardCount < 100,
-                    "Adding pagination must preserve lazy presentation when search opens a 24,000-song local catalog.");
+                    && browser.ActiveList.Items.Count == model.BrowseRows.Count && model.CardTracks.Count == localCount + songs,
+                    "Search opened during a page entry must own the library and discard the old recommendation footer and page result. "
+                    + $"Mode {model.HomeMode}, search {model.IsSearchExpanded}, cards {model.CardTracks.Count}/{localCount + songs}.");
+                TestAssert.True(model.MaterializedCardCount < 250,
+                    "Visited and prefetched recommendation cards must remain a bounded subset of the 24,000-song catalog.");
                 TestAssert.Equal(requests, workspace.RecommendationRequests.Count, "Paging and opening indexed search must not fetch another recommendation batch.");
             }
             finally

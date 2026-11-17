@@ -45,6 +45,7 @@ namespace MajMusic.Presentation.ViewModels
         private bool _isBrowseLoading;
         /// <summary>Identifies the browsing intent whose complete content has actually been published.</summary>
         private long _presentedBrowseVersion = -1;
+        private long _residentBrowseVersion = -1;
         /// <summary>Preserves finite feeds separately for each source/account choice during this view lifetime.</summary>
         private readonly Dictionary<string, RecommendationSnapshot> _homeSnapshots = new(StringComparer.Ordinal);
         /// <summary>Identifies the account whose cached feed is currently attached.</summary>
@@ -128,7 +129,7 @@ namespace MajMusic.Presentation.ViewModels
             ShowLibraryModeCommand = CreateHomeModeCommand(HomeBrowseMode.Library);
             BeginSearchCommand = new AsyncCommand(() =>
             {
-                UseHomeMode(HomeBrowseMode.Library);
+                UseHomeMode(HomeBrowseMode.Library, reuseCurrent: true);
                 _isSearchExpanded = true;
                 NotifyHomeState();
                 QueueHomeUpdate(false);
@@ -161,7 +162,8 @@ namespace MajMusic.Presentation.ViewModels
 
         /// <summary>Commits one stable home mode while retaining the inspected music entry.</summary>
         /// <param name="mode">The requested content mode.</param>
-        internal void UseHomeMode(HomeBrowseMode mode)
+        /// <param name="reuseCurrent">Whether opening search can reuse the already active library.</param>
+        internal void UseHomeMode(HomeBrowseMode mode, bool reuseCurrent = false)
         {
             var previousMode = _homeMode;
             var wasSearching = IsSearching;
@@ -189,12 +191,39 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             _homeUpdateCancellation?.Cancel();
-            var loadingOwner = BeginBrowseLoad(contentChanged, wasSearching ? -1 : Math.Sign((int)mode - (int)previousMode), notifyPlaceholder: false);
-            if (!TryPublishPreparedPreview(loadingOwner))
+            var direction = wasSearching ? -1 : Math.Sign((int)mode - (int)previousMode);
+            var crossMode = previousMode != mode;
+            if (!crossMode && contentChanged)
+            {
+                BeginBrowseLoad(true, direction, notifyPlaceholder: false);
+            }
+
+            var ready = (contentChanged || reuseCurrent) && TryActivateBrowsePage();
+            if (ready)
+            {
+                _residentBrowseVersion = _homeVersion;
+            }
+            else if (contentChanged)
+            {
+                InvalidateBrowsePage(ActiveBrowsePage);
+                _cardIndexes = new();
+            }
+
+            var loadingOwner = BeginBrowseLoad(crossMode, direction, notifyPlaceholder: false);
+            if (ready)
+            {
+                FinishBrowseLoad(loadingOwner);
+            }
+            else
             {
                 OnPropertyChanged(nameof(IsBrowsePlaceholderVisible));
             }
+
             NotifyHomeState();
+            if (!ready || wasSearching)
+            {
+                QueueWarmBrowsePreviews();
+            }
         }
 
         /// <summary>Schedules progressive whole-library search only while the search field is open.</summary>
@@ -257,6 +286,12 @@ namespace MajMusic.Presentation.ViewModels
                 return;
             }
 
+            if (_residentBrowseVersion == _homeVersion && !IsSearching)
+            {
+                _homeUpdate = IsRecommendationsMode ? EnsureHomeRecommendationsAsync() : Task.CompletedTask;
+                return;
+            }
+
             var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             _homeUpdateCancellation = cancellation;
             var loadingOwner = BeginBrowseLoad(false);
@@ -315,7 +350,7 @@ namespace MajMusic.Presentation.ViewModels
                 OnPropertyChanged(nameof(BrowseTransitionVersion));
             }
 
-            if (!_isBrowseLoading && _publishedPreviewVersion != _homeVersion)
+            if (!_isBrowseLoading && _residentBrowseVersion != _homeVersion)
             {
                 _isBrowseLoading = true;
                 OnPropertyChanged(nameof(IsBrowseLoading));
@@ -352,12 +387,16 @@ namespace MajMusic.Presentation.ViewModels
             {
                 _recommendationRequestCancellation?.Cancel();
                 AttachRecommendationSnapshot();
-                _homeVersion++;
+                var recommendations = GetBrowsePage(HomeBrowseMode.Recommendations);
+                InvalidateBrowsePage(recommendations);
                 if (IsRecommendationsMode)
                 {
+                    _homeVersion++;
                     BeginBrowseLoad(true);
                     QueueHomeUpdate(false);
                 }
+
+                QueueWarmBrowsePreviews();
             }
         }
 
@@ -365,7 +404,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A task representing an existing or newly started finite feed request.</returns>
         public Task EnsureHomeRecommendationsAsync()
         {
-            if (!IsRecommendationsMode || _onlineWorkspace is null || !HasSelectedAccount
+            if (_onlineWorkspace is null || !HasSelectedAccount
                 || CurrentRecommendationOwner() is not { } owner
                 || _homeSnapshots.TryGetValue(owner, out var snapshot) && snapshot.IsComplete)
             {

@@ -5,304 +5,344 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using MajMusic.Core.Models;
 using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
-using MajMusic.Core.Models;
-using System.Collections;
 using System.ComponentModel;
 
 namespace MajMusic.Presentation.Views
 {
-    /// <summary>Hosts virtualized artwork cards consistently across recommendations, playlists and searches.</summary>
+    /// <summary>Keeps a separately laid-out native card list for each home mode.</summary>
     public partial class BrowseTracksView : UserControl
     {
-        /// <summary>Identifies a touch viewport that keeps complete cover cards in one column.</summary>
-        public static readonly StyledProperty<bool> ForceSingleColumnProperty = AvaloniaProperty.Register<BrowseTracksView, bool>(nameof(ForceSingleColumn));
-        /// <summary>Identifies the current density shared by all virtualized cards and placeholders.</summary>
-        public static readonly StyledProperty<SongCardLayout> CardLayoutProperty = AvaloniaProperty.Register<BrowseTracksView, SongCardLayout>(nameof(CardLayout));
-        /// <summary>Identifies the indexed music rows and their optional trailing recommendation pager.</summary>
-        public static readonly DirectProperty<BrowseTracksView, IEnumerable?> PresentationRowsProperty =
-            AvaloniaProperty.RegisterDirect<BrowseTracksView, IEnumerable?>(nameof(PresentationRows), view => view.PresentationRows);
+        /// <summary>Identifies the mobile browser's initial column preference.</summary>
+        public static readonly StyledProperty<bool> ForceSingleColumnProperty =
+            AvaloniaProperty.Register<BrowseTracksView, bool>(nameof(ForceSingleColumn));
+        /// <summary>Identifies the density shared by the three lists and the loading cards.</summary>
+        public static readonly StyledProperty<SongCardLayout> CardLayoutProperty =
+            AvaloniaProperty.Register<BrowseTracksView, SongCardLayout>(nameof(CardLayout));
 
-        /// <summary>Gets or sets whether this browser reserves one complete card per row.</summary>
+        private readonly ResidentBrowseStrip _strip;
+        private readonly MusicSurfaceHost _surface;
+        private readonly BrowseCardListBox[] _lists;
+        private readonly HomeBrowsePage?[] _pages = new HomeBrowsePage?[3];
+        private readonly BrowseRowsPresentation?[] _presentations = new BrowseRowsPresentation?[3];
+        private readonly Grid _skeletonLayer;
+        private readonly TranslateTransform _skeletonMotion = new();
+        private MainViewModel? _browseOwner;
+        private HomeBrowseMode _residentMode;
+        private Size _browseViewport;
+        private bool _observing;
+        private TaskCompletionSource? _transitionCompletion;
+        private long _keyboardNavigationVersion;
+
+        /// <summary>Gets or sets the mobile browser's initial column preference.</summary>
         public bool ForceSingleColumn
         {
             get => GetValue(ForceSingleColumnProperty);
             set => SetValue(ForceSingleColumnProperty, value);
         }
-        /// <summary>Gets the unchanged lightweight music rows followed by an available recommendation footer.</summary>
-        public IEnumerable? PresentationRows => _rowsPresentation;
-        /// <summary>Gets the actual content lane after the native scrollbar's reserved track.</summary>
-        public Size ContentViewport => _browseViewport;
-        /// <summary>Gets the active density selected in the music appearance settings.</summary>
+        /// <summary>Gets the density shared by the three lists and the loading cards.</summary>
         public SongCardLayout CardLayout
         {
             get => GetValue(CardLayoutProperty);
             private set => SetValue(CardLayoutProperty, value);
+        }
+        /// <summary>Gets the actual content lane after the native scrollbar's reserved track.</summary>
+        public Size ContentViewport => _browseViewport;
+        /// <summary>Gets the native list for the currently chosen mode.</summary>
+        public ListBox ActiveList => GetResidentList(_residentMode);
+        /// <summary>Gets an existing native list without navigating to it.</summary>
+        public ListBox GetResidentList(HomeBrowseMode mode) => _lists[(int)mode];
+        /// <summary>Gets the continuous horizontal position in page widths.</summary>
+        public double ResidentPosition => _strip.Position;
+        /// <summary>Gets completion of the latest motion between home modes.</summary>
+        public Task<bool> ResidentTransitionUpdate => _strip.TransitionUpdate;
+
+        /// <summary>Initializes the lists, loading presentation, and keyboard navigation.</summary>
+        public BrowseTracksView()
+        {
+            InitializeComponent();
+            _strip = this.FindControl<ResidentBrowseStrip>("BrowseStrip")!;
+            _surface = this.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!;
+            _skeletonLayer = this.FindControl<Grid>("BrowseSkeletonPresentation")!;
+            _strip.PositionChanged += UpdateSkeletonPosition;
+            _strip.InitializePages();
+            _lists = [
+                this.FindControl<BrowseCardListBox>("RecommendationCardRows")!,
+                this.FindControl<BrowseCardListBox>("PlaylistCardRows")!,
+                this.FindControl<BrowseCardListBox>("LibraryCardRows")!
+            ];
+            DataContextChanged += OnBrowseContextChanged;
+            foreach (var list in _lists)
+            {
+                list.AddHandler(KeyDownEvent, OnBrowseKeyDown, RoutingStrategies.Tunnel);
+            }
+            AddHandler(ScrollViewer.ScrollChangedEvent, OnBrowseScrollChanged, RoutingStrategies.Bubble);
+            _surface.PropertyChanged += OnBrowseSurfaceChanged;
         }
 
         /// <inheritdoc />
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
             base.OnPropertyChanged(change);
-            if (change.Property == ForceSingleColumnProperty && Bounds.Width > 0 && _browseOwner is not null)
+            if (change.Property == ForceSingleColumnProperty && Bounds.Width > 0 && _observing)
             {
                 RefreshBrowseViewport();
             }
-        }
-
-        /// <summary>Observes the current workspace's committed browsing generation.</summary>
-        private MainViewModel? _browseOwner;
-        /// <summary>Retains the generation whose scroll position is currently displayed.</summary>
-        private long _navigationVersion = -1;
-        /// <summary>Retains the actual viewport used by both real card rows and bounded loading placeholders.</summary>
-        private Size _browseViewport;
-        /// <summary>Completes the view handshake when the registered surface is finished or detached.</summary>
-        private TaskCompletionSource? _transitionCompletion;
-        /// <summary>Invalidates callbacks queued for another owner, navigation generation or attached tree.</summary>
-        private long _transitionRegistration;
-        /// <summary>Retains observation of the current surface's finite Arc animation.</summary>
-        private Task _transitionObservation = Task.CompletedTask;
-        /// <summary>Maps native list indices to existing music rows without constructing invisible cards.</summary>
-        private BrowseRowsPresentation? _rowsPresentation;
-        /// <summary>Rejects deferred footer focus after another navigation gesture.</summary>
-        private long _keyboardNavigationVersion;
-
-        /// <summary>Initializes the shared card presentation and its keyboard navigation.</summary>
-        public BrowseTracksView()
-        {
-            InitializeComponent();
-            DataContextChanged += OnBrowseContextChanged;
-            this.FindControl<ListBox>("CardRowsList")!.AddHandler(KeyDownEvent, OnBrowseKeyDown, RoutingStrategies.Tunnel);
-            AddHandler(ScrollViewer.ScrollChangedEvent, OnBrowseScrollChanged, RoutingStrategies.Bubble);
-            this.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!.PropertyChanged += OnBrowseSurfaceChanged;
         }
 
         /// <inheritdoc />
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
-            if (_browseOwner is { } owner)
-            {
-                CardLayout = owner.SelectedCardLayout;
-                owner.PropertyChanged -= OnBrowseOwnerChanged;
-                owner.PropertyChanged += OnBrowseOwnerChanged;
-                if (Bounds.Width > 0)
-                {
-                    RefreshBrowseViewport();
-                }
-
-                UpdateSkeletonViewport();
-                ResetNavigationOffset();
-                RegisterBrowseTransition(owner);
-            }
+            ObserveOwner();
         }
 
         /// <inheritdoc />
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
-            CancelPlaceholderWarmup();
-            ReleaseBrowseTransition();
-            _keyboardNavigationVersion++;
-            if (_browseOwner is { } owner)
-            {
-                owner.PropertyChanged -= OnBrowseOwnerChanged;
-                owner.SetBrowseViewportSize(0, 0);
-            }
-
-            this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.ClearPlaceholders();
+            StopObservingOwner();
             base.OnDetachedFromVisualTree(e);
         }
 
-        /// <summary>Applies the current viewport when an existing browser receives another workspace view.</summary>
-        /// <param name="sender">The music browser.</param>
-        /// <param name="e">The new data-context notification.</param>
         private void OnBrowseContextChanged(object? sender, EventArgs e)
         {
-            CancelPlaceholderWarmup();
-            ReleaseBrowseTransition();
-            if (_browseOwner is not null)
-            {
-                _browseOwner.PropertyChanged -= OnBrowseOwnerChanged;
-                if (TopLevel.GetTopLevel(this) is not null)
-                {
-                    _browseOwner.SetBrowseViewportSize(0, 0);
-                }
-            }
-
+            StopObservingOwner();
             _browseOwner = DataContext as MainViewModel;
-            CardLayout = _browseOwner?.SelectedCardLayout ?? SongCardLayout.Loose;
-            var previousRows = _rowsPresentation;
-            previousRows?.Dispose();
-            _rowsPresentation = _browseOwner is { } current ? new BrowseRowsPresentation(current) : null;
-            RaisePropertyChanged(PresentationRowsProperty, previousRows, _rowsPresentation);
-            _navigationVersion = -1;
-            if (_browseOwner is { } owner)
+            if (TopLevel.GetTopLevel(this) is not null)
             {
-                if (TopLevel.GetTopLevel(this) is not null)
-                {
-                    owner.PropertyChanged += OnBrowseOwnerChanged;
-                    if (Bounds.Width > 0)
-                    {
-                        RefreshBrowseViewport();
-                    }
-                }
-
-                ResetNavigationOffset();
-                UpdateSkeletonViewport();
-                UpdateRecommendationFooter();
-                if (TopLevel.GetTopLevel(this) is not null)
-                {
-                    RegisterBrowseTransition(owner);
-                }
+                ObserveOwner();
             }
         }
 
-        /// <summary>Resets scroll only after a new mode or search snapshot has replaced the previous content.</summary>
-        /// <param name="sender">The current workspace presentation.</param>
-        /// <param name="e">The changed property notification.</param>
-        private void OnBrowseOwnerChanged(object? sender, PropertyChangedEventArgs e)
+        private void ObserveOwner()
         {
-            if (e.PropertyName == nameof(MainViewModel.SelectedCardLayout) && _browseOwner is { } layoutOwner)
-            {
-                CardLayout = layoutOwner.SelectedCardLayout;
-                RefreshBrowseViewport();
-                UpdateSkeletonViewport();
-            }
-            else if (e.PropertyName == nameof(MainViewModel.BrowseTransitionVersion) && _browseOwner is { } owner)
-            {
-                RegisterBrowseTransition(owner);
-            }
-            else if (e.PropertyName == nameof(MainViewModel.BrowseNavigationVersion))
-            {
-                ResetNavigationOffset();
-            }
-            else if (e.PropertyName is nameof(MainViewModel.IsBrowsePlaceholderVisible) or nameof(MainViewModel.BrowseColumns))
-            {
-                RefreshBrowseViewport();
-                UpdateSkeletonViewport();
-            }
-
-            if (e.PropertyName is nameof(MainViewModel.IsBrowsePlaceholderVisible) or nameof(MainViewModel.CardTracks)
-                or nameof(MainViewModel.HasRecommendationPages) or nameof(MainViewModel.RecommendationCurrentPageTrackCount)
-                or nameof(MainViewModel.IsRecommendationsMode))
-            {
-                UpdateRecommendationFooter();
-            }
-        }
-
-        /// <summary>Appends pagination only after the complete target page has finished its existing slide.</summary>
-        private void UpdateRecommendationFooter()
-        {
-            var owner = _browseOwner;
-            _rowsPresentation?.SetFooterVisible(owner is { HasRecommendationPages: true, IsBrowsePlaceholderVisible: false }
-                && owner.CardTracks.Count == owner.RecommendationCurrentPageTrackCount
-                && this.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!.TransitionProgress >= 1);
-        }
-
-        /// <summary>Updates only the trailing footer when the incoming target finishes moving.</summary>
-        /// <param name="sender">The existing horizontal browsing presenter.</param>
-        /// <param name="e">The changed actual Arc progress.</param>
-        private void OnBrowseSurfaceChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
-        {
-            if (e.Property == MusicSurfaceHost.TransitionProgressProperty
-                && sender is MusicSurfaceHost { TransitionProgress: 0 or 1 })
-            {
-                UpdateRecommendationFooter();
-            }
-        }
-
-        /// <summary>Registers this generation before querying and observes its Arc task after bindings have applied the new version.</summary>
-        /// <param name="owner">The currently attached browsing presentation.</param>
-        private void RegisterBrowseTransition(MainViewModel owner)
-        {
-            ReleaseBrowseTransition();
-            var registration = _transitionRegistration;
-            var version = owner.BrowseTransitionVersion;
-            var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            _transitionCompletion = completed;
-            owner.SetBrowseTransitionCompletion(version, completed.Task);
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (_transitionRegistration != registration || !ReferenceEquals(_browseOwner, owner)
-                    || owner.BrowseTransitionVersion != version || TopLevel.GetTopLevel(this) is null)
-                {
-                    completed.TrySetResult();
-                    return;
-                }
-
-                var transition = this.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!.TransitionUpdate;
-                _transitionObservation = transition.ContinueWith(static (task, state) =>
-                {
-                    _ = task.Exception;
-                    ((TaskCompletionSource)state!).TrySetResult();
-                }, completed, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-            }, DispatcherPriority.Loaded);
-        }
-
-        /// <summary>Releases a replaced or detached surface's waiter without holding a newer target behind obsolete motion.</summary>
-        private void ReleaseBrowseTransition()
-        {
-            _transitionRegistration++;
-            _transitionCompletion?.TrySetResult();
-            _transitionCompletion = null;
-        }
-
-        /// <summary>Creates placeholders only for an actively loading viewport.</summary>
-        private void UpdateSkeletonViewport()
-        {
-            if (TopLevel.GetTopLevel(this) is not null && _browseOwner is { IsBrowsePlaceholderVisible: true } owner)
-            {
-                CancelPlaceholderWarmup();
-                this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.SetViewport(_browseViewport, owner.BrowseColumns, CardLayout);
-            }
-            else
-            {
-                this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.ClearPlaceholders();
-                QueuePlaceholderWarmup();
-            }
-        }
-
-        /// <summary>Moves a new query to the beginning while leaving resize, metadata and appended rows untouched.</summary>
-        private void ResetNavigationOffset()
-        {
-            if (_browseOwner is not { } owner || _navigationVersion == owner.BrowseNavigationVersion)
+            if (_observing || _browseOwner is not { } owner)
             {
                 return;
             }
 
-            _navigationVersion = owner.BrowseNavigationVersion;
-            var version = _navigationVersion;
-            var list = this.FindControl<ListBox>("CardRowsList")!;
-            list.SelectedItem = null;
-            Dispatcher.UIThread.Post(() =>
+            _observing = true;
+            CardLayout = owner.SelectedCardLayout;
+            _residentMode = owner.HomeMode;
+            _strip.Navigate(_residentMode, false);
+            owner.PropertyChanged += OnBrowseOwnerChanged;
+            for (var index = 0; index < _lists.Length; index++)
             {
-                if (ReferenceEquals(_browseOwner, owner) && _navigationVersion == version)
-                {
-                    var scroll = list.GetVisualDescendants().OfType<ScrollViewer>()
-                        .FirstOrDefault(item => ReferenceEquals(item.TemplatedParent, list));
-                    if (scroll is not null)
-                    {
-                        scroll.Offset = default;
-                    }
-                }
-            }, DispatcherPriority.Loaded);
+                var page = owner.GetBrowsePage((HomeBrowseMode)index);
+                _pages[index] = page;
+                page.PropertyChanged += OnResidentPageChanged;
+                _presentations[index] = new BrowseRowsPresentation(owner, page.Rows);
+                _lists[index].CardLayout = CardLayout;
+                _lists[index].ItemsSource = _presentations[index];
+            }
+            UpdatePageVisibility();
+            RefreshBrowseViewport();
+            UpdateSkeletonViewport();
+            UpdateRecommendationFooter();
         }
 
-        /// <summary>Fits artwork columns to the actual content viewport.</summary>
-        /// <param name="sender">The browsing surface.</param>
-        /// <param name="e">The new viewport dimensions.</param>
+        private void StopObservingOwner()
+        {
+            if (!_observing)
+            {
+                return;
+            }
+
+            _observing = false;
+            CancelPlaceholderWarmup();
+            ReleaseBrowseTransition();
+            _keyboardNavigationVersion++;
+            _browseOwner!.PropertyChanged -= OnBrowseOwnerChanged;
+            _browseOwner.SetBrowseViewportSize(0, 0);
+            for (var index = 0; index < _lists.Length; index++)
+            {
+                _pages[index]!.PropertyChanged -= OnResidentPageChanged;
+                _pages[index] = null;
+                _lists[index].ItemsSource = null;
+                _presentations[index]!.Dispose();
+                _presentations[index] = null;
+            }
+            this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.ClearPlaceholders();
+        }
+
+        private void OnBrowseOwnerChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (_browseOwner is not { } owner)
+            {
+                return;
+            }
+            if (e.PropertyName == nameof(MainViewModel.SelectedCardLayout))
+            {
+                CardLayout = owner.SelectedCardLayout;
+                foreach (var list in _lists)
+                {
+                    list.CardLayout = CardLayout;
+                }
+                RefreshBrowseViewport();
+                UpdateSkeletonViewport();
+            }
+            else if (e.PropertyName == nameof(MainViewModel.BrowseTransitionVersion))
+            {
+                RegisterBrowseTransition(owner);
+            }
+            else if (e.PropertyName is nameof(MainViewModel.IsBrowsePlaceholderVisible) or nameof(MainViewModel.BrowseColumns))
+            {
+                UpdatePageVisibility();
+                RefreshBrowseViewport();
+                UpdateSkeletonViewport();
+            }
+        }
+
+        private void OnResidentPageChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            var index = Array.FindIndex(_pages, page => ReferenceEquals(page, sender));
+            if (index < 0)
+            {
+                return;
+            }
+            if (e.PropertyName == nameof(HomeBrowsePage.NavigationVersion))
+            {
+                ResetNavigationOffset(_lists[index]);
+            }
+            if (e.PropertyName == nameof(HomeBrowsePage.IsReady))
+            {
+                UpdatePageVisibility();
+                UpdateSkeletonViewport();
+            }
+            UpdateRecommendationFooter();
+        }
+
+        private void UpdatePageVisibility()
+        {
+            if (!_observing || _browseOwner is not { } owner)
+            {
+                return;
+            }
+            var index = (int)_residentMode;
+            var placeholder = _pages[index]?.IsReady != true
+                || (owner.HomeMode == _residentMode && owner.IsBrowsePlaceholderVisible);
+            for (var listIndex = 0; listIndex < _lists.Length; listIndex++)
+            {
+                _lists[listIndex].IsVisible = _pages[listIndex]?.IsReady == true
+                    && (listIndex != index || !placeholder);
+            }
+            _skeletonLayer.IsVisible = placeholder;
+            UpdateSkeletonPosition();
+        }
+
+        private void UpdateSkeletonPosition()
+        {
+            if (_skeletonLayer.IsVisible)
+            {
+                _skeletonMotion.X = _strip.OffsetFor(_residentMode);
+                _skeletonLayer.RenderTransform = _skeletonMotion.X == 0 ? null : _skeletonMotion;
+                _skeletonLayer.Opacity = _strip.Children[(int)_residentMode].Opacity;
+            }
+        }
+
+        private void UpdateRecommendationFooter()
+        {
+            _presentations[(int)HomeBrowseMode.Recommendations]?.SetFooterVisible(
+                _pages[(int)HomeBrowseMode.Recommendations] is { HasRecommendationPages: true, IsReady: true }
+                && (_residentMode != HomeBrowseMode.Recommendations || _surface.TransitionProgress >= 1));
+        }
+
+        private void OnBrowseSurfaceChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.Property == MusicSurfaceHost.TransitionProgressProperty && _surface.TransitionProgress is 0 or 1)
+            {
+                UpdateRecommendationFooter();
+            }
+        }
+
+        private void RegisterBrowseTransition(MainViewModel owner)
+        {
+            ReleaseBrowseTransition();
+            _keyboardNavigationVersion++;
+            var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _transitionCompletion = completed;
+            owner.SetBrowseTransitionCompletion(owner.BrowseTransitionVersion, completed.Task);
+            var nextMode = owner.HomeMode;
+            Task transition;
+            if (nextMode != _residentMode)
+            {
+                var useLivePages = _pages[(int)nextMode]?.IsReady == true && _surface.TransitionUpdate.IsCompleted
+                    || !_strip.TransitionUpdate.IsCompleted;
+                if (!useLivePages)
+                {
+                    StartSameSurfaceTransition(owner);
+                }
+                _residentMode = nextMode;
+                _strip.Navigate(nextMode, useLivePages);
+                UpdatePageVisibility();
+                UpdateSkeletonViewport();
+                transition = useLivePages ? _strip.TransitionUpdate : _surface.TransitionUpdate;
+            }
+            else
+            {
+                if (_strip.TransitionUpdate.IsCompleted)
+                {
+                    StartSameSurfaceTransition(owner);
+                }
+                transition = _strip.TransitionUpdate.IsCompleted ? _surface.TransitionUpdate : _strip.TransitionUpdate;
+            }
+            _ = transition.ContinueWith(static (task, state) =>
+            {
+                _ = task.Exception;
+                ((TaskCompletionSource)state!).TrySetResult();
+            }, completed, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        }
+
+        private void StartSameSurfaceTransition(MainViewModel owner)
+        {
+            _surface.SlideDirection = owner.BrowseTransitionDirection;
+            _surface.ChangeVersion = owner.BrowseTransitionVersion;
+        }
+
+        private void ReleaseBrowseTransition()
+        {
+            _transitionCompletion?.TrySetResult();
+            _transitionCompletion = null;
+        }
+
+        private void UpdateSkeletonViewport()
+        {
+            var skeleton = this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!;
+            if (TopLevel.GetTopLevel(this) is not null && _skeletonLayer.IsVisible && _browseOwner is { } owner)
+            {
+                CancelPlaceholderWarmup();
+                skeleton.SetViewport(_browseViewport, owner.BrowseColumns, CardLayout);
+            }
+            else
+            {
+                skeleton.ClearPlaceholders();
+                QueuePlaceholderWarmup();
+            }
+        }
+
+        private static void ResetNavigationOffset(ListBox list)
+        {
+            list.SelectedItem = null;
+            if (FindScrollViewer(list) is { } scroll)
+            {
+                scroll.Offset = default;
+            }
+        }
+
+        private static ScrollViewer? FindScrollViewer(ListBox list) => list.GetVisualDescendants().OfType<ScrollViewer>()
+            .FirstOrDefault(item => ReferenceEquals(item.TemplatedParent, list));
+
         private void OnBrowseSizeChanged(object? sender, SizeChangedEventArgs e)
         {
             RefreshBrowseViewport();
             UpdateSkeletonViewport();
         }
 
-        /// <summary>Reports actual lane changes after native layout, ignoring offset or footer-only extent changes.</summary>
-        /// <param name="sender">The browser owning the two native presenters.</param>
-        /// <param name="e">The native viewport, extent or offset change.</param>
         private void OnBrowseScrollChanged(object? sender, ScrollChangedEventArgs e)
         {
             if (e.ViewportDelta != default)
@@ -312,46 +352,37 @@ namespace MajMusic.Presentation.Views
             }
         }
 
-        /// <summary>Uses one measured native content lane for placeholders, card columns and cover preparation.</summary>
         private void RefreshBrowseViewport()
         {
-            if (_browseOwner is not { } owner || TopLevel.GetTopLevel(this) is null)
+            if (!_observing || _browseOwner is not { } owner || TopLevel.GetTopLevel(this) is null)
             {
                 return;
             }
-
-            var list = this.FindControl<ListBox>("CardRowsList")!;
-            var viewer = owner.IsBrowsePlaceholderVisible
+            var viewer = _skeletonLayer.IsVisible
                 ? this.FindControl<ScrollViewer>("BrowseSkeletonScroll")
-                : list.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault(control => ReferenceEquals(control.TemplatedParent, list));
+                : FindScrollViewer(ActiveList);
             var presenter = viewer?.GetVisualDescendants().OfType<ScrollContentPresenter>()
                 .FirstOrDefault(control => ReferenceEquals(control.TemplatedParent, viewer));
             if (presenter is not { Bounds.Width: > 0, Bounds.Height: > 0 })
             {
                 return;
             }
-
             _browseViewport = presenter.Bounds.Size;
             owner.SetBrowseViewportWidth(_browseViewport.Width);
             owner.SetBrowseViewportSize(_browseViewport.Width, _browseViewport.Height);
         }
 
-        /// <summary>Moves between individual artwork cards while keeping the selected row and inspector visible.</summary>
-        /// <param name="sender">The shared virtualized card list.</param>
-        /// <param name="e">The navigation key pressed in the list or one of its cards.</param>
         private async void OnBrowseKeyDown(object? sender, KeyEventArgs e)
         {
-            if (DataContext is not MainViewModel owner || owner.IsBrowsePlaceholderVisible || owner.CardTracks.Count == 0 || e.KeyModifiers != KeyModifiers.None
+            if (!ReferenceEquals(sender, ActiveList) || !_strip.TransitionUpdate.IsCompleted
+                || _browseOwner is not { } owner || owner.IsBrowsePlaceholderVisible || owner.CardTracks.Count == 0 || e.KeyModifiers != KeyModifiers.None
                 || e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End))
             {
                 return;
             }
-
             e.Handled = true;
             var keyboardVersion = ++_keyboardNavigationVersion;
-            var selected = owner.SelectedBrowseCard;
-            var index = owner.GetBrowseCardIndex(selected);
-
+            var index = owner.GetBrowseCardIndex(owner.SelectedBrowseCard);
             var last = owner.CardTracks.Count - 1;
             var target = e.Key switch
             {
@@ -364,18 +395,19 @@ namespace MajMusic.Presentation.Views
             };
             owner.SelectedBrowseCard = owner.CardTracks[target];
             var row = owner.BrowseRows[target / owner.BrowseColumns];
-            var list = (ListBox)sender!;
+            var list = ActiveList;
+            var presentation = _presentations[(int)_residentMode];
             list.SelectedItem = row;
             list.ScrollIntoView(row);
-            if (e.Key == Key.End && _rowsPresentation?.Footer is { } footer)
+            if (e.Key == Key.End && presentation?.Footer is { } footer)
             {
                 list.ScrollIntoView(footer);
                 Dispatcher.UIThread.Post(() =>
                 {
                     if (_keyboardNavigationVersion == keyboardVersion && ReferenceEquals(_browseOwner, owner)
-                        && ReferenceEquals(_rowsPresentation?.Footer, footer) && TopLevel.GetTopLevel(this) is not null)
+                        && ReferenceEquals(presentation.Footer, footer) && TopLevel.GetTopLevel(this) is not null)
                     {
-                        var container = list.ContainerFromIndex(_rowsPresentation.Count - 1);
+                        var container = list.ContainerFromIndex(presentation.Count - 1);
                         container?.GetVisualDescendants().OfType<TKCode.Arc.Button>()
                             .FirstOrDefault(button => button.IsEffectivelyVisible && button.IsEffectivelyEnabled)?.Focus();
                     }
@@ -385,7 +417,6 @@ namespace MajMusic.Presentation.Views
             {
                 list.Focus();
             }
-
             await owner.LoadCoverAsync();
         }
     }

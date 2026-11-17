@@ -7,6 +7,19 @@
              x:Class="MajMusic.Presentation.Views.BrowseTracksView"
              x:DataType="vm:MainViewModel">
     <UserControl.Styles>
+        <Style Selector="ListBox.browseList">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Focusable" Value="True" />
+            <Setter Property="AutoScrollToSelectedItem" Value="False" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Visible" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="ItemsPanel">
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+            </Setter>
+        </Style>
         <Style Selector="ListBox.browseList ListBoxItem">
             <Setter Property="Height" Value="NaN" />
             <Setter Property="Padding" Value="0" />
@@ -76,27 +89,24 @@
             </Border>
         </DataTemplate>
     </UserControl.DataTemplates>
-    <theme:MusicSurfaceHost x:Name="BrowseSurfaceTransition" ChangeVersion="{Binding BrowseTransitionVersion}"
-                            SlideDirection="{Binding BrowseTransitionDirection}"
+    <theme:MusicSurfaceHost x:Name="BrowseSurfaceTransition"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
         <Grid x:Name="BrowseSurface" SizeChanged="OnBrowseSizeChanged" ClipToBounds="True" Background="{arc:ArcDesignTokenResource Surface}">
-            <Grid x:Name="BrowseContentPresentation" IsVisible="{Binding !IsBrowsePlaceholderVisible}"
-                              IsHitTestVisible="{Binding !IsBrowsePlaceholderVisible}" IsEnabled="{Binding !IsBrowsePlaceholderVisible}">
-                <Grid>
-                    <views:BrowseCardListBox x:Name="CardRowsList" Classes="browseList" ItemsSource="{Binding PresentationRows, RelativeSource={RelativeSource AncestorType=views:BrowseTracksView}}" Focusable="True" AutoScrollToSelectedItem="False"
-                             CardLayout="{Binding CardLayout, RelativeSource={RelativeSource AncestorType=views:BrowseTracksView}}"
-                             Padding="0" BorderThickness="0"
-                             IsVisible="{Binding !IsBrowsePlaceholderVisible}"
-                             ScrollViewer.VerticalScrollBarVisibility="Visible" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                        <ListBox.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <VirtualizingStackPanel />
-                            </ItemsPanelTemplate>
-                        </ListBox.ItemsPanel>
-                    </views:BrowseCardListBox>
-                </Grid>
+            <Grid x:Name="BrowseContentPresentation">
+                <views:ResidentBrowseStrip x:Name="BrowseStrip">
+                    <Grid x:Name="RecommendationBrowsePage">
+                        <views:BrowseCardListBox x:Name="RecommendationCardRows" Classes="browseList" />
+                    </Grid>
+                    <Grid x:Name="PlaylistBrowsePage">
+                        <views:BrowseCardListBox x:Name="PlaylistCardRows" Classes="browseList" />
+                    </Grid>
+                    <Grid x:Name="LibraryBrowsePage">
+                        <views:BrowseCardListBox x:Name="LibraryCardRows" Classes="browseList" />
+                    </Grid>
+                </views:ResidentBrowseStrip>
             </Grid>
-            <Grid x:Name="BrowseSkeletonPresentation" IsVisible="{Binding IsBrowsePlaceholderVisible}" IsHitTestVisible="False" ClipToBounds="True">
+            <Grid x:Name="BrowseSkeletonPresentation" IsVisible="False" IsHitTestVisible="False" ClipToBounds="True"
+                  Background="{arc:ArcDesignTokenResource Surface}">
                 <ScrollViewer x:Name="BrowseSkeletonScroll" Padding="0" VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
                     <views:BrowseSkeletonView x:Name="BrowseSkeletonSurface" />
                 </ScrollViewer>

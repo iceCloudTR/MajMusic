@@ -148,7 +148,7 @@ namespace MajMusic.Tests
             await model.HomeUpdate;
             Layout(window);
             var browser = Find<BrowseTracksView>(mobile, "MobileSongBrowser");
-            var list = Find<ListBox>(browser, "CardRowsList");
+            var list = browser.ActiveList;
             var cards = list.GetVisualDescendants().OfType<SongCard>().Where(card => card.IsEffectivelyVisible && card.Bounds.Height > 0).ToArray();
             TestAssert.True(cards.Length > 0 && cards.Length < model.CardTracks.Count, "Phone artwork must remain virtualized instead of constructing the whole library.");
             var card = cards.First(item => item.TranslatePoint(default, list) is { Y: >= 0 } origin && origin.Y + item.Bounds.Height <= list.Bounds.Height + 1);
@@ -208,7 +208,7 @@ namespace MajMusic.Tests
             var next = model.CardTracks.First(card => card.Track.Id != paused.Id);
             var row = model.BrowseRows.Single(row => row.Tracks.Contains(next));
             var browser = Find<BrowseTracksView>(mobile, "MobileSongBrowser");
-            var list = Find<ListBox>(browser, "CardRowsList");
+            var list = browser.ActiveList;
             list.ScrollIntoView(row);
             Layout(window);
             var target = list.GetVisualDescendants().OfType<SongCard>().Single(card => ReferenceEquals(card.DataContext, next));

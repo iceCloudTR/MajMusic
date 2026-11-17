@@ -30,30 +30,33 @@ namespace MajMusic.Diagnostics.NativeNavigation
         public RejectedCredentials Credentials { get; } = new();
         /// <summary>Gets the number of generated searchable songs.</summary>
         public int TrackCount => 600;
+        /// <summary>Gets the generated cover files available to the diagnostic recommendation feed.</summary>
+        public IReadOnlyList<string> Covers { get; private set; } = Array.Empty<string>();
 
         /// <summary>Seeds complete synthetic catalog metadata, covers and private playlists before timing begins.</summary>
         /// <param name="root">The uniquely owned generated-data directory.</param>
         /// <param name="token">Cancels fixture file and private database operations.</param>
         /// <returns>The owned synthetic workspace and boundaries.</returns>
-        public static async Task<SyntheticLibrary> CreateAsync(string root, CancellationToken token)
+        /// <param name="separateArtwork">Uses different artwork for the first 25 tracks of each tested mode.</param>
+        public static async Task<SyntheticLibrary> CreateAsync(string root, CancellationToken token, bool separateArtwork = false)
         {
             Directory.CreateDirectory(root);
             var fixture = new SyntheticLibrary(root);
             try
             {
                 var covers = new List<string>();
-                for (var index = 0; index < 8; index++)
+                for (var index = 0; index < (separateArtwork ? 100 : 8); index++)
                 {
-                    var image = new RenderTargetBitmap(new PixelSize(256, 256));
-                    var sample = new Avalonia.Controls.Border { Width = 256, Height = 256, Background = new SolidColorBrush(Color.FromRgb((byte)(60 + index * 20), (byte)(80 + index * 13), (byte)(160 - index * 9))) };
+                    using var image = new RenderTargetBitmap(new PixelSize(256, 256));
+                    var sample = new Avalonia.Controls.Border { Width = 256, Height = 256, Background = new SolidColorBrush(Color.FromRgb((byte)((60 + index * 20) & 255), (byte)((80 + index * 13) & 255), (byte)((160 - index * 9) & 255))) };
                     sample.Measure(new Size(256, 256));
                     sample.Arrange(new Rect(0, 0, 256, 256));
                     image.Render(sample);
                     var path = Path.Combine(root, "generated-cover-" + index + ".png");
                     image.Save(path, PngBitmapEncoderOptions.Default);
-                    image.Dispose();
                     covers.Add(path);
                 }
+                fixture.Covers = covers;
                 var settings = await fixture.Workspace.LoadSettingsAsync(token);
                 await fixture.Workspace.SaveSettingsAsync(settings with
                 {
@@ -74,7 +77,7 @@ namespace MajMusic.Diagnostics.NativeNavigation
                 for (var index = 0; index < 20; index++)
                 {
                     await fixture.Workspace.SavePlaylistAsync(new MusicPlaylist { Id = "generated-list-" + index, Name = "Generated playlist " + index,
-                        TrackIds = tracks.Skip(index * 15).Take(40).Select(track => track.Id).ToArray() }, token);
+                        TrackIds = tracks.Skip(separateArtwork ? 225 + index * 15 : index * 15).Take(40).Select(track => track.Id).ToArray() }, token);
                 }
                 return fixture;
             }

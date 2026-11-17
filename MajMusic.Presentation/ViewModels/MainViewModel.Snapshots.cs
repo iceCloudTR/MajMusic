@@ -11,7 +11,7 @@ namespace MajMusic.Presentation.ViewModels
     {
         /// <summary>Publishes one complete library or card-row snapshot to bound controls.</summary>
         /// <typeparam name="T">The immutable item or stable row presentation.</typeparam>
-        private sealed class SnapshotCollection<T> : ObservableCollection<T>
+        internal sealed class SnapshotCollection<T> : ObservableCollection<T>
         {
             /// <summary>Resizes an unchanged prefix with one range notification for its added or removed tail.</summary>
             /// <param name="items">The complete snapshot whose shared prefix already matches the current items.</param>

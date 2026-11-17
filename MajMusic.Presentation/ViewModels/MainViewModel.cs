@@ -18,8 +18,6 @@ namespace MajMusic.Presentation.ViewModels
     {
         /// <summary>Coordinates storage and optional sources.</summary>
         private readonly IMusicWorkspace _workspace;
-        /// <summary>Publishes complete query snapshots without notifying once per indexed song.</summary>
-        private readonly SnapshotCollection<MusicTrack> _tracks = new();
         /// <summary>Exchanges Maj-compatible files without allowing writes to music sources.</summary>
         private readonly IMajCollectionExchange? _collections;
         /// <summary>Identifies the fixed local favorites collection.</summary>
@@ -149,7 +147,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Occurs when a bound property changes.</summary>
         public event PropertyChangedEventHandler? PropertyChanged;
         /// <summary>Gets the visible search results.</summary>
-        public ObservableCollection<MusicTrack> Tracks => _tracks;
+        public ObservableCollection<MusicTrack> Tracks => ActiveBrowsePage.Tracks;
         /// <summary>Gets the local playlists.</summary>
         public ObservableCollection<MusicPlaylist> Playlists { get; } = new();
         /// <summary>Gets the search command.</summary>
@@ -339,6 +337,7 @@ namespace MajMusic.Presentation.ViewModels
                         CancelAutomaticLogin();
                     }
 
+                    QueueWarmBrowsePreviews();
                     RefreshCommands();
                     OnPropertyChanged(nameof(HasMoreRecommendations));
                 }
@@ -936,9 +935,9 @@ namespace MajMusic.Presentation.ViewModels
             cancellationToken.ThrowIfCancellationRequested();
             var readVersion = Interlocked.Increment(ref _browseReadVersion);
             var version = _homeVersion;
-            var transitionVersion = _browseTransitionVersion;
             var searching = IsSearching;
             var mode = _homeMode;
+            var target = searching ? null : PreviewFor(mode);
             var playlistIds = Playlists.FirstOrDefault(item => item.Id == _activePlaylistId)?.TrackIds.ToArray();
             var sourceNames = _settings.Endpoints.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
             IReadOnlyList<MusicTrack> found = !searching && mode == HomeBrowseMode.Recommendations
@@ -954,17 +953,7 @@ namespace MajMusic.Presentation.ViewModels
                     visible = playlistIds is null ? [] : playlistIds.Where(byId.ContainsKey).Select(id => byId[id]);
                 }
 
-                var prepared = visible.Select(track => track.EndpointId is { } endpointId && sourceNames.TryGetValue(endpointId, out var name)
-                    && name != track.SourceName ? track with { SourceName = name } : track).ToArray();
-                cancellationToken.ThrowIfCancellationRequested();
-                var indexes = new Dictionary<(string, string, string?), int>(prepared.Length);
-                for (var index = 0; index < prepared.Length; index++)
-                {
-                    var track = prepared[index];
-                    indexes[(track.Id, track.SourceId, track.EndpointId)] = index;
-                }
-
-                return new BrowseSnapshot(prepared, indexes);
+                return BuildBrowseSnapshot(visible, sourceNames, cancellationToken);
             }, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (version != _homeVersion || readVersion != Volatile.Read(ref _browseReadVersion))
@@ -978,13 +967,10 @@ namespace MajMusic.Presentation.ViewModels
                 if (_hasBrowseViewport && !preservePage)
                 {
                     _cardCovers ??= new CoverThumbnailCache(_workspace, _lifetime.Token);
-                    covers = await _cardCovers.PreloadAsync(entries.Tracks, CoverPreparationDeadline, cancellationToken);
+                    covers = await _cardCovers.PreloadAsync(entries.Tracks, CoverPreparationDeadline, cancellationToken, PreviewTrackLimit);
                 }
 
-                if (_hasBrowseViewport)
-                {
-                    await WaitForBrowseSurfaceAsync(transitionVersion, cancellationToken);
-                }
+                await WaitForCurrentBrowseSurfaceAsync(cancellationToken);
 
                 cancellationToken.ThrowIfCancellationRequested();
                 if (version != _homeVersion || readVersion != Volatile.Read(ref _browseReadVersion))
@@ -992,17 +978,14 @@ namespace MajMusic.Presentation.ViewModels
                     return;
                 }
 
-                PublishBrowseSnapshot(entries, preservePage, covers);
-                if (covers is not null && !searching && PreviewFor(mode) is { } target)
+                _presentedBrowseVersion = _homeVersion;
+                if (searching && mode == HomeBrowseMode.Library)
                 {
-                    StorePreview(target with { Tracks = entries.Tracks.Take(PreviewTrackLimit).ToArray() }, covers);
-                    covers = null;
+                    SaveUnfilteredLibraryPage();
                 }
-
-                foreach (var card in _cards.Values.ToArray())
-                {
-                    card.ResumeCoverLoading();
-                }
+                CommitBrowsePage(ActiveBrowsePage, entries, preservePage, covers, target, artworkPrepared: false);
+                PublishActiveBrowsePage(preservePage);
+                QueueWarmBrowsePreviews();
             }
             finally
             {
@@ -1010,21 +993,59 @@ namespace MajMusic.Presentation.ViewModels
             }
         }
 
-        /// <summary>Publishes prepared metadata and artwork together before exposing the new row bindings.</summary>
-        /// <param name="entries">The complete catalog or bounded warm prefix.</param>
-        /// <param name="preservePage">Whether a continuation retains the current browsing offset.</param>
-        /// <param name="covers">The ready first-screen artwork, or null when no browsing view is attached.</param>
-        private void PublishBrowseSnapshot(BrowseSnapshot entries, bool preservePage, CoverThumbnailCache.PreloadBatch? covers)
+        private static BrowseSnapshot BuildBrowseSnapshot(IEnumerable<MusicTrack> tracks, IReadOnlyDictionary<string, string> sourceNames,
+            CancellationToken cancellationToken)
+        {
+            var prepared = tracks.Select(track => track.EndpointId is { } endpointId && sourceNames.TryGetValue(endpointId, out var name)
+                && name != track.SourceName ? track with { SourceName = name } : track).ToArray();
+            cancellationToken.ThrowIfCancellationRequested();
+            var indexes = new Dictionary<(string, string, string?), int>(prepared.Length);
+            for (var index = 0; index < prepared.Length; index++)
+            {
+                var track = prepared[index];
+                indexes.TryAdd((track.Id, track.SourceId, track.EndpointId), index);
+            }
+
+            return new BrowseSnapshot(prepared, indexes);
+        }
+
+        private void CommitBrowsePage(HomeBrowsePage page, BrowseSnapshot entries, bool preservePage, CoverThumbnailCache.PreloadBatch? covers,
+            PreviewSpecification? target, bool artworkPrepared)
         {
             OverlayDownloadedMetadata(entries);
-            var inspected = SelectedTrack;
-            // Row observers read readiness synchronously while the new card grouping is being published.
+            page.Target = target;
+            page.ArtworkPrepared = artworkPrepared;
+            page.Tracks.ReplaceAll(entries.Tracks);
+            RefreshCardTracks(page, entries, covers);
+            var recommendation = ReferenceEquals(page, GetBrowsePage(HomeBrowseMode.Recommendations));
+            page.SetRecommendationFooter(recommendation && entries.Tracks.Length == RecommendationCurrentPageTrackCount
+                && RecommendationPageCount > 1);
+            page.SetReady(!recommendation || entries.Tracks.Length > 0);
+            if (!preservePage)
+            {
+                page.ResetNavigation();
+            }
+        }
+
+        private void PublishActiveBrowsePage(bool preservePage, bool residentSwitch = false)
+        {
             _presentedBrowseVersion = _homeVersion;
-            _tracks.ReplaceAll(entries.Tracks);
-            RefreshCardTracks(entries, covers);
-            SelectedTrack = Tracks.FirstOrDefault(item => item.Id == inspected?.Id) ?? inspected;
+            _cardIndexes = ActiveBrowsePage.Snapshot?.Indexes ?? new();
+            if (!residentSwitch && SelectedTrack is { } inspected
+                && _cardIndexes.TryGetValue((inspected.Id, inspected.SourceId, inspected.EndpointId), out var index))
+            {
+                SelectedTrack = Tracks[index];
+            }
+
             _libraryPageIndex = preservePage ? Math.Clamp(_libraryPageIndex, 0, Math.Max(0, (Tracks.Count - 1) / LibraryPageSize)) : 0;
-            RefreshVisibleTracks();
+            RefreshVisibleTracks(enrich: !residentSwitch);
+            OnPropertyChanged(nameof(Tracks));
+            OnPropertyChanged(nameof(BrowseRows));
+            OnPropertyChanged(nameof(CardTracks));
+            OnPropertyChanged(nameof(BrowseSummary));
+            OnPropertyChanged(nameof(SelectedBrowseTrack));
+            OnPropertyChanged(nameof(SelectedBrowseCard));
+            OnPropertyChanged(nameof(BrowseNavigationVersion));
             OnPropertyChanged(nameof(LibrarySummary));
             OnPropertyChanged(nameof(IsBrowsePlaceholderVisible));
         }

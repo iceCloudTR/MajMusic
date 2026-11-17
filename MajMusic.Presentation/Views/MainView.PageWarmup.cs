@@ -155,8 +155,10 @@ namespace MajMusic.Presentation.Views
             }
             var pageHost = tabs.GetVisualDescendants().OfType<MusicSurfaceHost>()
                 .FirstOrDefault(host => host.Name == "PageSurfaceTransition");
-            var browseHost = this.FindControl<BrowseTracksView>("SongBrowser")?.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition");
+            var browser = this.FindControl<BrowseTracksView>("SongBrowser");
+            var browseHost = browser?.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition");
             if (IsSurfaceMoving(pageHost) || IsSurfaceMoving(browseHost)
+                || browser is { IsEffectivelyVisible: true, ResidentTransitionUpdate.IsCompleted: false }
                 || this.FindControl<SharedSongCardFlight>("DesktopSongCardFlight") is { IsEffectivelyVisible: true, MoveUpdate.IsCompleted: false })
             {
                 ScheduleDesktopPageWarmup(version);

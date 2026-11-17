@@ -257,7 +257,8 @@ namespace MajMusic.Tests
         /// <returns>The visible artwork control.</returns>
         private static SongCard Card(MainView view, string id)
         {
-            return view.GetVisualDescendants().OfType<SongCard>().Single(item => item.DataContext is SongCardViewModel card && card.Track.Id == id);
+            return view.GetVisualDescendants().OfType<BrowseTracksView>().Single().ActiveList.GetVisualDescendants()
+                .OfType<SongCard>().Single(item => item.DataContext is SongCardViewModel card && card.Track.Id == id);
         }
 
         /// <summary>Opens the row's actual native context gesture after scrolling it into view.</summary>
