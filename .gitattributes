@@ -7,6 +7,7 @@
 *.props text eol=lf
 *.json text eol=lf
 *.md text eol=lf
+Tools/MajViewEmbedded.patch text eol=lf -whitespace
 *.png binary
 *.jpg binary
 *.jpeg binary

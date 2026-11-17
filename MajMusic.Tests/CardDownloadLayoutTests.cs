@@ -104,25 +104,23 @@ namespace MajMusic.Tests
                             SaveFrame(window, Path.Combine(output, $"ui-card-downloads-{size.Width:0}-{scale * 100:0}.png"));
                             foreach (var index in new[] { 0, 1, 2, 3 })
                             {
-                                var control = list.GetVisualDescendants().OfType<SongCard>()
-                                    .FirstOrDefault(item => ReferenceEquals(item.DataContext, model.CardTracks[index]));
-                                TestAssert.True(control is not null, "The initial viewport must realize the download-state fixture cards.");
-                                AssertDownloadCard(control!, index == 1 ? 25 : index == 2 ? 100 : 0, index == 1, scale);
+                                var card = RealizeCard(window, list, model, index);
+                                AssertDownloadCard(card, index == 1 ? 25 : index == 2 ? 100 : 0, index == 1, scale);
                             }
 
                         }
                     }
 
-                    TestAssert.True(!model.CardTracks[0].HasDownloadStatus && model.CardTracks[2].DownloadStatus == "下载完成",
-                        "Only a completed audio file may display the persistent completed-download label.");
+                    TestAssert.True(!model.CardTracks[0].HasDownloadStatus && model.CardTracks[2].DownloadStatus == "已在本地",
+                        "Only an available online song may display the persistent local media label.");
                     TestAssert.True(model.CardTracks[3].IsDownloadIndeterminate && model.CardTracks[3].DownloadPercent == 0,
                         "Unknown transfer length must retain real byte details without inventing a fill percentage.");
+                    var activeList = view.GetVisualDescendants().OfType<BrowseTracksView>().Single().ActiveList;
                     model.SelectedTrack = tracks[0];
                     window.UpdateLayout();
                     Dispatcher.UIThread.RunJobs();
-                    var finalCards = view.GetVisualDescendants().OfType<SongCard>().ToArray();
-                    AssertDownloadCard(finalCards.Single(card => ReferenceEquals(card.DataContext, model.CardTracks[0])), 0, true, window.RenderScaling);
-                    AssertDownloadCard(finalCards.Single(card => ReferenceEquals(card.DataContext, model.CardTracks[1])), 25, false, window.RenderScaling);
+                    AssertDownloadCard(RealizeCard(window, activeList, model, 0), 0, true, window.RenderScaling);
+                    AssertDownloadCard(RealizeCard(window, activeList, model, 1), 25, false, window.RenderScaling);
                 }
                 finally
                 {
@@ -138,6 +136,21 @@ namespace MajMusic.Tests
 
                 return true;
             }, timeout.Token);
+        }
+
+        /// <summary>Scrolls the fixture song's virtualized row into view before inspecting its control.</summary>
+        /// <param name="window">The window hosting the responsive browse layout.</param>
+        /// <param name="list">The active artwork list.</param>
+        /// <param name="model">The owner of the current rows and column count.</param>
+        /// <param name="index">The song to inspect.</param>
+        /// <returns>The realized card for the song.</returns>
+        private static SongCard RealizeCard(Window window, ListBox list, MainViewModel model, int index)
+        {
+            list.ScrollIntoView(model.BrowseRows[index / model.BrowseColumns]);
+            window.UpdateLayout();
+            Dispatcher.UIThread.RunJobs();
+            return list.GetVisualDescendants().OfType<SongCard>()
+                .Single(item => ReferenceEquals(item.DataContext, model.CardTracks[index]));
         }
 
         /// <summary>Checks actual fill geometry, background pixels, text bounds and selection-border styling.</summary>
@@ -216,12 +229,13 @@ namespace MajMusic.Tests
             using var referenceEncoded = new MemoryStream();
             referenceFrame.Save(referenceEncoded, PngBitmapEncoderOptions.Default);
             using var referencePixels = SKBitmap.Decode(referenceEncoded.ToArray());
-            foreach (var fraction in new[] { .25, .5, .75 })
+            // Sample each part of the cover while avoiding the quick-play overlay at its lower right.
+            foreach (var (xFraction, yFraction) in new[] { (.25, .25), (.5, .5), (.75, .25), (.25, .75) })
             {
-                var coverX = (int)Math.Round(artworkOrigin.X + artwork.Bounds.Width * fraction);
-                var coverY = (int)Math.Round(artworkOrigin.Y + artwork.Bounds.Height * fraction);
+                var coverX = (int)Math.Round(artworkOrigin.X + artwork.Bounds.Width * xFraction);
+                var coverY = (int)Math.Round(artworkOrigin.Y + artwork.Bounds.Height * yFraction);
                 TestAssert.Equal(referencePixels.GetPixel(coverX, coverY), pixels.GetPixel(coverX, coverY),
-                    "The selected wash and transfer fill must preserve exact independently rendered artwork pixels.");
+                    $"The selected wash and transfer fill must preserve artwork pixels at ({xFraction:P0}, {yFraction:P0}).");
             }
         }
 

@@ -2,15 +2,22 @@
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using MajMusic.Core.Abstractions;
+using MajMusic.Core.Models;
 using MajMusic.Core.Playback;
 using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
+using TKCode.Arc.Motion;
+using ArcKeyboard = TKCode.Arc.Mobile.KeyboardInsetSource;
+using ArcPage = TKCode.Arc.Mobile.Page;
 
 namespace MajMusic.Tests
 {
@@ -25,11 +32,11 @@ namespace MajMusic.Tests
         /// <returns>A task representing the real bound layouts.</returns>
         private static async Task RunHeadlessAsync()
         {
-            await using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApplication));
+            await using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessFullMotionTestApplication));
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
             await session.Dispatch<bool>(async () =>
             {
-                var workspace = new SocialPresentationTests.SocialWorkspace();
+                var workspace = new DetailsWorkspace();
                 workspace.CommentsOverride = (track, account, page, _) => Task.FromResult(SocialPresentationTests.SocialWorkspace.Page(track, account, page) with { Total = 21 });
                 var backend = new LibraryExperienceTests.ExperienceBackend();
                 var playback = new PlaybackService(backend, resolveAudioPath: (track, token) => workspace.ResolveAudioAsync(track, false, token));
@@ -44,6 +51,7 @@ namespace MajMusic.Tests
                 model.SelectedTrack = workspace.Library[1];
                 var main = new MainView { DataContext = model };
                 var window = new Window { Content = main, Width = 1100, Height = 800 };
+                ArcMotion.SetLevel(window, ArcMotionLevel.Off);
                 var output = Path.Combine(Environment.CurrentDirectory, "artifacts", "social-details");
                 Directory.CreateDirectory(output);
                 try
@@ -125,22 +133,70 @@ namespace MajMusic.Tests
                     await sheet.SheetUpdate.WaitAsync(timeout.Token);
                     Layout(window);
                     var panel = Find(sheet, "PART_Panel");
-                    var half = VisiblePanelHeight(panel, sheet);
-                    var fullPanelHeight = panel.Bounds.Height;
-                    TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && half > sheet.Bounds.Height * .35 && half < sheet.Bounds.Height * .65,
-                        "A newly opened mobile song sheet must display its half-height resting point rather than immediately filling the phone.");
-                    SaveFrame(window, Path.Combine(output, "ui-social-phone-half.png"));
-                    Tap(window, Find(mobile, "MobileExpandDetailsButton"));
+                    var header = Find(mobile, "MobileSongHeader");
+                    var compactHeight = VisiblePanelHeight(panel, sheet);
+                    var compactHeader = BoundsIn(header, panel);
+                    AssertCompactPanel(sheet, panel, header);
+                    SaveFrame(window, Path.Combine(output, "ui-social-phone-compact.png"));
+                    window.Height = 940;
+                    Layout(window);
+                    await sheet.SheetUpdate.WaitAsync(timeout.Token);
+                    Layout(window);
+                    TestAssert.True(Math.Abs(VisiblePanelHeight(panel, sheet) - compactHeight) < 2,
+                        "Extra screen height must not add blank rows to the compact song card.");
+                    AssertCompactPanel(sheet, panel, header);
+                    window.Height = 844;
+                    Layout(window);
+                    await sheet.SheetUpdate.WaitAsync(timeout.Token);
+                    Layout(window);
+                    var dragStart = header.TranslatePoint(new Point(24, 24), window)!.Value;
+                    using (var drag = window.TouchBegin(dragStart, RawInputModifiers.None))
+                    {
+                        window.TouchMove(drag, dragStart + new Vector(0, -12), RawInputModifiers.None);
+                        window.TouchMove(drag, dragStart + new Vector(0, -48), RawInputModifiers.None);
+                        window.TouchEnd(drag, dragStart + new Vector(0, -48), RawInputModifiers.None);
+                    }
                     await sheet.SheetUpdate.WaitAsync(timeout.Token);
                     await model.SongSocialUpdate.WaitAsync(timeout.Token);
                     Layout(window);
-                    TestAssert.True(sheet.IsExpanded && model.IsSongDetailsExpanded && VisiblePanelHeight(panel, sheet) > half * 1.65
-                        && Math.Abs(panel.Bounds.Height - fullPanelHeight) < 1,
-                        "Mobile expansion moves the same fixed-height pane to its full resting point without rescaling its content.");
+                    TestAssert.True(sheet.IsExpanded && model.IsSongDetailsExpanded && VisiblePanelHeight(panel, sheet) > compactHeight + 120,
+                        "A short upward drag on the mobile summary must reveal the lower panes with meaningful space for their content.");
+                    TestAssert.True(ReferenceEquals(header, Find(mobile, "MobileSongHeader")) && header.IsEffectivelyVisible
+                        && BoundsIn(header, panel) == compactHeader,
+                        "The original song summary stays in the same position within the sheet as it expands.");
                     var expanded = mobile.GetVisualDescendants().OfType<SongDetailsView>().Single(view => view.IsEffectivelyVisible);
                     SaveFrame(window, Path.Combine(output, "ui-social-phone-full.png"));
+                    var expandedHeader = BoundsIn(header, window);
+                    var mobileTabs = Find(expanded, "SongDetailsTabs");
+                    TestAssert.True(expandedHeader.Bottom <= BoundsIn(mobileTabs, window).Y + 1,
+                        "The expanded tabs must be arranged below the persistent song summary.");
+                    foreach (var level in new[] { 2, 5 })
+                    {
+                        TapTab(window, expanded, "SongPreviewSegments", level);
+                        TestAssert.True(model.SelectedMajViewDifficulty == level && Find(expanded, "ChartPreviewHost").IsEffectivelyVisible
+                            && !Find(expanded, "SongCommentsList").IsEffectivelyVisible,
+                            "Selecting a real mobile difficulty switches only the lower content to the chart preview.");
+                        TestAssert.True(header.IsEffectivelyVisible && BoundsIn(header, window) == expandedHeader,
+                            "Switching difficulties must not move or replace the song summary.");
+                    }
                     ValidateMobileComments(window, expanded, model);
+                    TestAssert.True(header.IsEffectivelyVisible && BoundsIn(header, window) == expandedHeader,
+                        "Returning to comments must keep the same song summary fixed above the discussion.");
                     SaveFrame(window, Path.Combine(output, "ui-social-phone-comments.png"));
+                    var keyboard = new ArcKeyboard();
+                    ArcPage.SetKeyboardInsetSource(mobile, keyboard);
+                    var composer = (TextBox)Find(expanded, "SongCommentInput");
+                    Tap(window, composer);
+                    TestAssert.True(composer.IsFocused, "The comment field must receive focus when tapped.");
+                    var previousSheetHeight = sheet.Bounds.Height;
+                    keyboard.Set(280, TimeSpan.Zero);
+                    Layout(window);
+                    TestAssert.True(sheet.Bounds.Height < previousSheetHeight,
+                        "Showing the keyboard must resize the song details.");
+                    TestAssert.True(composer.IsFocused,
+                        "The comment field must keep focus when the keyboard resizes the song details.");
+                    keyboard.Set(0, TimeSpan.Zero);
+                    Layout(window);
                     window.Height = 420;
                     model.SongComments.Single().ReplyCommand.Execute(null);
                     Layout(window);
@@ -153,13 +209,15 @@ namespace MajMusic.Tests
                     Layout(window);
                     await sheet.SheetUpdate.WaitAsync(timeout.Token);
                     Layout(window);
-                    Tap(window, Find(expanded, "CloseExpandedSongDetailsButton"));
+                    Tap(window, Find(mobile, "CloseExpandedSongDetailsButton"));
                     await sheet.SheetUpdate.WaitAsync(timeout.Token);
                     Layout(window);
-                    TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && !model.IsSongDetailsExpanded && Math.Abs(VisiblePanelHeight(panel, sheet) - half) < 2,
-                        "The expanded close action returns to half height and keeps the same inspected song open.");
+                    TestAssert.True(!model.IsSongDetailsExpanded && Math.Abs(VisiblePanelHeight(panel, sheet) - compactHeight) < 2,
+                        "The expanded close action returns to the compact content height.");
+                    AssertCompactPanel(sheet, panel, header);
                     TestAssert.Equal(0, workspace.Posts.Count, "Rendering and inspecting synthetic source comments must never submit a comment implicitly.");
                     AssertPlaybackUnchanged(playback, backend, playing, queue);
+                    await ValidatePreviewDrawerMotionAsync(window, sheet, workspace, model, timeout.Token);
                 }
                 finally
                 {
@@ -167,6 +225,71 @@ namespace MajMusic.Tests
                 }
                 return true;
             }, timeout.Token);
+        }
+
+        /// <summary>Keeps the same rendered preview in the drawer through a pressed drag, reversal and collapse.</summary>
+        /// <param name="window">The headless input owner.</param>
+        /// <param name="sheet">The real mobile details sheet.</param>
+        /// <param name="workspace">The owner of the synthetic loopback session.</param>
+        /// <param name="model">The view model to inspect and open the chart.</param>
+        /// <param name="token">Cancels an unfinished transition.</param>
+        private static async Task ValidatePreviewDrawerMotionAsync(Window window, InterruptibleSongSheet sheet, DetailsWorkspace workspace,
+            MainViewModel model, CancellationToken token)
+        {
+            var factory = ChartPreviewPane.CreateEmbeddedView;
+            var preview = new Border();
+            ChartPreviewPane.CreateEmbeddedView = (_, _) => preview;
+            try
+            {
+                var session = new DrawerPreviewSession();
+                workspace.Preview = session;
+                model.IsSongDetailsExpanded = true;
+                await sheet.SheetUpdate.WaitAsync(token);
+                Layout(window);
+                await model.SelectMajViewDifficultyAsync(2).WaitAsync(token);
+                Layout(window);
+                var host = (ContentControl)Find(sheet, "PreviewSurface");
+                TestAssert.True(ReferenceEquals(host.Content, preview), "A resolved chart must mount its preview before the drawer moves.");
+
+                var origin = BoundsIn(preview, window);
+                var handle = Find(sheet, "PART_Handle");
+                var start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), window)!.Value;
+                using (var drag = window.TouchBegin(start, RawInputModifiers.None))
+                {
+                    window.TouchMove(drag, start + new Vector(0, 15), RawInputModifiers.None);
+                    window.TouchMove(drag, start + new Vector(0, 100), RawInputModifiers.None);
+                    Layout(window);
+                    TestAssert.True(ReferenceEquals(host.Content, preview) && !session.IsReleased
+                        && Math.Abs(BoundsIn(preview, window).Y - origin.Y - sheet.PanelOffset) < 2 && sheet.PanelOffset > 40,
+                        "The original preview must move with the sheet while the user holds the downward pull.");
+                    var lowered = sheet.PanelOffset;
+                    window.TouchMove(drag, start + new Vector(0, 45), RawInputModifiers.None);
+                    Layout(window);
+                    TestAssert.True(ReferenceEquals(host.Content, preview) && Math.Abs(sheet.PanelOffset - (lowered - 55)) < 2,
+                        "Reversing a held gesture must return the same preview toward the expanded position.");
+                }
+                Layout(window);
+                TestAssert.True(sheet.IsExpanded && ReferenceEquals(host.Content, preview),
+                    "Cancelling a pull must restore expanded details without replacing the preview.");
+
+                ArcMotion.SetLevel(sheet, ArcMotionLevel.Full);
+                sheet.IsExpanded = false;
+                TestAssert.True(!sheet.IsExpanded && ReferenceEquals(host.Content, preview) && !session.IsReleased,
+                    "Committing collapse must keep the preview alive while it still occupies the moving viewport.");
+                while (!sheet.SheetUpdate.IsCompleted)
+                {
+                    await Task.Delay(12, token);
+                    Layout(window);
+                }
+                await sheet.SheetUpdate.WaitAsync(token);
+                Layout(window);
+                TestAssert.True(host.Content is null && session.IsReleased && !model.IsSongDetailsExpanded,
+                    "The compact resting point must release the offscreen preview and its session.");
+            }
+            finally
+            {
+                ChartPreviewPane.CreateEmbeddedView = factory;
+            }
         }
 
         /// <summary>Checks simultaneous desktop panes and the right-hand multiline composer at regular and minimum sizes.</summary>
@@ -260,6 +383,18 @@ namespace MajMusic.Tests
                 var right = BoundsIn(composer, window);
                 var inputBefore = BoundsIn(input, window);
                 var list = (ListBox)Find(root, "SongCommentsList");
+                var cards = ValidateCommentCards(list).OrderBy(card => BoundsIn(card, list).Y).ToArray();
+                TestAssert.True(cards.Length >= 2 && BoundsIn(cards[1], list).Y - BoundsIn(cards[0], list).Bottom >= 5,
+                    "Adjacent comments must have a visible gap between their rounded outlines.");
+
+                var item = cards[0].FindAncestorOfType<ListBoxItem>()!;
+                var presenter = item.GetVisualDescendants().OfType<ContentPresenter>()
+                    .Single(control => control.TemplatedParent == item && control.Name == "PART_ContentPresenter");
+                list.SelectedIndex = 0;
+                window.MouseMove(cards[0].TranslatePoint(new Point(20, 16), window)!.Value, RawInputModifiers.None);
+                Layout(window);
+                TestAssert.True(item.IsPointerOver && item.IsSelected && presenter.Background is ISolidColorBrush { Color.A: 0 },
+                    "Hover and selection must leave the area around the comment card transparent.");
                 var point = list.TranslatePoint(new Point(list.Bounds.Width / 2, list.Bounds.Height / 2), window)!.Value;
                 window.MouseWheel(point, new Vector(0, -8), RawInputModifiers.None);
                 Layout(window);
@@ -331,6 +466,7 @@ namespace MajMusic.Tests
                 "The empty authenticated composer must be visible and editable, with only its empty submission disabled.");
             TestAssert.True(root.GetVisualDescendants().OfType<TextBlock>().Any(text => text.IsEffectivelyVisible && text.Text == model.SongComments.Single().Content),
                 "The actual comment template must display the source-confirmed row rather than a static sample.");
+            ValidateCommentCards((ListBox)Find(root, "SongCommentsList"));
             var reply = root.GetVisualDescendants().OfType<TKCode.Arc.Button>().Single(button => Equals(button.Content, "回复"));
             var item = reply.FindAncestorOfType<ListBoxItem>()!;
             var replyOffset = reply.TranslatePoint(default, item)!.Value;
@@ -338,6 +474,19 @@ namespace MajMusic.Tests
                 && replyOffset.Y >= -1 && replyOffset.Y + reply.Bounds.Height <= item.Bounds.Height + 1,
                 "Comment actions must fit inside their actual list item rather than being clipped by the music-list row height.");
             ValidateMobileComposerBounds(window, root, root);
+        }
+
+        /// <summary>Checks the outlined cards realized by a discussion list.</summary>
+        /// <param name="list">The visible desktop or mobile discussion list.</param>
+        /// <returns>The realized comment card borders.</returns>
+        private static Border[] ValidateCommentCards(ListBox list)
+        {
+            var cards = list.GetVisualDescendants().OfType<SongCommentRow>().Where(row => row.IsEffectivelyVisible)
+                .Select(row => row.FindControl<Border>("CommentCard")!).ToArray();
+            TestAssert.True(cards.Length > 0 && cards.All(card => card.CornerRadius == new CornerRadius(12)
+                && card.BorderThickness == MusicGeometry.OutlineThickness && card.Background is ISolidColorBrush { Color.A: > 0 }),
+                "The shared comment row must render a filled card with a uniform rounded outline.");
+            return cards;
         }
 
         /// <summary>Keeps the complete composer and send control inside the actual clipped detail viewport, including short windows.</summary>
@@ -366,8 +515,9 @@ namespace MajMusic.Tests
             var sendTop = send.TranslatePoint(default, root)!.Value.Y;
             TestAssert.True(Math.Abs(inputTop - sendTop) < 1 && Math.Abs(input.Bounds.Height - send.Bounds.Height) < 1,
                 "The multiline composer and send control must retain the same top and bottom edges at each viewport height.");
-            TestAssert.True(Find(root, "SongCommentsList").Bounds.Height >= 44,
-                "Comments must retain a scrollable reading area even with a short window, reply target and another available page.");
+            var listHeight = Find(root, "SongCommentsList").Bounds.Height;
+            TestAssert.True(listHeight >= 44,
+                $"Comments must retain a scrollable reading area while replying. List: {listHeight:F1} DIP; composer: {input.Bounds.Height:F1} DIP; pane: {root.Bounds.Height:F1} DIP.");
         }
 
         /// <summary>Measures the actual intersection of the translated full panel and the clipped sheet viewport.</summary>
@@ -376,6 +526,18 @@ namespace MajMusic.Tests
         /// <returns>The currently visible panel height.</returns>
         private static double VisiblePanelHeight(Control panel, Control sheet)
             => new Rect(panel.TranslatePoint(default, sheet)!.Value, panel.Bounds.Size).Intersect(new Rect(sheet.Bounds.Size)).Height;
+
+        /// <summary>Checks that the compact panel contains the song controls and only its normal bottom padding.</summary>
+        /// <param name="sheet">The fixed clipped overlay.</param>
+        /// <param name="panel">The translated template panel.</param>
+        /// <param name="header">The persistent song summary and actions.</param>
+        private static void AssertCompactPanel(InterruptibleSongSheet sheet, Control panel, Control header)
+        {
+            var contentBottom = BoundsIn(header, panel).Bottom;
+            var bottomPadding = VisiblePanelHeight(panel, sheet) - contentBottom;
+            TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && header.IsEffectivelyVisible && bottomPadding is >= -1 and <= 16,
+                $"The compact sheet must fit the complete summary with only normal bottom padding, measured {bottomPadding:F1} DIP.");
+        }
 
         /// <summary>Locates a named production control without depending on its XAML namescope.</summary>
         /// <param name="root">The active view subtree.</param>
@@ -427,6 +589,37 @@ namespace MajMusic.Tests
                 new Vector(96 * window.RenderScaling, 96 * window.RenderScaling));
             bitmap.Render(window);
             bitmap.Save(path, PngBitmapEncoderOptions.Default);
+        }
+
+        /// <summary>Provides two populated chart slots without contacting or mounting an actual renderer.</summary>
+        private sealed class DetailsWorkspace : SocialPresentationTests.SocialWorkspace, IChartPreviewWorkspace, IMajViewPreviewHost
+        {
+            public DrawerPreviewSession? Preview { get; set; }
+
+            /// <inheritdoc />
+            public Task<IReadOnlyList<ChartPreviewDifficulty>> GetChartPreviewDifficultiesAsync(MusicTrack track,
+                CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ChartPreviewDifficulty>>([new(2, "4"), new(5, "13+")]);
+
+            /// <inheritdoc />
+            public Task<ChartPreviewAssets> ResolveChartPreviewAsync(MusicTrack track, bool includeVideo,
+                CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+            public Task<IMajViewPreviewSession> CreateMajViewPreviewAsync(MusicTrack track, bool includeVideo,
+                CancellationToken cancellationToken = default) => Preview is { } preview
+                ? Task.FromResult<IMajViewPreviewSession>(preview) : throw new NotSupportedException();
+        }
+
+        /// <summary>Records exactly when the visible chart's renderer can be released.</summary>
+        private sealed class DrawerPreviewSession : IMajViewPreviewSession
+        {
+            public Uri Address { get; } = new("http://127.0.0.1:1234/drawer-preview/");
+            public bool IsReleased { get; private set; }
+
+            public ValueTask DisposeAsync()
+            {
+                IsReleased = true;
+                return ValueTask.CompletedTask;
+            }
         }
     }
 }

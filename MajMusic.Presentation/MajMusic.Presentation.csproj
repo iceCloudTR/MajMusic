@@ -3,6 +3,7 @@
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     </PropertyGroup>
     <ItemGroup>
+        <AvaloniaResource Include="Assets/MajMusic.png" />
         <ProjectReference Include="../MajMusic.Core/MajMusic.Core.csproj" />
         <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
         <PackageReference Include="TKCode.Arc" Version="$(ArcVersion)" />

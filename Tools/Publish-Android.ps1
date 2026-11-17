@@ -2,13 +2,15 @@
 
 <#
 .SYNOPSIS
-Creates a signed, self-contained Android APK containing only ARM64 native libraries.
+Creates a signed ARM64 APK with .NET 10 and MajView.
 .PARAMETER DotNet
 Specifies the .NET 10 SDK command or executable. A compatible user installation is detected by default.
 .PARAMETER AndroidSdkDirectory
 Specifies an installed Android SDK containing platform and build tools.
 .PARAMETER JavaSdkDirectory
 Specifies a compatible JDK 17 or 21 directory.
+.PARAMETER MajViewDirectory
+Specifies a local MajView build folder with its runtime.json manifest.
 .PARAMETER KeepBuild
 Keeps this run's isolated intermediate build directory.
 #>
@@ -18,6 +20,7 @@ param(
     [string] $DotNet = '',
     [string] $AndroidSdkDirectory = '',
     [string] $JavaSdkDirectory = '',
+    [string] $MajViewDirectory = '',
     [switch] $KeepBuild
 )
 
@@ -182,11 +185,14 @@ $runName = 'android-arm64-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [Guid
 $runDirectory = Join-Path $artifactsRoot $runName
 $buildDirectory = Join-Path $runDirectory 'build'
 $publishDirectory = Join-Path $buildDirectory 'package'
+$renderer = & (Join-Path $PSScriptRoot 'Prepare-MajViewRuntime.ps1') -CustomDirectory $MajViewDirectory
+$majView = $renderer.Manifest
 New-Item -ItemType Directory -Path $publishDirectory | Out-Null
 $publishArguments = @(
     'publish', $projectPath, '-c', 'Release', '-f', 'net10.0-android', '-r', 'android-arm64',
     '-p:RuntimeIdentifiers=android-arm64', '-p:AndroidPackageFormats=apk', '-p:AndroidKeyStore=false',
     '-p:EmbedAssembliesIntoApk=true', "-p:AndroidSdkDirectory=$AndroidSdkDirectory", "-p:JavaSdkDirectory=$JavaSdkDirectory",
+    "-p:MajViewAssetsDirectory=$($renderer.Directory)", "-p:MajViewRuntimeManifest=$($renderer.ManifestPath)",
     '--artifacts-path', (Join-Path $buildDirectory 'sdk'), '-o', $publishDirectory
 )
 & $DotNet @publishArguments
@@ -213,6 +219,30 @@ if ($LASTEXITCODE -ne 0) {
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead($signedApk)
 try {
+    foreach ($name in @('libmonosgen-2.0.so', 'libmonodroid.so')) {
+        if (!$archive.GetEntry("lib/arm64-v8a/$name")) {
+            throw "The .NET 10 runtime is incomplete: $name."
+        }
+    }
+    foreach ($file in $majView.files) {
+        $entry = $archive.GetEntry("assets/MajView/$($file.name)")
+        if (!$entry -or $entry.Length -ne $file.length) {
+            throw "The packaged MajView renderer is incomplete: $($file.name)."
+        }
+        $stream = $entry.Open()
+        try {
+            if ((Get-FileHash -InputStream $stream -Algorithm SHA256).Hash -ne $file.sha256) {
+                throw "The packaged MajView renderer has an unexpected hash: $($file.name)."
+            }
+        } finally {
+            $stream.Dispose()
+        }
+    }
+    foreach ($name in @('MajView.LICENSE', 'MajView.NOTICES.md', 'MajView.Runtime.json')) {
+        if (!$archive.GetEntry("assets/ThirdPartyNotices/$name")) {
+            throw "The packaged MajView notice is missing: $name."
+        }
+    }
     $abis = @($archive.Entries | ForEach-Object { if ($_.FullName -match '^lib/([^/]+)/[^/]+\.so$') { $Matches[1] } } | Select-Object -Unique)
     if ($abis.Count -ne 1 -or $abis[0] -ne 'arm64-v8a') {
         throw 'The APK must contain only ARM64 native libraries.'
@@ -228,6 +258,8 @@ $apkPath = Join-Path $runDirectory 'MajMusic-android-arm64.apk'
 Copy-Item -LiteralPath $signedApk -Destination $apkPath
 $manifest = [ordered]@{
     RuntimeIdentifier = 'android-arm64'
+    SelfContained = $true
+    MajViewRevision = $majView.revision
     NativeAbis = $abis
     NativeLibraryCount = $nativeCount
     ElfMinimumLoadAlignmentBytes = ($elfReports | Measure-Object -Property MinimumAlignment -Minimum).Minimum

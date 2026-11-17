@@ -133,13 +133,7 @@ namespace MajMusic.Presentation.ViewModels
             if (_cards.TryGetValue((updated.Id, updated.SourceId, updated.EndpointId), out var card)
                 && card.Track.Revision == updated.Revision)
             {
-                card.UpdateTrack(card.Track with
-                {
-                    Duration = updated.Duration,
-                    AudioInfo = updated.AudioInfo,
-                    AudioMetadataLength = updated.AudioMetadataLength ?? card.Track.AudioMetadataLength,
-                    AudioMetadataLastWriteUtcTicks = updated.AudioMetadataLastWriteUtcTicks ?? card.Track.AudioMetadataLastWriteUtcTicks
-                });
+                card.UpdateTrack(MergeRowMetadata(card.Track, updated));
             }
         }
 

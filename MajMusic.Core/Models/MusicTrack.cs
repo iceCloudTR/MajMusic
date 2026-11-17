@@ -41,6 +41,9 @@ namespace MajMusic.Core.Models
         /// <summary>Gets the UTC last-write ticks associated with the cached local audio metadata.</summary>
         public long? AudioMetadataLastWriteUtcTicks { get; init; }
 
+        /// <summary>Gets the parser revision associated with the cached local audio metadata.</summary>
+        public int? AudioMetadataRevision { get; init; }
+
         /// <summary>Gets when this source revision's complete audio first became locally available.</summary>
         public DateTimeOffset? LocalMediaSavedAt { get; init; }
 

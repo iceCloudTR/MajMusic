@@ -231,24 +231,6 @@ namespace MajMusic.Infrastructure.Network
             IsLoggedIn = true;
         }
 
-        /// <summary>Ends the remote session and clears all cookies retained by this endpoint.</summary>
-        /// <param name="cancellationToken">Cancels the remote request.</param>
-        /// <returns>A task representing the completed logout.</returns>
-        /// <exception cref="HttpRequestException">The server rejects logout.</exception>
-        /// <exception cref="InvalidOperationException">Online activity is disabled.</exception>
-        public async Task LogoutAsync(CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                using var response = await SendAsync(HttpMethod.Post, "account/logout", null, cancellationToken).ConfigureAwait(false);
-                EnsureSuccess(response);
-            }
-            finally
-            {
-                ClearSession();
-            }
-        }
-
         /// <summary>Reads one finite recommendation snapshot page for a logged-in user.</summary>
         /// <param name="page">The zero-based page number.</param>
         /// <param name="pageSize">The number of entries requested, between one and one hundred.</param>

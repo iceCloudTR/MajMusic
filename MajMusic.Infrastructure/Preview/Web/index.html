@@ -6,24 +6,35 @@
     <meta name="referrer" content="no-referrer">
     <title>MajView · MajMusic</title>
     <style>
-        :root { color-scheme: dark; font: 14px system-ui,sans-serif; background:#17171b; color:#f1f1f5 }
+        :root { color-scheme:dark; font:14px system-ui,sans-serif; --surface:#27272c; --field:#27272c; --muted:#a1a1aa; --radius:12px; }
+        :root[data-theme="light"] { color-scheme:light; --surface:#eeeef1; --field:#5f5f6e; --muted:#66666f; }
         html, body { margin:0; height:100%; overflow:hidden; }
-        main { height:100%; position:relative; display:grid; place-items:center; isolation:isolate; overflow:hidden; }
-        canvas { display:block; background:#000; width:100vmin; height:100vmin; opacity:0; }
-        canvas.entered { opacity:1; animation:arrive 220ms cubic-bezier(.22,.7,.26,1) both; }
-        canvas.entered.reverse { --entry-offset:-10px; }
-        canvas.entered.no-motion { animation:none; }
+        main { height:100%; position:relative; display:grid; place-items:center; isolation:isolate; overflow:hidden; background:var(--surface); border-radius:var(--radius); }
+        #stage { position:relative; isolation:isolate; border-radius:var(--radius); overflow:hidden; opacity:0; }
+        canvas { display:block; background:var(--field); width:100vmin; height:100vmin; }
+        #stage.embedded canvas { width:100vw; height:100vh; }
+        #stage.embedded::after { content:""; position:absolute; pointer-events:none; mix-blend-mode:screen;
+            left:var(--chart-left); top:var(--chart-top); width:var(--chart-width); height:var(--chart-height);
+            border-radius:var(--radius); box-shadow:0 0 0 100vmax var(--field); }
+        /* MajView draws an opaque black surround outside its gameplay disc. */
+        @supports (mask-image:linear-gradient(black, transparent)) {
+            #stage:not(.embedded)::after { content:""; position:absolute; inset:0; pointer-events:none; background:var(--field); mix-blend-mode:screen;
+                mask-image:radial-gradient(circle closest-side, transparent 99.5%, black 100%); }
+        }
+        #stage.entered { opacity:1; animation:arrive 220ms cubic-bezier(.22,.7,.26,1) both; }
+        #stage.entered.reverse { --entry-offset:-10px; }
+        #stage.entered.no-motion { animation:none; }
         @keyframes arrive { from { opacity:0; transform:translateX(var(--entry-offset,10px)); } to { opacity:1; transform:translateX(0); } }
-        @media (prefers-reduced-motion:reduce) { canvas.entered { animation:none; } }
+        @media (prefers-reduced-motion:reduce) { #stage.entered { animation:none; } }
         [hidden] { display:none !important; }
-        p { position:absolute; text-align:center; margin:0; color:#c5c5ce; pointer-events:none; }
+        p { position:absolute; text-align:center; margin:0; color:var(--muted); pointer-events:none; }
     </style>
     <script defer src="runtime/Build.loader.js"></script>
     <script defer src="preview.js"></script>
 </head>
 <body>
     <main>
-        <canvas id="viewer" width="800" height="800" tabindex="-1"></canvas>
+        <div id="stage"><canvas id="viewer" width="800" height="800" tabindex="-1"></canvas></div>
         <p id="status" role="status">正在加载 MajView</p>
     </main>
 </body>

@@ -12,6 +12,12 @@ namespace MajMusic.Infrastructure.Application
         private readonly SemaphoreSlim _localMediaLookups = new(4, 4);
 
         /// <inheritdoc />
+        public Task<IReadOnlyList<MusicTrack>> FindOutdatedAudioMetadataAsync(int revision, CancellationToken cancellationToken = default)
+        {
+            return _library.FindOutdatedAudioMetadataAsync(revision, cancellationToken);
+        }
+
+        /// <inheritdoc />
         public async Task<MusicTrack> ResolveLocalTrackAsync(MusicTrack track, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(track);

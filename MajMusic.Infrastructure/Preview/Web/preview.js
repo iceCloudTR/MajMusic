@@ -1,7 +1,10 @@
 "use strict";
 
 const viewer = document.querySelector("#viewer");
+const stage = document.querySelector("#stage");
 const status = document.querySelector("#status");
+const query = new URL(location.href).searchParams;
+document.documentElement.dataset.theme = query.get("theme") === "light" ? "light" : "dark";
 let instance;
 let stopped = false;
 let heartbeat;
@@ -22,7 +25,7 @@ async function closePreview() {
     if (stopped) return;
     stopped = true;
     clearInterval(heartbeat);
-    viewer.hidden = true;
+    stage.hidden = true;
     status.textContent = "预览已关闭";
     if (instance) {
         try { await instance.Quit(); } catch { }
@@ -35,7 +38,7 @@ async function start() {
     const response = await fetch("song.json");
     if (!response.ok) throw new Error("谱面已关闭");
     const song = await response.json();
-    const query = new URL(location.href).searchParams;
+    stage.classList.toggle("embedded", song.embeddedViewport === true);
     const requested = Number(query.get("level"));
     const level = song.difficulties.some(item => item.number === requested)
         ? requested : song.difficulties.at(-1).number;
@@ -48,21 +51,25 @@ async function start() {
         streamingAssetsUrl: "runtime/StreamingAssets",
         companyName: "TeamMajdata",
         productName: "MajdataView",
-        productVersion: "1"
+        productVersion: "1",
+        webglContextAttributes: { alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 2 }
     }, progress => {
         if (!stopped) status.textContent = "正在加载 MajView · " + Math.floor(progress * 100) + "%";
     });
-    await Promise.race([ready, new Promise(resolve => setTimeout(resolve, 1500))]);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await ready;
+    if (!song.embeddedViewport) {
+        // The upstream renderer signals ready in Awake, before playback components initialize.
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
     if (window.onUnityLoaded === engineReady) delete window.onUnityLoaded;
     if (stopped) {
         await instance.Quit();
         return;
     }
     loadLevel(song, level);
-    viewer.classList.toggle("reverse", query.get("direction") === "-1");
-    viewer.classList.toggle("no-motion", query.get("motion") === "off");
-    viewer.classList.add("entered");
+    stage.classList.toggle("reverse", query.get("direction") === "-1");
+    stage.classList.toggle("no-motion", query.get("motion") === "off");
+    stage.classList.add("entered");
     status.textContent = "";
     heartbeat = setInterval(async () => {
         try {

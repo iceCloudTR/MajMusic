@@ -4,6 +4,7 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using MajMusic.Presentation.Theme;
@@ -149,7 +150,7 @@ namespace MajMusic.Presentation.Views
                 && _surface.Content is IMajViewNavigator navigator)
             {
                 _displayedAddress = address;
-                navigator.NavigatePreview(WithMotionPolicy(address));
+                navigator.NavigatePreview(WithViewOptions(address));
                 return;
             }
 
@@ -187,7 +188,7 @@ namespace MajMusic.Presentation.Views
                     return;
                 }
 
-                var embedded = create(WithMotionPolicy(address), message =>
+                var embedded = create(WithViewOptions(address), message =>
                     Dispatcher.UIThread.Post(() =>
                     {
                         if (CanMount(owner, address, version))
@@ -210,14 +211,15 @@ namespace MajMusic.Presentation.Views
             && ReferenceEquals(_owner, owner) && owner.MajViewAddress is { } active && SameSession(active, address) && IsPaneActive(owner)
             && TopLevel.GetTopLevel(this) is not null;
 
-        private Uri WithMotionPolicy(Uri address)
+        private Uri WithViewOptions(Uri address)
         {
-            if (ArcMotion.GetEffectiveLevel(this) == ArcMotionLevel.Full)
+            var theme = ActualThemeVariant == ThemeVariant.Light ? "light" : "dark";
+            var query = address.Query.TrimStart('?') + "&theme=" + theme;
+            if (ArcMotion.GetEffectiveLevel(this) != ArcMotionLevel.Full)
             {
-                return address;
+                query += "&motion=off";
             }
-            var builder = new UriBuilder(address) { Query = address.Query.TrimStart('?') + "&motion=off" };
-            return builder.Uri;
+            return new UriBuilder(address) { Query = query.TrimStart('&') }.Uri;
         }
 
         private static bool SameSession(Uri first, Uri second) =>

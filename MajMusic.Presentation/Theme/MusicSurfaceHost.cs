@@ -114,8 +114,6 @@ namespace MajMusic.Presentation.Theme
         public Task<bool> TransitionUpdate => _transitionUpdate;
         /// <summary>Gets the current incoming translation in logical pixels.</summary>
         public double IncomingOffset => _incomingTransform.X;
-        /// <summary>Gets the current outgoing translation in logical pixels.</summary>
-        public double OutgoingOffset => _outgoingTransform.X;
         /// <summary>Gets the original logical snapshot viewport, whose size is independent of subsequent layout.</summary>
         public Size SnapshotViewport => _snapshotViewport;
         /// <summary>Gets the bounded raster dimensions currently retained for the outgoing surface.</summary>

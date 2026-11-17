@@ -30,6 +30,9 @@ namespace MajMusic.Audio.Desktop
         }
 
         /// <inheritdoc />
+        public int CacheRevision => 1;
+
+        /// <inheritdoc />
         /// <exception cref="ArgumentException">The path is not a fully qualified local file path.</exception>
         /// <exception cref="ObjectDisposedException">The reader is shutting down.</exception>
         public Task<AudioMetadata> ReadAsync(string localPath, CancellationToken cancellationToken = default)
@@ -79,22 +82,10 @@ namespace MajMusic.Audio.Desktop
                 }
 
                 var engine = GetEngine();
-                using var media = new Media(engine, localPath, FromType.FromPath,
-                    ":no-video", ":no-spu", ":no-sub-autodetect-file");
-                // Continue away from the native callback before accessing or releasing native descriptors.
-                var status = await media.Parse(MediaParseOptions.ParseLocal, 5000, cancellationToken)
-                    .ContinueWith(static task => task.GetAwaiter().GetResult(), CancellationToken.None,
-                        TaskContinuationOptions.None, TaskScheduler.Default).ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                if (status == MediaParsedStatus.Done)
+                using var media = LocalAudioMedia.Create(engine, localPath);
+                if (await LocalAudioMedia.ParseAudioTrackAsync(media, cancellationToken).ConfigureAwait(false) is { } track)
                 {
-                    foreach (var track in media.Tracks)
-                    {
-                        if (track.TrackType == TrackType.Audio)
-                        {
-                            return ReadMetadata(media, track, file.Length);
-                        }
-                    }
+                    return LocalAudioMedia.ReadMetadata(media, track, file.Length);
                 }
 
                 throw new InvalidDataException("The local file does not expose supported audio metadata.");
@@ -128,44 +119,6 @@ namespace MajMusic.Audio.Desktop
             {
                 throw new NotSupportedException("Local audio metadata parsing is unavailable.", exception);
             }
-        }
-
-        /// <summary>Copies native stream fields into immutable library metadata.</summary>
-        /// <param name="media">The parsed local descriptor.</param>
-        /// <param name="track">The first audio stream.</param>
-        /// <param name="fileSize">The complete local file length.</param>
-        /// <returns>Actual duration and known stream properties.</returns>
-        private static AudioMetadata ReadMetadata(Media media, MediaTrack track, long fileSize)
-        {
-            var duration = media.Duration > 0 ? TimeSpan.FromMilliseconds(media.Duration) : (TimeSpan?)null;
-            long? bitrate = track.Bitrate > 0 ? track.Bitrate : null;
-            var estimated = false;
-            if (bitrate is null && fileSize > 0 && duration is { TotalSeconds: > 0 } knownDuration)
-            {
-                var average = fileSize * 8d / knownDuration.TotalSeconds;
-                if (double.IsFinite(average) && average is > 0 and < long.MaxValue)
-                {
-                    bitrate = (long)Math.Round(average, MidpointRounding.AwayFromZero);
-                    estimated = true;
-                }
-            }
-
-            var rate = track.Data.Audio.Rate;
-            var channels = track.Data.Audio.Channels;
-            var codec = media.CodecDescription(TrackType.Audio, track.Codec);
-            return new AudioMetadata
-            {
-                Duration = duration,
-                AudioInfo = new AudioStreamInfo
-                {
-                    CodecName = string.IsNullOrWhiteSpace(codec) ? null : codec,
-                    BitrateBitsPerSecond = bitrate,
-                    IsBitrateEstimated = estimated,
-                    SampleRateHz = rate is > 0 and <= int.MaxValue ? (int)rate : null,
-                    Channels = channels is > 0 and <= int.MaxValue ? (int)channels : null,
-                    FileSizeBytes = fileSize
-                }
-            };
         }
 
         /// <summary>Releases the parser after its current native read has completed.</summary>

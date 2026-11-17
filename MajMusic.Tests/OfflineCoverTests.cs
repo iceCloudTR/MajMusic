@@ -68,9 +68,7 @@ namespace MajMusic.Tests
                 TestAssert.True(transport.Requests.Count(path => path.EndsWith("/image", StringComparison.Ordinal)) == 1
                     && transport.Requests.Count(path => path.EndsWith("/track", StringComparison.Ordinal)) == 1,
                     "A fresh explicit offline download transfers each resource exactly once.");
-                await AssertPinnedAsync(root, client, stored.Audio, stored.Cover);
-                await workspace.ClearCacheAsync();
-                TestAssert.True(File.Exists(audioPath) && File.Exists(coverPath), "Cache cleanup must retain both explicitly downloaded objects.");
+                await AssertRetainedAsync(root, client, stored.Audio, stored.Cover);
             }
 
             // Preserve only the original lazy descriptors to also exercise revision-scoped URI aliases after restart.
@@ -94,9 +92,9 @@ namespace MajMusic.Tests
             TestAssert.Equal(0, transport.Requests.Count, "Offline reuse never issues HTTP.");
         }
 
-        /// <summary>Repairs artwork when an existing managed playback cache object is explicitly promoted to an offline download.</summary>
+        /// <summary>Repairs artwork when an existing managed playback object is requested for offline use.</summary>
         /// <param name="root">The isolated application directory.</param>
-        /// <returns>A task representing pin publication, failed artwork recovery and retry.</returns>
+        /// <returns>A task representing durable audio retention, failed artwork recovery and retry.</returns>
         private static async Task ValidateExistingAudioRepairAsync(string root)
         {
             using var transport = new CoverTransport();
@@ -107,27 +105,21 @@ namespace MajMusic.Tests
             TestAssert.True(transport.Requests.All(path => !path.EndsWith("/image", StringComparison.Ordinal)),
                 "Ordinary playback resolution must not wait for or transfer optional cover art.");
             var cached = (await workspace.SearchAsync(null)).Single();
-            using (var policy = new NetworkAccessPolicy())
-            using (var cache = new MediaCache(Path.Combine(root, "Cache"), client, policy))
-            {
-                TestAssert.True(!await cache.IsKeptOfflineAsync(cached.Audio), "A playback cache object must not become pinned implicitly.");
-            }
+            await AssertRetainedAsync(root, client, cached.Audio);
 
             transport.Requests.Clear();
             transport.RejectCover = true;
             TestAssert.Equal(audioPath, await workspace.ResolveAudioAsync(cached, true), "A failed independent cover cannot invalidate already available audio.");
             TestAssert.True(transport.Requests.SequenceEqual(["/api/maichart/song/image"]),
-                "Promoting an existing managed local path must pin it and retry artwork without reopening info or audio.");
-            await AssertPinnedAsync(root, client, cached.Audio);
+                "An offline download must retry missing artwork without reopening info or audio.");
+            await AssertRetainedAsync(root, client, cached.Audio);
             transport.RejectCover = false;
             transport.Requests.Clear();
             var coverPath = await workspace.ResolveCoverAsync(cached);
             TestAssert.True(coverPath is not null && transport.Requests.SequenceEqual(["/api/maichart/song/image"]),
                 "The failed image remains independently recoverable on the next cover read.");
             var repaired = (await workspace.SearchAsync(null)).Single();
-            await AssertPinnedAsync(root, client, repaired.Audio, repaired.Cover!);
-            await workspace.ClearCacheAsync();
-            TestAssert.True(File.Exists(audioPath) && File.Exists(coverPath), "A recovered cover inherits the explicit audio retention decision.");
+            await AssertRetainedAsync(root, client, repaired.Audio, repaired.Cover!);
         }
 
         /// <summary>Preserves caller cancellation while artwork is being fetched after the audio has completed.</summary>
@@ -171,10 +163,10 @@ namespace MajMusic.Tests
             TestAssert.True(await cache.TryGetCachedAsync(resource with { RemoteUri = new Uri("https://other-source.example.test/api/maichart/song/image") }) is null,
                 "Another source origin cannot reuse an unrelated cover alias.");
             TestAssert.True(await cache.TryGetCachedAsync(new MediaResource()) is null, "An empty local-only descriptor is a miss rather than a network request.");
-            TestAssert.True(!await cache.IsKeptOfflineAsync(resource), "A plain cache hit does not claim explicit retention.");
+            TestAssert.True(await cache.IsKeptOfflineAsync(resource), "The original completed object is already retained.");
             TestAssert.Equal(path, await cache.TryGetCachedAsync(resource with { LocalPath = path }, true),
-                "A managed LocalPath hit must publish the explicit offline pin instead of returning before retention.");
-            TestAssert.True(await cache.IsKeptOfflineAsync(resource), "The managed local-path promotion persists its retention decision.");
+                "Requesting a managed LocalPath for offline use reuses the retained object.");
+            TestAssert.True(await cache.IsKeptOfflineAsync(resource), "The managed local-path hit preserves its retention.");
             await cache.ClearCacheAsync();
             TestAssert.True(File.Exists(path) && transport.Requests.Count == 0, "Pinned local-only hits survive cleanup without contacting the source.");
         }
@@ -241,13 +233,15 @@ namespace MajMusic.Tests
         /// <param name="client">The borrowed fake media client.</param>
         /// <param name="resources">The objects expected to survive cleanup.</param>
         /// <returns>A task representing all persisted-index assertions.</returns>
-        private static async Task AssertPinnedAsync(string root, HttpClient client, params MediaResource[] resources)
+        private static async Task AssertRetainedAsync(string root, HttpClient client, params MediaResource[] resources)
         {
             using var policy = new NetworkAccessPolicy();
-            using var cache = new MediaCache(Path.Combine(root, "Cache"), client, policy);
+            using var cache = new MediaCache(Path.Combine(root, "Cache"), client, policy,
+                indexDirectory: Path.Combine(root, "Runtime", "MajMusicCache"), requireIndexOwnership: true);
+            TestAssert.Equal(0, await cache.EnforceLimitAsync(0), "Automatic cleanup never removes completed playback or download objects.");
             foreach (var resource in resources)
             {
-                TestAssert.True(await cache.IsKeptOfflineAsync(resource), "Explicit audio and artwork retention must be present in the on-disk index.");
+                TestAssert.True(await cache.IsKeptOfflineAsync(resource), "Completed audio and artwork retention must be present in the workspace's on-disk index.");
             }
         }
 

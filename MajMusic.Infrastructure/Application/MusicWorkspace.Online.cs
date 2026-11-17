@@ -218,18 +218,20 @@ namespace MajMusic.Infrastructure.Application
                 var current = await _library.FindTrackAsync(track.Id, cancellationToken).ConfigureAwait(false);
                 if (current is null || !SameRevision(current, track)
                     || current.EndpointId != track.EndpointId
-                    || track.RemoteId is null && current.Audio.LocalPath != track.Audio.LocalPath)
+                    || (track.RemoteId is null || track.AudioMetadataRevision is > 0)
+                        && current.Audio.LocalPath != track.Audio.LocalPath)
                 {
                     return;
                 }
 
                 var merged = current with
                 {
-                    Duration = track.Duration ?? current.Duration,
+                    Duration = track.AudioMetadataRevision is null ? MergeSourceDuration(track, current) : track.Duration ?? current.Duration,
                     LocalMediaSavedAt = current.LocalMediaSavedAt,
-                    AudioInfo = MergeStreamInfo(track.AudioInfo, current.AudioInfo),
+                    AudioInfo = track.AudioMetadataRevision is null ? MergeSourceStreamInfo(track, current) : MergeStreamInfo(track.AudioInfo, current.AudioInfo),
                     AudioMetadataLength = track.AudioMetadataLength ?? current.AudioMetadataLength,
-                    AudioMetadataLastWriteUtcTicks = track.AudioMetadataLastWriteUtcTicks ?? current.AudioMetadataLastWriteUtcTicks
+                    AudioMetadataLastWriteUtcTicks = track.AudioMetadataLastWriteUtcTicks ?? current.AudioMetadataLastWriteUtcTicks,
+                    AudioMetadataRevision = track.AudioMetadataRevision ?? current.AudioMetadataRevision
                 };
                 await _library.UpsertTracksAsync(new[] { merged }, cancellationToken).ConfigureAwait(false);
             }
@@ -306,11 +308,12 @@ namespace MajMusic.Infrastructure.Application
                             Cover = track.Cover is null ? null : MergeResource(track.Cover, current.Cover),
                             Chart = current.Chart,
                             Video = current.Video,
-                            Duration = track.Duration ?? current.Duration,
+                            Duration = MergeSourceDuration(track, current),
                             LocalMediaSavedAt = current.LocalMediaSavedAt,
-                            AudioInfo = MergeStreamInfo(track.AudioInfo, current.AudioInfo),
+                            AudioInfo = MergeSourceStreamInfo(track, current),
                             AudioMetadataLength = current.AudioMetadataLength,
-                            AudioMetadataLastWriteUtcTicks = current.AudioMetadataLastWriteUtcTicks
+                            AudioMetadataLastWriteUtcTicks = current.AudioMetadataLastWriteUtcTicks,
+                            AudioMetadataRevision = current.AudioMetadataRevision
                         };
                         updates.Add(merged);
                         mapped.Add(merged);
@@ -408,6 +411,26 @@ namespace MajMusic.Infrastructure.Application
         {
             return track.EndpointId is { } endpointId && track.RemoteId is { } remoteId
                 && aliases.TryGetValue((endpointId, track.SourceId, remoteId), out var id) ? track with { Id = id } : track;
+        }
+
+        /// <summary>Keeps versioned local duration when the same source revision supplies remote metadata.</summary>
+        /// <param name="source">The remote source descriptor.</param>
+        /// <param name="local">The indexed track of the same revision.</param>
+        /// <returns>The validated local duration or the best available source duration.</returns>
+        private static TimeSpan? MergeSourceDuration(MusicTrack source, MusicTrack local)
+        {
+            return local.Audio.LocalPath is not null && local.AudioMetadataRevision is > 0
+                ? local.Duration ?? source.Duration : source.Duration ?? local.Duration;
+        }
+
+        /// <summary>Keeps the probed properties of the local file when refreshing its remote descriptor.</summary>
+        /// <param name="source">The remote source descriptor.</param>
+        /// <param name="local">The indexed track of the same revision.</param>
+        /// <returns>The best known stream properties.</returns>
+        private static AudioStreamInfo? MergeSourceStreamInfo(MusicTrack source, MusicTrack local)
+        {
+            return local.Audio.LocalPath is not null && local.AudioMetadataRevision is > 0
+                ? MergeStreamInfo(local.AudioInfo, source.AudioInfo) : MergeStreamInfo(source.AudioInfo, local.AudioInfo);
         }
 
         /// <summary>Combines known stream properties without erasing an already parsed value.</summary>

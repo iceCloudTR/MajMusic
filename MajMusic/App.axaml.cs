@@ -48,7 +48,8 @@ namespace MajMusic
                 var collections = new MajCollectionExchange(workspace);
                 var directories = new LocalDirectoryService(workspace, collections);
                 var viewModel = new MainViewModel(workspace, playback, collections: collections, metadata: metadata, directories: directories);
-                desktop.MainWindow = new MainWindow(viewModel, workspace);
+                var mobilePreview = Array.Exists(desktop.Args ?? [], argument => argument == "--mobile-preview");
+                desktop.MainWindow = new MainWindow(viewModel, workspace, mobilePreview);
             }
 
             base.OnFrameworkInitializationCompleted();

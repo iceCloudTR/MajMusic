@@ -501,11 +501,14 @@ namespace MajMusic.Tests
             AssertWidthTravel(searchFrames, collapsedWidth, expandedWidth, true);
             TestAssert.True(search.IsVisible && mobileSearch.RevealProgress >= 0.999 && Math.Abs(expandedWidth - mobileSearch.Bounds.Width) <= 1,
                 "The actual phone search must grow from its icon into the whole reserved toolbar lane.");
+            var frame = search.GetVisualDescendants().OfType<Border>().Single(control => control.Name == "PART_Frame");
+            TestAssert.True(search.IsFocused && frame.CornerRadius == new CornerRadius(12) && frame.CornerRadius == searchHost.CornerRadius,
+                "The focused search outline must follow the reveal's rounded rectangle.");
             Tap(window, mobile.GetVisualDescendants().OfType<Control>().Single(control => control.Name == "MobileCancelSearchButton"));
             var closingFrames = await SampleAsync(window, ReadMobileWidth, 140, token);
             await SettleSearchAsync(window, mobileSearch, token, ReadMobileWidth);
             AssertWidthTravel(closingFrames, collapsedWidth, expandedWidth, false);
-            TestAssert.True(!search.IsVisible && mobileSearch.RevealProgress <= 0.001 && Math.Abs(mobileSearch.DisplayedSearchWidth - 44) <= 1,
+            TestAssert.True(!search.IsVisible && !search.IsFocused && mobileSearch.RevealProgress <= 0.001 && Math.Abs(mobileSearch.DisplayedSearchWidth - 44) <= 1,
                 "Closing phone search must retract continuously to its icon without moving the browser.");
             view.NavigateToSection(2);
             await SampleAsync(window, () => ReadSlideProgress(host), 25, token);

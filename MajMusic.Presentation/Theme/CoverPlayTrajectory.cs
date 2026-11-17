@@ -9,11 +9,6 @@ namespace MajMusic.Presentation.Theme
     /// <param name="HalfSide">Half the button's side length in logical pixels.</param>
     public readonly record struct CoverPlayPose(Point Center, double HalfSide);
 
-    /// <summary>Describes changes in position and size per unit of normalized trajectory progress.</summary>
-    /// <param name="Center">The center's derivative in logical pixels per unit of progress.</param>
-    /// <param name="HalfSide">The half-side derivative in logical pixels per unit of progress.</param>
-    public readonly record struct CoverPlayPoseDerivative(Vector Center, double HalfSide);
-
     /// <summary>Combines one uninterrupted cubic center path with simultaneous smooth growth and conservative physical-speed bounds.</summary>
     public readonly struct CoverPlayTrajectory
     {
@@ -68,9 +63,6 @@ namespace MajMusic.Presentation.Theme
             _cubic = finalLeg - middleLeg * 2 + firstLeg;
         }
 
-        /// <summary>Gets a conservative bound on the speed of every button edge per unit of progress over the entire path.</summary>
-        public double MaxEdgeDerivative => GetMaximumEdgeDerivative(0, 1);
-
         /// <summary>Calculates position and size from the same uninterrupted progress value without applying another timing curve.</summary>
         /// <param name="progress">The normalized progress, clamped to the closed interval from zero to one.</param>
         /// <returns>The corresponding center and half-side, including exact endpoint geometry.</returns>
@@ -81,17 +73,6 @@ namespace MajMusic.Presentation.Theme
             var growth = value * value * (3 - 2 * value);
             return new CoverPlayPose(_origin + ((_cubic * value + _quadratic) * value + _linear) * value,
                 _initialHalfSide + _halfSideGrowth * growth);
-        }
-
-        /// <summary>Calculates the analytic position and half-side derivatives for the shared path parameter.</summary>
-        /// <param name="progress">The normalized progress, clamped to the closed interval from zero to one.</param>
-        /// <returns>Changes in logical pixels per unit of normalized progress.</returns>
-        /// <exception cref="ArgumentOutOfRangeException">Progress is not finite.</exception>
-        public CoverPlayPoseDerivative GetDerivative(double progress)
-        {
-            var value = ClampProgress(progress);
-            return new CoverPlayPoseDerivative(_linear + _quadratic * (2 * value) + _cubic * (3 * value * value),
-                _halfSideGrowth * (6 * value * (1 - value)));
         }
 
         /// <summary>Bounds all center and growing-edge motion inside a proposed forward or reverse progress step.</summary>

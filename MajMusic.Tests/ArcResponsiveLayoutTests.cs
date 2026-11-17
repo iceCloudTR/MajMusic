@@ -129,8 +129,10 @@ namespace MajMusic.Tests
             input.Text = "Local";
             await model.HomeUpdate;
             Layout(window);
-            TestAssert.True(model.IsSearching && model.Tracks.Count > 0 && model.Tracks.All(track => track.Title.Contains("Local", StringComparison.Ordinal)),
-                "Phone search must use the same indexed search behavior as desktop.");
+            var modes = Find<TKCode.Arc.Mobile.Segmented>(mobile, "MobileHomeModes");
+            TestAssert.True(model.IsSearching && model.Tracks.Count > 0 && model.Tracks.All(track => track.Title.Contains("Local", StringComparison.Ordinal))
+                && modes.SelectedIndex == (int)HomeBrowseMode.Library,
+                "Phone search results must keep the library segment selected.");
             var page = Find<ArcPage>(mobile, "MobilePage");
             var keyboard = new ArcKeyboard();
             ArcPage.SetKeyboardInsetSource(mobile, keyboard);
@@ -142,11 +144,11 @@ namespace MajMusic.Tests
                 "The focused search field must stay above the keyboard and below the safe top edge.");
             SaveFrame(window, Path.Combine(output, $"ui-arc-phone-keyboard-{window.Width:0}.png"));
             keyboard.Set(0, TimeSpan.Zero);
-            model.CancelSearchCommand.Execute(null);
-            await model.HomeUpdate;
-            model.ShowLibraryModeCommand.Execute(null);
+            Tap(window, modes.ContainerFromIndex((int)HomeBrowseMode.Library)!);
             await model.HomeUpdate;
             Layout(window);
+            TestAssert.True(!model.IsSearchExpanded && model.IsLibraryMode && !input.IsFocused,
+                "Tapping the selected library segment must clear the search and release the input.");
             var browser = Find<BrowseTracksView>(mobile, "MobileSongBrowser");
             var list = browser.ActiveList;
             var cards = list.GetVisualDescendants().OfType<SongCard>().Where(card => card.IsEffectivelyVisible && card.Bounds.Height > 0).ToArray();

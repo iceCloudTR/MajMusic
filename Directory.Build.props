@@ -8,5 +8,15 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <AvaloniaVersion>12.1.5</AvaloniaVersion>
     <ArcVersion>1.1.0</ArcVersion>
+    <MajViewCustomDirectory>$(MSBuildThisFileDirectory).work/majview-runtime-custom</MajViewCustomDirectory>
+    <MajViewAssetsDirectory Condition="'$(MajViewAssetsDirectory)' == '' And Exists('$(MajViewCustomDirectory)/runtime.json')">$(MajViewCustomDirectory)</MajViewAssetsDirectory>
+    <MajViewAssetsDirectory Condition="'$(MajViewAssetsDirectory)' == ''">$(MSBuildThisFileDirectory).work/majview-runtime</MajViewAssetsDirectory>
+    <MajViewRuntimeManifest Condition="'$(MajViewRuntimeManifest)' == '' And Exists('$(MajViewAssetsDirectory)/runtime.json')">$(MajViewAssetsDirectory)/runtime.json</MajViewRuntimeManifest>
+    <MajViewRuntimeManifest Condition="'$(MajViewRuntimeManifest)' == ''">$(MSBuildThisFileDirectory)Tools/MajViewRuntime.json</MajViewRuntimeManifest>
   </PropertyGroup>
+  <ItemGroup>
+    <MajViewRuntimeFile Include="$(MajViewAssetsDirectory)/Build.loader.js;$(MajViewAssetsDirectory)/Build.framework.js;$(MajViewAssetsDirectory)/Build.data;$(MajViewAssetsDirectory)/Build.wasm" />
+    <MajViewSourceFile Include="$(MSBuildThisFileDirectory)Tools/Build-MajViewRuntime.ps1;$(MSBuildThisFileDirectory)Tools/MajViewEmbedded.patch"
+                       Condition="Exists('$(MajViewAssetsDirectory)/runtime.json') And Exists('$(MSBuildThisFileDirectory)Tools/MajViewEmbedded.patch')" />
+  </ItemGroup>
 </Project>

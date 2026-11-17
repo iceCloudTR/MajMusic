@@ -88,7 +88,8 @@ namespace MajMusic.Infrastructure.Application
                     Video = null,
                     LocalMediaSavedAt = audioRemoved ? null : current.LocalMediaSavedAt,
                     AudioMetadataLength = audioRemoved ? null : current.AudioMetadataLength,
-                    AudioMetadataLastWriteUtcTicks = audioRemoved ? null : current.AudioMetadataLastWriteUtcTicks
+                    AudioMetadataLastWriteUtcTicks = audioRemoved ? null : current.AudioMetadataLastWriteUtcTicks,
+                    AudioMetadataRevision = audioRemoved ? null : current.AudioMetadataRevision
                 };
                 if (!SameMediaDirectory(root, GetMediaStorageRoot()))
                 {

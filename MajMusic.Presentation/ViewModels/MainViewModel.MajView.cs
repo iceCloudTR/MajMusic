@@ -185,8 +185,8 @@ namespace MajMusic.Presentation.ViewModels
                 IMajViewPreviewSession? session = null;
                 try
                 {
-                    MajViewStatus = host.IsMajViewInstalled ? "正在加载谱面" : "正在下载预览组件（49 MB）";
-                    session = await host.CreateMajViewPreviewAsync(track, ShowPreviewVideo, true, opening.Token);
+                    MajViewStatus = "正在加载谱面";
+                    session = await host.CreateMajViewPreviewAsync(track, ShowPreviewVideo, opening.Token);
                     opening.Token.ThrowIfCancellationRequested();
                     if (_playback.Snapshot.State is PlaybackState.Playing or PlaybackState.Loading)
                     {

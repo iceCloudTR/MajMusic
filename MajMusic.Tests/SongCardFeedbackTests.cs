@@ -40,6 +40,8 @@ namespace MajMusic.Tests
                     using var encoded = cover.Encode(SKEncodedImageFormat.Png, 100);
                     await File.WriteAllBytesAsync(coverPath, encoded.ToArray(), timeout.Token);
                 }
+                var cachedAudioPath = Path.Combine(output, "ui-card-feedback-audio.mp3");
+                await File.WriteAllTextAsync(cachedAudioPath, "Generated cached audio placeholder", timeout.Token);
 
                 var workspace = new CardDownloadPresentationTests.DownloadWorkspace();
                 await using var cache = new CoverThumbnailCache(workspace, timeout.Token);
@@ -158,7 +160,7 @@ namespace MajMusic.Tests
                     Emit(model, state, track, AudioDownloadState.Downloading);
                     Pump(window);
                     using var cachedWhileLoading = new SongCardViewModel(track with { Id = "cached-after-loading" }, cache);
-                    cachedWhileLoading.RestoreDownloadState(new SongDownloadState { IsAvailable = true });
+                    cachedWhileLoading.RestoreDownloadState(new SongDownloadState { IsAvailable = true, LocalPath = cachedAudioPath });
                     model.IsSelected = true;
                     Advance(clock, window, 200);
                     card.DataContext = cachedWhileLoading;
@@ -178,7 +180,7 @@ namespace MajMusic.Tests
                     TestAssert.True(detached.IsCompleted && !await detached && cue.Reveal == 1 && cue.GlyphScale == 1,
                         "Detaching a card during confirmation must release its active Arc driver and retain only the stable completed state.");
                     using var cached = new SongCardViewModel(track with { Id = "cached" }, cache);
-                    cached.RestoreDownloadState(new SongDownloadState { IsAvailable = true });
+                    cached.RestoreDownloadState(new SongDownloadState { IsAvailable = true, LocalPath = cachedAudioPath });
                     card.DataContext = cached;
                     ArcMotion.SetLevel(window, ArcMotionLevel.Full);
                     root.Children.Add(card);

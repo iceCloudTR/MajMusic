@@ -24,13 +24,14 @@ namespace MajMusic.Infrastructure.Preview
         private readonly Task _server;
         private int _stopped;
 
-        public MajViewPreviewSession(string runtime, string title, ChartPreviewAssets assets,
+        public MajViewPreviewSession(MajViewRuntime runtime, string title, ChartPreviewAssets assets,
             Func<string, CancellationToken, Task<Stream>> openMedia)
         {
             var manifest = JsonSerializer.SerializeToUtf8Bytes(new
             {
                 title,
                 hasVideo = assets.VideoPath is not null,
+                embeddedViewport = MajViewRuntime.EmbeddedViewport,
                 difficulties = assets.Difficulties.Select(item => new { number = item.Number, level = item.Level })
             });
             _resources = new(StringComparer.Ordinal)
@@ -42,21 +43,17 @@ namespace MajMusic.Infrastructure.Preview
                 ["track"] = new("audio/mpeg", token => openMedia(assets.AudioPath, token)),
                 ["cover"] = assets.CoverPath is { } cover
                     ? new Resource("image/png", token => openMedia(cover, token))
-                    : Bytes(FallbackCover, "image/png"),
-                ["runtime/Build.loader.js"] = FileResource(runtime, "Build.loader.js", "application/javascript"),
-                ["runtime/Build.framework.js"] = FileResource(runtime, "Build.framework.js", "application/javascript"),
-                ["runtime/Build.data"] = FileResource(runtime, "Build.data", "application/octet-stream"),
-                ["runtime/Build.wasm"] = FileResource(runtime, "Build.wasm", "application/wasm")
+                    : Bytes(FallbackCover, "image/png")
             };
+            foreach (var file in MajViewRuntime.Files)
+            {
+                _resources.Add("runtime/" + file.Name, new(file.ContentType, _ => Task.FromResult(runtime.Open(file.Name)), file.Length));
+            }
             if (assets.VideoPath is { } video)
             {
                 _resources["video.mp4"] = new Resource("video/mp4", token => openMedia(video, token));
             }
 
-            if (!HttpListener.IsSupported)
-            {
-                throw new PlatformNotSupportedException("当前平台无法打开 MajView。");
-            }
             var prefix = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
             var portProbe = new TcpListener(IPAddress.Loopback, 0);
             portProbe.Start();
@@ -168,7 +165,9 @@ namespace MajMusic.Infrastructure.Preview
                 }
                 await using var source = await resource.Open(token).ConfigureAwait(false);
                 response.ContentType = resource.Type;
-                if (!source.CanSeek)
+                var seekable = source.CanSeek;
+                var availableLength = seekable ? source.Length : resource.Length;
+                if (availableLength is not { } length)
                 {
                     response.SendChunked = true;
                     if (request.HttpMethod == "GET")
@@ -178,10 +177,12 @@ namespace MajMusic.Infrastructure.Preview
                     return;
                 }
 
-                var length = source.Length;
                 var count = length;
-                response.Headers["Accept-Ranges"] = "bytes";
-                if (request.Headers["Range"] is { } range)
+                if (seekable)
+                {
+                    response.Headers["Accept-Ranges"] = "bytes";
+                }
+                if (seekable && request.Headers["Range"] is { } range)
                 {
                     if (!TryReadRange(range, length, out var start, out var end))
                     {
@@ -288,11 +289,9 @@ namespace MajMusic.Infrastructure.Preview
         }
 
         private static Resource Bytes(byte[] bytes, string type) => new(type, _ => Task.FromResult<Stream>(new MemoryStream(bytes, false)));
-        private static Resource FileResource(string directory, string name, string type) => new(type,
-            _ => Task.FromResult<Stream>(OpenFile(Path.Combine(directory, name))));
         internal static FileStream OpenFile(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
             64 * 1024, FileOptions.Asynchronous);
 
-        private sealed record Resource(string Type, Func<CancellationToken, Task<Stream>> Open);
+        private sealed record Resource(string Type, Func<CancellationToken, Task<Stream>> Open, long? Length = null);
     }
 }

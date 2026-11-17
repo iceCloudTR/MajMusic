@@ -21,6 +21,8 @@ namespace MajMusic.Presentation.ViewModels
         private CancellationTokenSource? _metadataCancellation;
         /// <summary>Exposes the latest observed refresh for deterministic validation.</summary>
         private Task _metadataRefresh = Task.CompletedTask;
+        /// <summary>Gets the one background pass updating existing local files from older parsers.</summary>
+        internal Task AudioMetadataUpgrade { get; private set; } = Task.CompletedTask;
         /// <summary>Avoids repeatedly requesting absent optional fields during one view lifetime.</summary>
         private readonly HashSet<string> _remoteMetadataChecked = new(StringComparer.Ordinal);
         /// <summary>Stores the currently visible zero-based library page.</summary>
@@ -245,6 +247,64 @@ namespace MajMusic.Presentation.ViewModels
                 ? await provider.EnrichAsync(candidate, cancellationToken).ConfigureAwait(false) : candidate;
         }
 
+        /// <summary>Checks whether a local file needs to be read again after a parser change.</summary>
+        /// <param name="track">The currently indexed track.</param>
+        /// <returns>Whether an older parser supplied the local properties.</returns>
+        private bool NeedsAudioMetadataUpgrade(MusicTrack track)
+        {
+            return track.Audio.LocalPath is not null && _metadata is { CacheRevision: > 0 } metadata
+                && (track.AudioMetadataRevision ?? 0) < metadata.CacheRevision;
+        }
+
+        /// <summary>Upgrades the existing local metadata in the background without downloading media.</summary>
+        private void QueueAudioMetadataUpgrade()
+        {
+            if (_metadata is not { CacheRevision: > 0 } metadata || _workspace is not ILocalTrackMediaResolver resolver
+                || _onlineWorkspace is not { } workspace || !AudioMetadataUpgrade.IsCompleted)
+            {
+                return;
+            }
+
+            AudioMetadataUpgrade = RunTrackedAsync(async () =>
+            {
+                var token = _lifetime.Token;
+                try
+                {
+                    var candidates = await resolver.FindOutdatedAudioMetadataAsync(metadata.CacheRevision, token).ConfigureAwait(false);
+                    foreach (var candidate in candidates)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        try
+                        {
+                            var updated = await EnrichLocalMetadataAsync(candidate, token).ConfigureAwait(false);
+                            if (updated.AudioMetadataRevision == metadata.CacheRevision && updated != candidate)
+                            {
+                                await workspace.UpdateTrackMetadataAsync(updated, token).ConfigureAwait(false);
+                                _dispatch(() => ApplyTrackMetadata(updated));
+                            }
+                        }
+                        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                        {
+                            // The local media directory or file owner changed during this read.
+                        }
+                        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException)
+                        {
+                            // A missing, unreadable or unsupported file can be retried when its metadata is next requested.
+                        }
+                    }
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    // The view closed; completed results are already saved and remaining files are retried next time.
+                }
+                catch (Exception exception)
+                {
+                    // Index failures must not prevent normal library use.
+                    System.Diagnostics.Trace.TraceWarning("Local audio metadata upgrade failed: {0}", exception.GetType().Name);
+                }
+            });
+        }
+
         /// <summary>Replaces matching visible metadata while preserving selected and queued entry identities.</summary>
         /// <param name="updated">The immutable metadata result.</param>
         /// <param name="completedAudio">Whether the result also supplies a validated completed audio path.</param>
@@ -341,7 +401,8 @@ namespace MajMusic.Presentation.ViewModels
                 Duration = incoming.Duration,
                 AudioInfo = incoming.AudioInfo,
                 AudioMetadataLength = incoming.AudioMetadataLength ?? current.AudioMetadataLength,
-                AudioMetadataLastWriteUtcTicks = incoming.AudioMetadataLastWriteUtcTicks ?? current.AudioMetadataLastWriteUtcTicks
+                AudioMetadataLastWriteUtcTicks = incoming.AudioMetadataLastWriteUtcTicks ?? current.AudioMetadataLastWriteUtcTicks,
+                AudioMetadataRevision = incoming.AudioMetadataRevision ?? current.AudioMetadataRevision
             };
         }
 

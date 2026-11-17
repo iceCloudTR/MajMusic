@@ -11,16 +11,7 @@ namespace MajMusic.Core.Models
         /// <summary>Identifies the supported independent-directory configuration layout.</summary>
         public const int CurrentVersion = 1;
 
-        /// <summary>Migrates legacy music roots and normalizes independently typed source settings.</summary>
-        /// <param name="settings">The non-secret settings snapshot.</param>
-        /// <returns>The normalized current-version snapshot without accessing a source directory.</returns>
-        /// <exception cref="InvalidDataException">The directory configuration is invalid.</exception>
-        public static AppSettings NormalizeLegacy(AppSettings settings)
-        {
-            return Normalize(settings);
-        }
-
-        /// <summary>Canonicalizes source paths and removes duplicate role/path pairs without filesystem access.</summary>
+        /// <summary>Migrates legacy roots and canonicalizes distinct source and role pairs without filesystem access.</summary>
         /// <param name="settings">The settings snapshot to normalize.</param>
         /// <returns>A settings snapshot with stable explicit source identities.</returns>
         /// <exception cref="InvalidDataException">A source identity, path, kind, array or version is invalid.</exception>

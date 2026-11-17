@@ -15,6 +15,7 @@ using MajMusic.Core.Playback;
 using MajMusic.Infrastructure.Application;
 using MajMusic.Infrastructure.Metadata;
 using MajMusic.Infrastructure.Network;
+using MajMusic.Infrastructure.Preview;
 using MajMusic.Presentation.Storage;
 using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
@@ -51,7 +52,8 @@ namespace MajMusic.Android
             var documents = new AvaloniaDocumentStorage(CurrentStorageProvider, Path.Combine(directory, "DocumentCovers"));
             var mediaStorage = new AvaloniaMediaStorageAccess(CurrentStorageProvider, RenameMediaDocumentAsync);
             _workspace = new MusicWorkspace(directory, _apiClient, _resourceClient,
-                credentialStore: new AndroidCredentialStore(context), documentStorage: documents, mediaStorageAccess: mediaStorage);
+                credentialStore: new AndroidCredentialStore(context), documentStorage: documents,
+                mediaStorageAccess: mediaStorage, openMajViewAsset: name => OpenMajViewAsset(context, name));
             try
             {
                 var settings = _workspace.LoadSettingsAsync().GetAwaiter().GetResult();
@@ -73,6 +75,19 @@ namespace MajMusic.Android
             _viewModel.RequestAllFilesAccessAsync = AndroidStorageAccess.Instance.RequestAllFilesAccessAsync;
             _viewModel.ResolveFileSystemPath = AndroidStorageAccess.Instance.ResolveFileSystemPath;
             PlaybackMediaService.Connect(_playback);
+        }
+
+        private static Stream OpenMajViewAsset(global::Android.Content.Context context, string name)
+        {
+            var path = $"{MajViewRuntime.PackageDirectory}/{name}";
+            try
+            {
+                return context.Assets?.Open(path) ?? throw new FileNotFoundException(path);
+            }
+            catch (Java.IO.FileNotFoundException exception)
+            {
+                throw new FileNotFoundException(path, exception);
+            }
         }
 
         /// <summary>Creates a fresh responsive view while retaining the existing catalog and playback session.</summary>

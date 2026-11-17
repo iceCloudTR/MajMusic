@@ -9,6 +9,7 @@ using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using TKCode.Arc.Gestures;
 using TKCode.Arc.Mobile;
@@ -17,7 +18,7 @@ using TKCode.Arc.Motion;
 namespace MajMusic.Presentation.Theme
 {
     /// <summary>Uses Arc's song sheet template with one reversible position for opening, dismissal and dragging.</summary>
-    /// <remarks>One position drives the closed, half-height and expanded resting points.</remarks>
+    /// <remarks>One position drives the closed, compact and expanded resting points.</remarks>
     public sealed class InterruptibleSongSheet : Sheet
     {
         /// <summary>Reserves the measured navigation area below the sheet's own clipped viewport.</summary>
@@ -45,8 +46,6 @@ namespace MajMusic.Presentation.Theme
         private Control? _handle;
         /// <summary>Retains the original scrollable content surface.</summary>
         private ScrollViewer? _body;
-        /// <summary>Retains the original title so expanded content can provide its own fixed header.</summary>
-        private TextBlock? _title;
         /// <summary>Retains the content control under the initial contact for nested scrolling arbitration.</summary>
         private Control? _bodyGestureSource;
         /// <summary>Owns the sole animated progress for the attached template.</summary>
@@ -59,6 +58,10 @@ namespace MajMusic.Presentation.Theme
         private Task<bool> _sheetUpdate = Task.FromResult(true);
         /// <summary>Retains the actual visible progress independently of its open target.</summary>
         private double _progress;
+        /// <summary>Retains the measured padded body height used at the compact resting point.</summary>
+        private double _compactContentHeight;
+        /// <summary>Coalesces detent adjustments until the current layout pass completes.</summary>
+        private bool _compactLayoutQueued;
         /// <summary>Retains the panel position at the start of a pointer drag.</summary>
         private double _dragOrigin;
         /// <summary>Indicates that the sheet must remain present through an unfinished exit.</summary>
@@ -97,17 +100,19 @@ namespace MajMusic.Presentation.Theme
             set => SetValue(BottomInsetProperty, value);
         }
 
-        /// <summary>Gets or sets whether the open pane rests at full height instead of half height.</summary>
+        /// <summary>Gets or sets whether the open pane rests at full height.</summary>
         public bool IsExpanded
         {
             get => GetValue(IsExpandedProperty);
             set => SetValue(IsExpandedProperty, value);
         }
+        /// <summary>Supplies the content measured for the compact resting point before the template is applied.</summary>
+        internal Control? CompactContent { get; set; }
         /// <summary>Gets whether a full-content preview is visible while dragging or expanded.</summary>
         public bool ShowsExpandedContent => _showsExpandedContent;
 
         /// <summary>Gets opening progress from zero when closed to one at either open resting point.</summary>
-        public double TransitionProgress => Math.Clamp(_progress / HalfProgress, 0, 1);
+        public double TransitionProgress => Math.Clamp(_progress / CompactProgress, 0, 1);
         /// <summary>Gets the actual panel offset below its expanded resting point, in device-independent pixels.</summary>
         public new double PanelOffset => _translation.Y;
         /// <summary>Gets completion of the current transition; false means that another target interrupted it.</summary>
@@ -116,12 +121,19 @@ namespace MajMusic.Presentation.Theme
         private double ClosedOffset => FullPanelHeight + ClosedGap;
         /// <summary>Gets the stable full-height pane size used for all three resting points.</summary>
         private double FullPanelHeight => Math.Max(0, Bounds.Height) * Math.Clamp(MaxHeightFraction, 0.1, 1);
-        /// <summary>Gets the half-height pane's distance below the expanded resting point.</summary>
-        private double HalfOffset => FullPanelHeight * 0.5;
-        /// <summary>Gets the raw position at which exactly half of the pane remains visible.</summary>
-        private double HalfProgress => 1 - HalfOffset / ClosedOffset;
+        /// <summary>Gets the frame height above and below the compact body.</summary>
+        private double FrameHeight => (_handle is { Bounds.Height: > 0 } handle
+            ? handle.Bounds.Height + handle.Margin.Top + handle.Margin.Bottom : 20)
+            + (_panel?.BorderThickness.Top ?? 0) + (_panel?.BorderThickness.Bottom ?? 0);
+        /// <summary>Gets the height of the song information, actions and grabber.</summary>
+        private double CompactPanelHeight => Math.Min(FullPanelHeight, FrameHeight +
+            (_compactContentHeight > 0 ? _compactContentHeight : 172));
+        /// <summary>Gets the compact pane's distance below the expanded resting point.</summary>
+        private double CompactOffset => FullPanelHeight - CompactPanelHeight;
+        /// <summary>Gets the raw position at which the compact panel is fully visible.</summary>
+        private double CompactProgress => 1 - CompactOffset / ClosedOffset;
         /// <summary>Gets the committed normalized position without carrying pointer velocity into settling.</summary>
-        private double TargetProgress => IsOpen ? IsExpanded ? 1 : HalfProgress : 0;
+        private double TargetProgress => IsOpen ? IsExpanded ? 1 : CompactProgress : 0;
 
         /// <summary>Catches the current position for a direct upward pull beginning on the mini player.</summary>
         /// <returns>Whether the attached sheet is ready to follow the pointer.</returns>
@@ -143,6 +155,7 @@ namespace MajMusic.Presentation.Theme
             IsHitTestVisible = true;
             UpdatePanelSize();
             _panel.UpdateLayout();
+            MeasureCompactContent();
             ApplyProgress(_motion.Value);
             _interactiveOriginOffset = Math.Max(0, PanelOffset - (_progress == 0 ? ClosedGap : 0));
             return true;
@@ -173,8 +186,8 @@ namespace MajMusic.Presentation.Theme
             _dragging = false;
             var distance = _interactiveOriginOffset - PanelOffset;
             var open = cancelled ? _interactiveOriginOpen : distance >= 8 ||
-                _progress >= HalfProgress * 0.5 || upwardVelocity > 500 && distance >= 6;
-            var expanded = cancelled ? _interactiveOriginExpanded : open && _progress > (HalfProgress + 1) * 0.5;
+                _progress >= CompactProgress * 0.5 || upwardVelocity > 500 && distance >= 6;
+            var expanded = cancelled ? _interactiveOriginExpanded : open && _progress > (CompactProgress + 1) * 0.5;
             CommitDetent(open, expanded);
         }
 
@@ -188,7 +201,10 @@ namespace MajMusic.Presentation.Theme
             _panel = e.NameScope.Find<Border>("PART_Panel");
             _handle = e.NameScope.Find<Control>("PART_Handle");
             _body = e.NameScope.Find<ScrollViewer>("PART_Body");
-            _title = e.NameScope.Find<TextBlock>("PART_Title");
+            if (e.NameScope.Find<TextBlock>("PART_Title") is { } title)
+            {
+                title.IsVisible = false;
+            }
             ConnectTemplate();
         }
 
@@ -253,10 +269,6 @@ namespace MajMusic.Presentation.Theme
                     TransitionToTarget();
                 }
             }
-            else if (change.Property == TitleProperty)
-            {
-                UpdateBodySize();
-            }
         }
 
         /// <summary>Attaches one motion driver and the original template's gesture surfaces.</summary>
@@ -282,8 +294,13 @@ namespace MajMusic.Presentation.Theme
 
             if (_handle is not null)
             {
-                _handle.SizeChanged += OnHandleSizeChanged;
+                _handle.SizeChanged += OnCompactLayoutChanged;
                 _handleDrag = CreateDrag(_handle, false);
+            }
+
+            if (CompactContent is { } compact)
+            {
+                compact.SizeChanged += OnCompactLayoutChanged;
             }
 
             if (_body is not null)
@@ -302,7 +319,11 @@ namespace MajMusic.Presentation.Theme
             _bodyGestureSource = null;
             if (_handle is not null)
             {
-                _handle.SizeChanged -= OnHandleSizeChanged;
+                _handle.SizeChanged -= OnCompactLayoutChanged;
+            }
+            if (CompactContent is { } compact)
+            {
+                compact.SizeChanged -= OnCompactLayoutChanged;
             }
             _body?.RemoveHandler(PointerPressedEvent, OnBodyPointerPressed);
             _handleDrag?.Dispose();
@@ -332,10 +353,9 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Retargets from the currently displayed position without carrying the old direction's velocity.</summary>
         private void TransitionToTarget()
         {
-            var target = TargetProgress;
             if (_motion is null || _panel is null)
             {
-                ApplyProgress(target);
+                ApplyProgress(TargetProgress);
                 return;
             }
 
@@ -349,10 +369,15 @@ namespace MajMusic.Presentation.Theme
                 IsHitTestVisible = true;
                 UpdatePanelSize();
                 _panel.UpdateLayout();
+                MeasureCompactContent();
                 ApplyProgress(_motion.Value);
-                Focus();
+                if (!IsKeyboardFocusWithin)
+                {
+                    Focus();
+                }
             }
 
+            var target = TargetProgress;
             if (Math.Abs(_motion.Value - target) < 0.000001 || !IsEffectivelyVisible ||
                 ArcMotion.GetEffectiveLevel(this) != ArcMotionLevel.Full)
             {
@@ -370,7 +395,8 @@ namespace MajMusic.Presentation.Theme
         {
             _progress = Math.Clamp(progress, 0, 1);
             _translation.Y = ClosedOffset * (1 - _progress);
-            SetAndRaise(ShowsExpandedContentProperty, ref _showsExpandedContent, IsExpanded || _progress > (HalfProgress + 1) * 0.5);
+            SetAndRaise(ShowsExpandedContentProperty, ref _showsExpandedContent,
+                IsExpanded || PanelOffset < CompactOffset - 1);
             UpdateBodySize();
             if (_scrim is not null)
             {
@@ -407,27 +433,43 @@ namespace MajMusic.Presentation.Theme
             {
                 return;
             }
-            if (_title is not null)
-            {
-                _title.IsVisible = !ShowsExpandedContent && !string.IsNullOrEmpty(Title);
-            }
-            var handle = _handle is null ? 44 : _handle.Bounds.Height + _handle.Margin.Top + _handle.Margin.Bottom;
-            var visible = ShowsExpandedContent ? Math.Clamp(FullPanelHeight - PanelOffset, HalfOffset, FullPanelHeight) : HalfOffset;
-            _body.Height = Math.Max(0, visible - handle - (_panel?.BorderThickness.Top ?? 0) - (_panel?.BorderThickness.Bottom ?? 0));
+            var height = ShowsExpandedContent ? FullPanelHeight : CompactPanelHeight;
+            _body.Height = Math.Max(0, height - FrameHeight);
             _body.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
             _body.VerticalScrollBarVisibility = ShowsExpandedContent ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto;
         }
 
-        /// <summary>Preserves the same visible bottom edge when the grabber title changes height.</summary>
-        /// <param name="sender">The template handle.</param>
+        /// <summary>Updates the compact resting point after the body or grabber has been measured.</summary>
+        /// <param name="sender">The measured grabber or song information.</param>
         /// <param name="e">Its updated measured size.</param>
-        private void OnHandleSizeChanged(object? sender, SizeChangedEventArgs e)
+        private void OnCompactLayoutChanged(object? sender, SizeChangedEventArgs e)
         {
-            UpdateBodySize();
+            if (_compactLayoutQueued || !IsOpen || IsExpanded)
+            {
+                return;
+            }
+            _compactLayoutQueued = true;
+            Dispatcher.UIThread.Post(() =>
+            {
+                _compactLayoutQueued = false;
+                if (_motion is not null && IsOpen && !IsExpanded && !_dragging)
+                {
+                    TransitionToTarget();
+                }
+            }, DispatcherPriority.Render);
+        }
+
+        /// <summary>Measures the compact content while its full set of actions is available.</summary>
+        private void MeasureCompactContent()
+        {
+            if (!IsExpanded && CompactContent is { Bounds.Height: > 0 } compact)
+            {
+                _compactContentHeight = compact.Bounds.Height + compact.Margin.Top + compact.Margin.Bottom;
+            }
         }
 
         /// <summary>Commits a resting point atomically before starting one reversible settle.</summary>
-        /// <param name="open">Whether at least the half-height pane remains open.</param>
+        /// <param name="open">Whether at least the compact pane remains open.</param>
         /// <param name="expanded">Whether the pane rests at full height.</param>
         private void CommitDetent(bool open, bool expanded)
         {
@@ -563,8 +605,8 @@ namespace MajMusic.Presentation.Theme
 
             _dragging = false;
             var projectedOffset = PanelOffset + e.Velocity.Y * 0.16;
-            var open = !IsDismissible || projectedOffset < (HalfOffset + ClosedOffset) * 0.5;
-            var expanded = open && projectedOffset < HalfOffset * 0.5;
+            var open = !IsDismissible || projectedOffset < (CompactOffset + ClosedOffset) * 0.5;
+            var expanded = open && projectedOffset < CompactOffset * 0.5;
             if (!_dragOriginExpanded && (e.Offset.Y < -36 || e.Velocity.Y < -500))
             {
                 open = true;

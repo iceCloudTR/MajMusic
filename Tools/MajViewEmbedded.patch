@@ -1,0 +1,317 @@
+diff --git a/Assets/Editor.meta b/Assets/Editor.meta
+new file mode 100644
+index 0000000..7fc04dc
+--- /dev/null
++++ b/Assets/Editor.meta
+@@ -0,0 +1,3 @@
++fileFormatVersion: 2
++guid: 18699d6a431d4a9ca3f4c5f2a10d55a5
++folderAsset: yes
+diff --git a/Assets/Editor/MajMusicWebBuild.cs b/Assets/Editor/MajMusicWebBuild.cs
+new file mode 100644
+index 0000000..ef0dbdb
+--- /dev/null
++++ b/Assets/Editor/MajMusicWebBuild.cs
+@@ -0,0 +1,29 @@
++using System;
++using UnityEditor;
++using UnityEditor.Build.Reporting;
++
++public static class MajMusicWebBuild
++{
++    public static void Build()
++    {
++        var arguments = Environment.GetCommandLineArgs();
++        var output = Array.IndexOf(arguments, "-majViewOutput");
++        if (output < 0 || output + 1 == arguments.Length)
++        {
++            throw new ArgumentException("Provide a build directory with -majViewOutput.");
++        }
++
++        PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
++        var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
++        {
++            scenes = new[] { "Assets/Scenes/Main.unity" },
++            locationPathName = arguments[output + 1],
++            target = BuildTarget.WebGL,
++            options = BuildOptions.None
++        });
++        if (report.summary.result != BuildResult.Succeeded)
++        {
++            throw new InvalidOperationException($"MajView build result: {report.summary.result}.");
++        }
++    }
++}
+diff --git a/Assets/Editor/MajMusicWebBuild.cs.meta b/Assets/Editor/MajMusicWebBuild.cs.meta
+new file mode 100644
+index 0000000..03a899b
+--- /dev/null
++++ b/Assets/Editor/MajMusicWebBuild.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: 1a345a7f3ad5403babce49465f90a20e
+diff --git a/Assets/HandleJSMessages.cs b/Assets/HandleJSMessages.cs
+index 2418265..95473af 100644
+--- a/Assets/HandleJSMessages.cs
++++ b/Assets/HandleJSMessages.cs
+@@ -1,6 +1,5 @@
+ using System;
+ using System.Collections;
+-using System.Collections.Generic;
+ using System.Runtime.InteropServices;
+ using UnityEngine;
+ 
+@@ -11,46 +10,28 @@ public class HandleJSMessages : MonoBehaviour
+     [DllImport("__Internal")]
+     private static extern void UnityLoaded();
+ 
+-    private void Awake()
++    private IEnumerator Start()
+     {
+-        Application.targetFrameRate = 5;
+-        if (Application.platform == RuntimePlatform.WebGLPlayer)
++        if (Application.platform != RuntimePlatform.WebGLPlayer)
+         {
+-            WebGLInput.captureAllKeyboardInput = false;
+-            Debug.Log("HandleJSMessages Activated");//look for this message in the browser to ensure its working, delete before production
+-            DontDestroyOnLoad(this);
+-            try
+-            {
+-                UnityLoaded();
+-            }
+-            catch (Exception e)
+-            {
+-                Debug.Log("UnityLoaded() failed: " + e.Message);
+-            }
++            yield break;
+         }
+ 
++        Application.targetFrameRate = 5;
++        WebGLInput.captureAllKeyboardInput = false;
++        DontDestroyOnLoad(this);
++        // Local scene components initialize in Start before the host sends the chart.
++        yield return null;
++        try
++        {
++            UnityLoaded();
++        }
++        catch (Exception e)
++        {
++            Debug.Log("UnityLoaded() failed: " + e.Message);
++        }
+     }
+ 
+-#if UNITY_EDITOR
+-    public void Start()
+-    {
+-        StartCoroutine(startAfter());
+-    }
+-    IEnumerator startAfter()
+-    {
+-        yield return new WaitForSeconds(1);
+-        Application.targetFrameRate = -1;
+-        var apiroot = "file://C:/Users/bengy/Downloads/test1/";
+-        gameMainManager = GameObject.Find("GameMain").GetComponent<GameMainManager>();
+-
+-        gameMainManager.WebLoad(apiroot+ "maidata.txt",
+-            apiroot +  "bg.jpg",
+-            apiroot + "track.mp3",
+-            apiroot + "bg.mp4",
+-            6);
+-    }
+-#endif
+-
+     /// <summary>
+     /// Receive message from the nextjs app that has webgl-nextjs package
+     /// </summary>
+@@ -74,4 +55,4 @@ public class HandleJSMessages : MonoBehaviour
+             int.Parse(level[2].ToString()));
+         
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Assets/JSScript.jslib b/Assets/JSScript.jslib
+index e8b9136..bba9350 100644
+--- a/Assets/JSScript.jslib
++++ b/Assets/JSScript.jslib
+@@ -7,6 +7,13 @@ mergeInto(LibraryManager.library,
+ 		else
+ 			console.log("window.onUnityLoaded is undefined")
+   	},
++	MajMusicSetViewport: function(left, top, width, height) {
++		var style = Module.canvas.parentElement.style;
++		style.setProperty("--chart-left", left * 100 + "%");
++		style.setProperty("--chart-top", top * 100 + "%");
++		style.setProperty("--chart-width", width * 100 + "%");
++		style.setProperty("--chart-height", height * 100 + "%");
++	},
+ 	SetLocalStorge: function(name, value) {
+ 		localStorage.setItem(UTF8ToString(name), UTF8ToString(value));
+ 	},
+@@ -19,4 +26,4 @@ mergeInto(LibraryManager.library,
+     	stringToUTF8(returnStr, buffer, bufferSize);
+     	return buffer;
+ 	}
+-});
+\ No newline at end of file
++});
+diff --git a/Assets/Scenes/Main.unity b/Assets/Scenes/Main.unity
+index 40e39bf..292bb00 100644
+--- a/Assets/Scenes/Main.unity
++++ b/Assets/Scenes/Main.unity
+@@ -2646,7 +2646,7 @@ GameObject:
+   m_Icon: {fileID: 0}
+   m_NavMeshLayer: 0
+   m_StaticEditorFlags: 0
+-  m_IsActive: 1
++  m_IsActive: 0
+ --- !u!224 &399363386
+ RectTransform:
+   m_ObjectHideFlags: 0
+@@ -3873,6 +3873,7 @@ GameObject:
+   - component: {fileID: 519420032}
+   - component: {fileID: 519420031}
+   - component: {fileID: 519420029}
++  - component: {fileID: 519420033}
+   m_Layer: 0
+   m_Name: Main Camera
+   m_TagString: MainCamera
+@@ -3954,6 +3955,18 @@ Transform:
+   m_Children: []
+   m_Father: {fileID: 0}
+   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
++--- !u!114 &519420033
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 519420028}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 35492780ed864cf9b5be204fb7935a7c, type: 3}
++  m_Name:
++  m_EditorClassIdentifier:
+ --- !u!1 &530978135
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -4965,9 +4978,9 @@ MonoBehaviour:
+   m_UiScaleMode: 1
+   m_ReferencePixelsPerUnit: 100
+   m_ScaleFactor: 1
+-  m_ReferenceResolution: {x: 192, y: 108}
+-  m_ScreenMatchMode: 0
+-  m_MatchWidthOrHeight: 1
++  m_ReferenceResolution: {x: 108, y: 108}
++  m_ScreenMatchMode: 1
++  m_MatchWidthOrHeight: 0
+   m_PhysicalUnit: 3
+   m_FallbackScreenDPI: 96
+   m_DefaultSpriteDPI: 96
+@@ -4982,8 +4995,8 @@ Canvas:
+   m_GameObject: {fileID: 616739450}
+   m_Enabled: 1
+   serializedVersion: 3
+-  m_RenderMode: 1
+-  m_Camera: {fileID: 519420031}
++  m_RenderMode: 0
++  m_Camera: {fileID: 0}
+   m_PlaneDistance: 5
+   m_PixelPerfect: 0
+   m_ReceivesEvents: 1
+@@ -7629,6 +7642,7 @@ GameObject:
+   serializedVersion: 6
+   m_Component:
+   - component: {fileID: 1096076475}
++  - component: {fileID: 1096076476}
+   m_Layer: 5
+   m_Name: RightPanel
+   m_TagString: Untagged
+@@ -7636,6 +7650,18 @@ GameObject:
+   m_NavMeshLayer: 0
+   m_StaticEditorFlags: 0
+   m_IsActive: 1
++--- !u!225 &1096076476
++CanvasGroup:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 1096076474}
++  m_Enabled: 1
++  m_Alpha: 0
++  m_Interactable: 0
++  m_BlocksRaycasts: 0
++  m_IgnoreParentGroups: 0
+ --- !u!224 &1096076475
+ RectTransform:
+   m_ObjectHideFlags: 0
+@@ -8793,7 +8819,7 @@ GameObject:
+   m_Icon: {fileID: 0}
+   m_NavMeshLayer: 0
+   m_StaticEditorFlags: 0
+-  m_IsActive: 1
++  m_IsActive: 0
+ --- !u!224 &1311215481
+ RectTransform:
+   m_ObjectHideFlags: 0
+diff --git a/Assets/Scripts/UI/EmbeddedViewport.cs b/Assets/Scripts/UI/EmbeddedViewport.cs
+new file mode 100644
+index 0000000..1908211
+--- /dev/null
++++ b/Assets/Scripts/UI/EmbeddedViewport.cs
+@@ -0,0 +1,45 @@
++using System.Runtime.InteropServices;
++using UnityEngine;
++
++[RequireComponent(typeof(Camera))]
++public sealed class EmbeddedViewport : MonoBehaviour
++{
++    // CanvasMain is scaled from a 108-unit square. Reserve room for its anchored controls.
++    private const float ReferenceSize = 108f;
++    private const float HeaderHeight = 10f;
++    private const float TransportHeight = 15f;
++
++    private Camera chartCamera;
++    private Vector2Int screenSize;
++
++    [DllImport("__Internal")]
++    private static extern void MajMusicSetViewport(float left, float top, float width, float height);
++
++    private void Awake()
++    {
++        chartCamera = GetComponent<Camera>();
++        chartCamera.aspect = 1f;
++    }
++
++    private void LateUpdate()
++    {
++        var size = new Vector2Int(Screen.width, Screen.height);
++        if (size == screenSize)
++        {
++            return;
++        }
++
++        screenSize = size;
++        var scale = Mathf.Min(size.x, size.y) / ReferenceSize;
++        var header = HeaderHeight * scale;
++        var transport = TransportHeight * scale;
++        var contentHeight = size.y - header - transport;
++        var side = Mathf.Floor(Mathf.Min(size.x, contentHeight));
++        var viewport = new Rect((size.x - side) / 2f, transport + (contentHeight - side) / 2f, side, side);
++        chartCamera.pixelRect = viewport;
++
++#if UNITY_WEBGL && !UNITY_EDITOR
++        MajMusicSetViewport(viewport.x / size.x, 1f - viewport.yMax / size.y, side / size.x, side / size.y);
++#endif
++    }
++}
+diff --git a/Assets/Scripts/UI/EmbeddedViewport.cs.meta b/Assets/Scripts/UI/EmbeddedViewport.cs.meta
+new file mode 100644
+index 0000000..1a688f4
+--- /dev/null
++++ b/Assets/Scripts/UI/EmbeddedViewport.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: 35492780ed864cf9b5be204fb7935a7c

@@ -9,7 +9,7 @@ using MajMusic.Android.Storage;
 namespace MajMusic.Android
 {
     /// <summary>Hosts the responsive music interface without owning or stopping background playback.</summary>
-    [Activity(Name = "com.icecloud.majmusic.MainActivity", Label = "MajMusic", Icon = "@drawable/app_icon",
+    [Activity(Name = "com.icecloud.majmusic.MainActivity", Label = "MajMusic",
         Theme = "@style/MajMusicTheme", MainLauncher = true, Exported = true, LaunchMode = LaunchMode.SingleTop,
         ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.SmallestScreenSize
             | ConfigChanges.ScreenLayout | ConfigChanges.UiMode | ConfigChanges.Density)]

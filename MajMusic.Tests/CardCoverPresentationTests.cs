@@ -60,11 +60,16 @@ namespace MajMusic.Tests
             var release = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
             var workspace = new CoverWorkspace { Resolve = (_, token) => release.Task.WaitAsync(token) };
             workspace.Inner.Library.AddRange([Track("first", path, "shared"), Track("second", path, "shared")]);
+            for (var index = 2; index <= MainViewModel.ResidentCardLimit; index++)
+            {
+                workspace.Inner.Library.Add(Track("shared-" + index, path, "shared"));
+            }
             var backend = new LibraryExperienceTests.ExperienceBackend();
             await using var view = await CreateViewAsync(workspace, backend);
             TestAssert.Equal(0, workspace.CoverRequests, "Unattached card records cannot prefetch images outside the viewport.");
             var first = view.CardTracks[0];
             var second = view.CardTracks[1];
+            var outsideResidentPrefix = view.CardTracks[MainViewModel.ResidentCardLimit];
             var firstLoad = first.ActivateAsync();
             var secondLoad = second.ActivateAsync();
             TestAssert.Equal(1, workspace.CoverRequests, "Identical visible cover resources must share a pending resolution.");
@@ -92,13 +97,19 @@ namespace MajMusic.Tests
             TestAssert.True(view.SelectedTrack is null && backend.OpenCount == 0 && workspace.AudioRequests == 0,
                 "Visible thumbnails must load before selection and never prepare or request audio.");
             first.Deactivate();
-            TestAssert.True(first.Cover is null && ReferenceEquals(bitmap, second.Cover),
-                "Detaching one card releases only its own interest in a shared bitmap.");
+            TestAssert.True(ReferenceEquals(bitmap, first.Cover) && ReferenceEquals(bitmap, second.Cover),
+                "A resident card retains its shared artwork when its control leaves the viewport.");
+            await outsideResidentPrefix.ActivateAsync();
+            TestAssert.True(ReferenceEquals(bitmap, outsideResidentPrefix.Cover),
+                "A card outside the resident prefix can still share the visible bitmap.");
+            outsideResidentPrefix.Deactivate();
+            TestAssert.True(outsideResidentPrefix.Cover is null && ReferenceEquals(bitmap, second.Cover),
+                "Detaching a nonresident card releases only its own interest in a shared bitmap.");
             using var scaled = second.Cover!.CreateScaledBitmap(new PixelSize(1, 1));
             second.Deactivate();
             await first.ActivateAsync();
             TestAssert.True(ReferenceEquals(bitmap, first.Cover) && workspace.CoverRequests == 1,
-                "Reattaching a recently used card must reuse its idle cached thumbnail.");
+                "Reattaching a resident card must reuse its retained bitmap.");
         }
 
         /// <summary>Retries unavailable and undecodable thumbnails after the card leaves and returns to the viewport.</summary>

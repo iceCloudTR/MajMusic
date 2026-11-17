@@ -308,7 +308,8 @@ namespace MajMusic.Presentation.ViewModels
                 _recommendationRequestCancellation?.Cancel();
             }
             var removed = Playlists.Where(item => item.IsCloud && item.EndpointId == endpointId).ToArray();
-            var clearView = _recommendationEndpointId == endpointId || removed.Any(item => item.Id == _activePlaylistId);
+            var clearsRecommendations = _recommendationEndpointId == endpointId;
+            var clearView = (IsRecommendationsMode && clearsRecommendations) || removed.Any(item => item.Id == _activePlaylistId);
             foreach (var playlist in removed)
             {
                 Playlists.Remove(playlist);
@@ -319,7 +320,7 @@ namespace MajMusic.Presentation.ViewModels
                 SelectedPlaylist = _favorites is { } favorites ? VisiblePlaylistForLocal(favorites) : null;
             }
 
-            if (_recommendationEndpointId == endpointId)
+            if (clearsRecommendations)
             {
                 _recommendationTracks = null;
                 _recommendationEndpointId = null;
@@ -377,17 +378,6 @@ namespace MajMusic.Presentation.ViewModels
         private EndpointConfiguration RequireSelectedEndpoint()
         {
             return SelectedEndpointProfile?.Configuration ?? throw new InvalidOperationException("请选择接入点。");
-        }
-
-        /// <summary>Checks the local search keyword against a finite feed snapshot.</summary>
-        /// <param name="track">The entry to inspect.</param>
-        /// <param name="query">The optional literal search keyword.</param>
-        /// <returns>Whether the entry matches.</returns>
-        private static bool MatchesQuery(MusicTrack track, string? query)
-        {
-            return string.IsNullOrWhiteSpace(query) || track.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || track.Artist.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || track.Tags.Any(tag => tag.Contains(query, StringComparison.OrdinalIgnoreCase));
         }
     }
 

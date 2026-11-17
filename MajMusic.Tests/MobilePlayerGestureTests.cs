@@ -84,7 +84,7 @@ namespace MajMusic.Tests
                         await ((InterruptibleSongSheet)sheet).SheetUpdate.WaitAsync(timeout.Token);
                         TestAssert.True(!((InterruptibleSongSheet)sheet).IsExpanded && model.SelectedTrack?.Id == playing.Id
                             && playback.Queue.Current?.Id == playing.Id && model.IsPlaying,
-                            "Both a player tap and a light upward pull must open half-height details for the actual playing song.");
+                            "Both a player tap and a light upward pull must open compact details for the actual playing song.");
                         sheet.IsOpen = false;
                         await ((InterruptibleSongSheet)sheet).SheetUpdate.WaitAsync(timeout.Token);
                         Layout(window);
@@ -140,22 +140,22 @@ namespace MajMusic.Tests
             Layout(window);
             var track = playback.Snapshot.Track!.Id;
             var handle = sheet.GetVisualDescendants().OfType<Control>().Single(control => control.Name == "PART_Handle");
-            var halfOffset = sheet.PanelOffset;
-            TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && halfOffset > 100,
-                "A player pull must begin at the real half-height song-details resting point.");
+            var compactOffset = sheet.PanelOffset;
+            TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && compactOffset > 100,
+                "A player pull must begin at the compact song-details resting point.");
             var start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), window)!.Value;
             using (var cancelled = window.TouchBegin(start, RawInputModifiers.None))
             {
                 window.TouchMove(cancelled, start + new Vector(0, -20), RawInputModifiers.None);
                 window.TouchMove(cancelled, start + new Vector(0, -70), RawInputModifiers.None);
                 Layout(window);
-                TestAssert.True(sheet.PanelOffset < halfOffset - 20 && sheet.PanelOffset > 0,
+                TestAssert.True(sheet.PanelOffset < compactOffset - 20 && sheet.PanelOffset > 0,
                     "A held upward handle movement must directly expose more content before committing a detent.");
             }
             Layout(window);
             await sheet.SheetUpdate.WaitAsync(token);
-            TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && Math.Abs(sheet.PanelOffset - halfOffset) < 2,
-                "Cancelling an upward contact must restore half height without committing a full view or dismissing it.");
+            TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && Math.Abs(sheet.PanelOffset - compactOffset) < 2,
+                "Cancelling an upward contact must restore the compact card without expanding or dismissing it.");
 
             start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), window)!.Value;
             Swipe(window, start, new Vector(0, -90));
@@ -178,7 +178,7 @@ namespace MajMusic.Tests
             model.CloseExpandedSongDetailsCommand.Execute(null);
             await sheet.SheetUpdate.WaitAsync(token);
             Layout(window);
-            TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && Math.Abs(sheet.PanelOffset - halfOffset) < 2
+            TestAssert.True(sheet.IsOpen && !sheet.IsExpanded && Math.Abs(sheet.PanelOffset - compactOffset) < 2
                 && playback.Snapshot.Track?.Id == track && playback.Queue.Current?.Id == track && model.IsPlaying,
                 "Returning to compact details must preserve the original loaded track, queue and playing state.");
         }

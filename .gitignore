@@ -10,6 +10,8 @@ TestResults/
 /artifacts/
 /dist/
 /publish/
+*.app/
+*.dSYM/
 *.user
 *.suo
 *.userosscache
@@ -67,6 +69,9 @@ sessions.json
 *.aab
 *.apks
 *.idsig
+*.ipa
+*.mobileprovision
+*.provisionprofile
 *.hprof
 *.token
 

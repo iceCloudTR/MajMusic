@@ -37,6 +37,9 @@ namespace MajMusic.Infrastructure.Metadata
         }
 
         /// <inheritdoc />
+        public int CacheRevision => _reader.CacheRevision;
+
+        /// <inheritdoc />
         public async Task<MusicTrack> EnrichAsync(MusicTrack track, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(track);
@@ -60,7 +63,8 @@ namespace MajMusic.Infrastructure.Metadata
 
                 var length = file.Length;
                 var lastWrite = file.LastWriteTimeUtc.Ticks;
-                if (track.AudioMetadataLength == length && track.AudioMetadataLastWriteUtcTicks == lastWrite
+                if ((track.AudioMetadataRevision ?? 0) == CacheRevision
+                    && track.AudioMetadataLength == length && track.AudioMetadataLastWriteUtcTicks == lastWrite
                     && (track.Duration is not null || track.AudioInfo is not null))
                 {
                     return track;
@@ -68,7 +72,8 @@ namespace MajMusic.Infrastructure.Metadata
 
                 var cachePath = GetCachePath(path);
                 var cached = await ReadCacheAsync(cachePath, cancellationToken).ConfigureAwait(false);
-                if (cached?.Metadata is { } cachedProperties && cached.FileLength == length && cached.LastWriteUtcTicks == lastWrite)
+                if (cached?.Metadata is { } cachedProperties && cached.Revision == CacheRevision
+                    && cached.FileLength == length && cached.LastWriteUtcTicks == lastWrite)
                 {
                     return ApplyMetadata(track, cachedProperties, length, lastWrite);
                 }
@@ -78,11 +83,12 @@ namespace MajMusic.Infrastructure.Metadata
                 file.Refresh();
                 if (!file.Exists || file.Length != length || file.LastWriteTimeUtc.Ticks != lastWrite)
                 {
-                    return track with { Duration = null, AudioInfo = null, AudioMetadataLength = null, AudioMetadataLastWriteUtcTicks = null };
+                    return track with { Duration = null, AudioInfo = null, AudioMetadataLength = null, AudioMetadataLastWriteUtcTicks = null, AudioMetadataRevision = null };
                 }
 
                 await WriteCacheAsync(cachePath, new CachedMetadata
                 {
+                    Revision = CacheRevision,
                     FileLength = length,
                     LastWriteUtcTicks = lastWrite,
                     Metadata = metadata
@@ -210,20 +216,23 @@ namespace MajMusic.Infrastructure.Metadata
         /// <param name="length">The source file length.</param>
         /// <param name="lastWrite">The source last-write ticks.</param>
         /// <returns>An enriched immutable entry.</returns>
-        private static MusicTrack ApplyMetadata(MusicTrack track, AudioMetadata metadata, long length, long lastWrite)
+        private MusicTrack ApplyMetadata(MusicTrack track, AudioMetadata metadata, long length, long lastWrite)
         {
             return track with
             {
                 Duration = metadata.Duration,
                 AudioInfo = metadata.AudioInfo,
                 AudioMetadataLength = length,
-                AudioMetadataLastWriteUtcTicks = lastWrite
+                AudioMetadataLastWriteUtcTicks = lastWrite,
+                AudioMetadataRevision = CacheRevision
             };
         }
 
         /// <summary>Stores one disposable source-fingerprint cache record.</summary>
         private sealed record CachedMetadata
         {
+            /// <summary>Gets the local parser revision that produced the properties.</summary>
+            public int Revision { get; init; }
             /// <summary>Gets the file length at parse time.</summary>
             public long FileLength { get; init; }
             /// <summary>Gets the file's UTC last-write ticks at parse time.</summary>

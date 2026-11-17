@@ -365,10 +365,6 @@ namespace MajMusic.Tests
                 {
                     return Json(new { username = account });
                 }
-                if (path.EndsWith("/account/logout", StringComparison.Ordinal))
-                {
-                    return Json(new { code = 114514 });
-                }
                 if (path.EndsWith("/interactsum", StringComparison.Ordinal))
                 {
                     return Json(new { chartId = Fixture.Chart, plays = 123, score = 7, upvotes = 9, downvotes = 2, comments = 21, myVote = account == "Alice" ? 1 : account == "Bob" ? -1 : 0 });

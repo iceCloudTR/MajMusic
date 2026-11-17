@@ -7,6 +7,9 @@ namespace MajMusic.Core.Abstractions
     /// <summary>Parses metadata from complete local audio files without using the playback device.</summary>
     public interface IAudioMetadataReader
     {
+        /// <summary>Gets the revision of the properties produced by this local parser.</summary>
+        int CacheRevision => 0;
+
         /// <summary>Reads properties without starting audio playback or accessing a network resource.</summary>
         /// <param name="localPath">The fully qualified path of a complete local file.</param>
         /// <param name="cancellationToken">Cancels parsing.</param>

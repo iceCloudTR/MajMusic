@@ -8,6 +8,7 @@ using MajMusic.Infrastructure.Downloads;
 using MajMusic.Infrastructure.Credentials;
 using MajMusic.Infrastructure.Import;
 using MajMusic.Infrastructure.Network;
+using MajMusic.Infrastructure.Preview;
 using MajMusic.Infrastructure.Storage;
 
 namespace MajMusic.Infrastructure.Application
@@ -58,11 +59,14 @@ namespace MajMusic.Infrastructure.Application
         /// <param name="credentialStore">An optional system-vault adapter; tests may inject an isolated store.</param>
         /// <param name="documentStorage">An optional read-only provider-tree adapter for mobile local sources.</param>
         /// <param name="mediaStorageAccess">An optional read/write adapter for an explicitly granted Music media directory.</param>
+        /// <param name="openMajViewAsset">An optional opener for the renderer files in a platform package.</param>
         public MusicWorkspace(string? dataDirectory = null, HttpClient? apiClient = null,
             HttpClient? resourceClient = null, ISettingsStore? settingsStore = null, ICredentialStore? credentialStore = null,
-            IReadOnlyDocumentStorage? documentStorage = null, IMediaStorageAccess? mediaStorageAccess = null)
+            IReadOnlyDocumentStorage? documentStorage = null, IMediaStorageAccess? mediaStorageAccess = null,
+            Func<string, Stream>? openMajViewAsset = null)
         {
             DataDirectory = Path.GetFullPath(dataDirectory ?? GetDefaultDataDirectory());
+            _majViewRuntime = new MajViewRuntime(DataDirectory, openMajViewAsset);
             _library = new SqliteLibraryRepository(Path.Combine(DataDirectory, "library.db"));
             _settingsStore = settingsStore ?? new JsonSettingsStore(Path.Combine(DataDirectory, "settings.json"));
             _credentialStore = credentialStore ?? CredentialStoreFactory.Create();
@@ -202,7 +206,8 @@ namespace MajMusic.Infrastructure.Application
                                     Duration = previous.Duration,
                                     AudioInfo = previous.AudioInfo,
                                     AudioMetadataLength = length,
-                                    AudioMetadataLastWriteUtcTicks = ticks
+                                    AudioMetadataLastWriteUtcTicks = ticks,
+                                    AudioMetadataRevision = previous.AudioMetadataRevision
                                 });
                                 continue;
                             }
@@ -281,11 +286,12 @@ namespace MajMusic.Infrastructure.Application
                                 Cover = track.Cover is null ? null : MergeResource(track.Cover, previous.Cover),
                                 Chart = previous.Chart,
                                 Video = previous.Video,
-                                Duration = track.Duration ?? previous.Duration,
+                                Duration = MergeSourceDuration(track, previous),
                                 LocalMediaSavedAt = previous.LocalMediaSavedAt,
-                                AudioInfo = MergeStreamInfo(track.AudioInfo, previous.AudioInfo),
+                                AudioInfo = MergeSourceStreamInfo(track, previous),
                                 AudioMetadataLength = previous.AudioMetadataLength,
-                                AudioMetadataLastWriteUtcTicks = previous.AudioMetadataLastWriteUtcTicks
+                                AudioMetadataLastWriteUtcTicks = previous.AudioMetadataLastWriteUtcTicks,
+                                AudioMetadataRevision = previous.AudioMetadataRevision
                             });
                             continue;
                         }

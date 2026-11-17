@@ -202,6 +202,7 @@ namespace MajMusic.Tests
             TestAssert.True(ReferenceEquals(viewModel.SelectedPlaylist, viewModel.Playlists.Single(playlist => playlist.EndpointId == first.Id)),
                 "Cloud refresh selects the newest projected playlist object");
 
+            var recommendationRequestsBeforeRefresh = workspace.RecommendationRequests.Count;
             await ExecuteAsync(viewModel, viewModel.RecommendationsCommand);
             TestAssert.True(viewModel.IsRecommendationsView && viewModel.Tracks.Count == 50
                 && viewModel.RecommendationPageNumber == 1 && viewModel.RecommendationPageCount == 2
@@ -213,8 +214,9 @@ namespace MajMusic.Tests
             TestAssert.True(viewModel.Tracks.Select(track => track.Id).SequenceEqual(recommended.Skip(50).Select(track => track.Id))
                 && viewModel.RecommendationPageNumber == 2 && !viewModel.NextRecommendationPageCommand.CanExecute(null),
                 "The final local page contains only the remaining songs and cannot advance beyond the finite feed");
-            TestAssert.True(workspace.RecommendationRequests.SequenceEqual(new[] { (first.Id, 0), (first.Id, 1) }),
+            TestAssert.True(workspace.RecommendationRequests.Skip(recommendationRequestsBeforeRefresh).SequenceEqual(new[] { (first.Id, 0), (first.Id, 1) }),
                 "Recommendation paging is finite and tied to its owning endpoint");
+            var recommendationRequestsAfterRefresh = workspace.RecommendationRequests.Count;
             viewModel.SelectedTrack = viewModel.Tracks[0];
             await viewModel.PlaySelectedAsync();
             TestAssert.True(playback.Queue.Tracks.Select(track => track.Id).SequenceEqual(recommended.Select(track => track.Id))
@@ -228,7 +230,8 @@ namespace MajMusic.Tests
             await ExecuteAsync(viewModel, viewModel.NextCommand);
             TestAssert.Equal(recommended[51].Id, playback.Queue.Current?.Id,
                 "Playback must continue within the finite feed even while another display page is open");
-            TestAssert.Equal(2, workspace.RecommendationRequests.Count, "Queue navigation does not fetch more recommendation pages implicitly");
+            TestAssert.Equal(recommendationRequestsAfterRefresh, workspace.RecommendationRequests.Count,
+                "Queue navigation does not fetch more recommendation pages implicitly");
             viewModel.SelectedPlaylist = viewModel.Playlists.Single(playlist => playlist.Id == "mixed");
             await ExecuteAsync(viewModel, viewModel.OpenPlaylistCommand);
             TestAssert.True(!viewModel.IsRecommendationsView && viewModel.Tracks.Select(track => track.Id).SequenceEqual(mixed.TrackIds),

@@ -223,13 +223,13 @@ namespace MajMusic.Tests
                 TestAssert.Equal(2, handler.RequestCount, "Offline reuse and cleanup must not contact a source.");
                 TestAssert.True(!File.ReadAllText(Path.Combine(root, "index.json")).Contains("https://", StringComparison.Ordinal), "The cache index must not persist signed URLs.");
 
-                var unpinnedRoot = Path.Combine(root, "unpinned");
+                var playbackRoot = Path.Combine(root, "playback");
                 policy.SetEnabled(true);
-                using var unpinned = new MediaCache(unpinnedRoot, transport, policy);
-                var unpinnedPath = await unpinned.GetAsync(resource);
+                using var playbackCache = new MediaCache(playbackRoot, transport, policy);
+                var playbackPath = await playbackCache.GetAsync(resource);
                 policy.SetEnabled(false);
-                TestAssert.Equal(1, await unpinned.ClearCacheAsync(), "Ordinary cached objects must be evictable.");
-                TestAssert.True(!File.Exists(unpinnedPath), "Cleanup must remove the unpinned object.");
+                TestAssert.Equal(0, await playbackCache.ClearCacheAsync(), "Completed playback downloads must survive automatic cache cleanup.");
+                TestAssert.True(File.Exists(playbackPath), "Playback downloads stay available for future offline use.");
             }
             finally
             {
@@ -306,10 +306,9 @@ namespace MajMusic.Tests
                 using var reopened = new MediaCache(root, transport, policy);
                 TestAssert.Equal(secondPath, await reopened.GetAsync(lazy), "A lazy reference must resolve to the latest verified URI alias after restart.");
                 TestAssert.Equal(firstPath, await reopened.GetAsync(first), "An explicit old digest must retain its original object after the URI changes.");
-                TestAssert.Equal(1, await reopened.ClearCacheAsync(), "Only the new unpinned revision should be removed.");
-                TestAssert.True(File.Exists(firstPath), "A newer URI alias must not overwrite the old revision's pin.");
-                TestAssert.True(!File.Exists(secondPath), "Unpinned newer content remains evictable.");
-                TestAssert.Equal(firstPath, await reopened.GetAsync(first), "The pinned revision must remain readable offline after cleanup.");
+                TestAssert.Equal(0, await reopened.ClearCacheAsync(), "Automatic cleanup keeps both completed revisions.");
+                TestAssert.True(File.Exists(firstPath) && File.Exists(secondPath), "A newer URI alias must leave both verified objects intact.");
+                TestAssert.Equal(firstPath, await reopened.GetAsync(first), "The original revision must remain readable offline after cleanup.");
                 TestAssert.Equal(2, handler.RequestCount, "Aliases and explicit digest lookups must not introduce duplicate transfers.");
             }
             finally
@@ -389,7 +388,7 @@ namespace MajMusic.Tests
                         await ExpectIndexWriteFailureAsync(() => cache.GetAsync(failedResource, true));
                         policy.SetEnabled(false);
                         TestAssert.Equal(2, Directory.EnumerateFiles(Path.Combine(root, "objects"), "*", SearchOption.AllDirectories).Count(), "An object with a failed index commit must be rolled back without deleting existing files.");
-                        await ExpectIndexWriteFailureAsync(() => cache.ClearCacheAsync());
+                        await ExpectIndexWriteFailureAsync(() => cache.RemoveResourcesAsync([cached], new HashSet<string>()));
                         TestAssert.True(File.Exists(pinnedPath), "An alias persistence failure must preserve already pinned content.");
                         TestAssert.True(File.Exists(cachedPath), "Cleanup must persist its decision before deleting files.");
                     }
@@ -399,7 +398,9 @@ namespace MajMusic.Tests
                         File.Move(backupPath, indexPath);
                     }
 
-                    TestAssert.Equal(1, await cache.ClearCacheAsync(), "A failed cleanup must not mutate the active index.");
+                    var removal = await cache.RemoveResourcesAsync([cached], new HashSet<string>());
+                    TestAssert.True(removal.Removed is [true] && removal.DeletedFiles == 1 && !File.Exists(cachedPath),
+                        "A failed cleanup must leave its selected object available for a successful retry.");
                 }
 
                 using var reopened = new MediaCache(root, transport, policy);

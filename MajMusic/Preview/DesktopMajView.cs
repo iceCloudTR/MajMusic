@@ -25,7 +25,7 @@ namespace MajMusic.Preview
             _reportFailure = reportFailure;
             _startupTimeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
             _startupTimeout.Tick += (_, _) => Fail("内嵌谱面加载超时");
-            Background = new SolidColorBrush(Color.FromRgb(23, 23, 27));
+            Background = Brushes.Transparent;
             if (OperatingSystem.IsWindows())
             {
                 AdapterPreference = [WebViewAdapterType.WebView2];

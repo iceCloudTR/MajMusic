@@ -25,10 +25,19 @@ namespace MajMusic
         /// <summary>Initializes the runtime window and its owned services.</summary>
         /// <param name="viewModel">The shared music view model.</param>
         /// <param name="services">The services released when the window closes.</param>
-        public MainWindow(MainViewModel viewModel, IDisposable services) : this()
+        /// <param name="mobilePreview">Whether to open the shared mobile layout at a phone-sized width.</param>
+        public MainWindow(MainViewModel viewModel, IDisposable services, bool mobilePreview = false) : this()
         {
             DataContext = viewModel;
             _services = services;
+
+            if (mobilePreview)
+            {
+                MinWidth = 320;
+                Width = 420;
+                Height = 760;
+                Title = "MajMusic · 移动端预览";
+            }
         }
 
         /// <summary>Initializes the workspace after the window has opened.</summary>

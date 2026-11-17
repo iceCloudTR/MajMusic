@@ -112,6 +112,40 @@ namespace MajMusic.Infrastructure.Storage
             var keyword = query?.Trim() ?? string.Empty;
             command.Parameters.AddWithValue("$all", keyword.Length == 0 ? 1 : 0);
             command.Parameters.AddWithValue("$query", $"%{EscapeLike(keyword)}%");
+            return await ReadTracksAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>Finds older metadata for saved media without reading the remote-only catalog into memory.</summary>
+        /// <param name="revision">The current local parser revision.</param>
+        /// <param name="cancellationToken">Cancels the local index read.</param>
+        /// <returns>The existing indexed local files eligible for metadata refresh.</returns>
+        internal Task<IReadOnlyList<MusicTrack>> FindOutdatedAudioMetadataAsync(int revision, CancellationToken cancellationToken)
+        {
+            return Task.Run(async () =>
+            {
+                await InitializeAsync(cancellationToken).ConfigureAwait(false);
+                await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT document FROM tracks
+                    WHERE json_extract(document, '$.Audio.LocalPath') IS NOT NULL
+                        AND COALESCE(json_extract(document, '$.AudioMetadataRevision'), 0) < $revision
+                        AND (json_extract(document, '$.RemoteId') IS NOT NULL
+                            OR json_extract(document, '$.LocalMediaSavedAt') IS NOT NULL
+                            OR json_extract(document, '$.AudioInfo') IS NOT NULL
+                            OR json_extract(document, '$.Duration') IS NOT NULL);
+                    """;
+                command.Parameters.AddWithValue("$revision", revision);
+                return await ReadTracksAsync(command, cancellationToken).ConfigureAwait(false);
+            }, cancellationToken);
+        }
+
+        /// <summary>Reads track documents while observing cancellation between rows.</summary>
+        /// <param name="command">The read-only track query.</param>
+        /// <param name="cancellationToken">Cancels the query or mapping.</param>
+        /// <returns>The matching track documents.</returns>
+        private static async Task<IReadOnlyList<MusicTrack>> ReadTracksAsync(SqliteCommand command, CancellationToken cancellationToken)
+        {
             var tracks = new List<MusicTrack>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (true)

@@ -14,7 +14,8 @@
         </Style>
         <Style Selector="arc|Button.liked"><Setter Property="Foreground" Value="{DynamicResource MusicAccentBrush}" /></Style>
     </UserControl.Styles>
-    <Border BorderBrush="{DynamicResource MusicLineBrush}" BorderThickness="0,0,0,1" Padding="0,10" Margin="{Binding Depth, Converter={StaticResource Indent}}">
+    <Border x:Name="CommentCard" Classes="card" Background="{DynamicResource MusicRaisedBrush}"
+            BorderBrush="{DynamicResource MusicLineBrush}" Padding="10,9" Margin="{Binding Depth, Converter={StaticResource Indent}}">
         <StackPanel Spacing="8">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                 <TextBlock Text="{Binding Author}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis" />

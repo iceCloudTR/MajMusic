@@ -19,14 +19,24 @@ namespace MajMusic.Tests
             const string maidata = "&title=Fixture\n&inote_2=(120){4}1,2,E\n&inote_5=(120){4}8,7,E\n";
             var assets = new ChartPreviewAssets(maidata, "granted-track", null, "granted-video",
                 [new(2, "6"), new(5, "12+")]);
-            await using var preview = new MajViewPreviewSession("unused", "题目 <script>", assets,
+            var loader = MajViewRuntime.Files.Single(file => file.Name == "Build.loader.js");
+            var loaderBytes = new byte[loader.Length];
+            Array.Fill(loaderBytes, (byte)42);
+            var runtime = new MajViewRuntime("unused", _ => new PackageAssetStream(loaderBytes));
+            await using var preview = new MajViewPreviewSession(runtime, "题目 <script>", assets,
                 (path, _) => Task.FromResult<Stream>(path is "granted-track" or "granted-video"
                     ? new MemoryStream(audio, false) : throw new FileNotFoundException()));
             using var handler = new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false };
             using var client = new HttpClient(handler) { BaseAddress = preview.Address, Timeout = TimeSpan.FromSeconds(5) };
             TestAssert.True(preview.Address.IsLoopback, "The viewer must bind only to the loopback interface.");
             TestAssert.Equal(maidata, await client.GetStringAsync("chart"), "Unity must receive the complete original chart text.");
+            using var renderer = await client.GetAsync("runtime/Build.loader.js");
+            TestAssert.True(renderer.Content.Headers.ContentLength == loaderBytes.Length
+                && (await renderer.Content.ReadAsByteArrayAsync()).SequenceEqual(loaderBytes),
+                "Unity must receive the renderer bytes and length even when the package asset does not support seeking.");
             using var metadata = JsonDocument.Parse(await client.GetStringAsync("song.json"));
+            TestAssert.Equal(MajViewRuntime.EmbeddedViewport, metadata.RootElement.GetProperty("embeddedViewport").GetBoolean(),
+                "The viewer must receive the viewport mode of the packaged renderer.");
             TestAssert.True(metadata.RootElement.GetProperty("difficulties").EnumerateArray()
                 .Select(level => level.GetProperty("number").GetInt32()).SequenceEqual([2, 5]),
                 "The browser must receive the real sparse difficulty numbers.");
@@ -45,6 +55,12 @@ namespace MajMusic.Tests
             await preview.DisposeAsync();
             await TestAssert.ThrowsAsync<HttpRequestException>(async () => await client.GetAsync("chart"));
             await ValidatePlaybackHandoffAsync();
+        }
+
+        private sealed class PackageAssetStream(byte[] bytes) : MemoryStream(bytes, writable: false)
+        {
+            public override bool CanSeek => false;
+            public override long Length => throw new NotSupportedException();
         }
 
         private static async Task ValidatePlaybackHandoffAsync()
@@ -94,7 +110,6 @@ namespace MajMusic.Tests
 
         private sealed class PreviewWorkspace : LibraryExperienceTests.ExperienceWorkspace, IMajViewPreviewHost, IChartPreviewWorkspace
         {
-            public bool IsMajViewInstalled => true;
             public bool IncludeVideo { get; private set; }
             public int Created { get; private set; }
             public PreviewSession Pending { get; set; } = new();
@@ -108,7 +123,7 @@ namespace MajMusic.Tests
                 CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
             public async Task<IMajViewPreviewSession> CreateMajViewPreviewAsync(MusicTrack track, bool includeVideo,
-                bool allowRuntimeDownload, CancellationToken cancellationToken = default)
+                CancellationToken cancellationToken = default)
             {
                 IncludeVideo = includeVideo;
                 Created++;

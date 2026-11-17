@@ -120,8 +120,10 @@ namespace MajMusic.Tests
                 model.SongCommentDraft = "Bob draft";
                 await TestAssert.ExecuteAsync(model.GuestCommand).WaitAsync(token);
                 await model.SongSocialUpdate.WaitAsync(token);
+                TestAssert.True(model.SelectedTrack?.Id == first.Id && model.IsSongDetailsExpanded,
+                    "Clearing an account's background recommendations must leave the current library song open.");
                 TestAssert.True(model.SongCommentDraft.Length == 0 && !model.CanLikeSong && !model.PostSongCommentCommand.CanExecute(null)
-                    && !model.SongComments.Single().CanDelete,
+                    && model.SongComments is [{ Author: "Guest", CanDelete: false }],
                     "Returning this endpoint to Guest must clear unsent account text and every write capability while retaining public comments.");
             }
             finally
@@ -336,7 +338,7 @@ namespace MajMusic.Tests
         internal sealed record Submission(MusicTrack Track, string? Account, string Body, string? ParentId);
 
         /// <summary>Extends the existing in-memory library with finite controllable social responses.</summary>
-        internal sealed class SocialWorkspace : LibraryExperienceTests.ExperienceWorkspace, ITrackSocialWorkspace
+        internal class SocialWorkspace : LibraryExperienceTests.ExperienceWorkspace, ITrackSocialWorkspace
         {
             /// <summary>Creates two source-owned songs without native files or HTTP dependencies.</summary>
             public SocialWorkspace()

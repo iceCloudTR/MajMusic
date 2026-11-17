@@ -2,15 +2,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:vm="using:MajMusic.Presentation.ViewModels"
-             xmlns:theme="using:MajMusic.Presentation.Theme"
              xmlns:views="using:MajMusic.Presentation.Views"
-             xmlns:converters="using:MajMusic.Presentation.Converters"
              x:Class="MajMusic.Presentation.Views.SongDetailsView"
              x:Name="DetailsRoot" x:DataType="vm:MainViewModel">
-    <UserControl.Resources>
-        <converters:MusicDisplayConverter x:Key="DetailsDisplay" />
-        <views:CommentIndentConverter x:Key="CommentIndent" />
-    </UserControl.Resources>
     <UserControl.Styles>
         <Style Selector="TextBlock.detailMuted">
             <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
@@ -24,115 +18,74 @@
         <Style Selector="arc|Button.liked">
             <Setter Property="Foreground" Value="{DynamicResource MusicAccentBrush}" />
         </Style>
-        <Style Selector="ListBoxItem">
-            <Setter Property="Height" Value="NaN" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="Margin" Value="0" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="VerticalContentAlignment" Value="Top" />
-        </Style>
         <Style Selector="TextBox.commentComposer:focus /template/ Border#PART_BorderElement">
             <Setter Property="BorderBrush" Value="{DynamicResource MusicAccentBrush}" />
             <Setter Property="BorderThickness" Value="1" />
         </Style>
+        <Style Selector="Grid.commentInputRow">
+            <Setter Property="Height" Value="66" />
+        </Style>
+        <Style Selector="views|SongDetailsView.compactComposer Grid.commentInputRow">
+            <Setter Property="Height" Value="44" />
+        </Style>
     </UserControl.Styles>
-    <Grid x:Name="SongDetailsLayout" RowDefinitions="44,Auto,*,Auto" RowSpacing="12" Margin="16">
-        <Grid ColumnDefinitions="*,Auto,44" ColumnSpacing="8">
-            <TextBlock Text="{Binding SelectedTitle}" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedTitle}" />
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                <arc:Button x:Name="SongLikeButton" Classes="detailAction" Classes.liked="{Binding IsSongLiked}" Command="{Binding ToggleSongLikeCommand}" IsEnabled="{Binding CanLikeSong}" IsVisible="{Binding IsSongSocialVisible}" AutomationProperties.Name="点赞">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <TextBlock Text="赞" IsVisible="{Binding !IsSongLiked}" />
-                        <TextBlock Text="已赞" IsVisible="{Binding IsSongLiked}" Foreground="{DynamicResource MusicAccentBrush}" />
-                        <TextBlock Text="{Binding SongLikeText}" />
+    <Grid x:Name="SongDetailsTabs" RowDefinitions="Auto,*" RowSpacing="6" Margin="8,0,8,8">
+        <views:SongPreviewTabs x:Name="SongPreviewSegments" ShowOverview="True" />
+        <Grid Grid.Row="1" ClipToBounds="True">
+            <ScrollViewer x:Name="SongOverviewPane" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="16" Margin="0,12,0,8">
+                    <TextBlock Text="{Binding SelectedTrack.Description}" TextWrapping="Wrap" FontSize="13" />
+                    <ItemsControl ItemsSource="{Binding SelectedTrack.Tags}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <Border Background="{DynamicResource MusicRaisedBrush}" CornerRadius="8" Padding="9,5" Margin="0,0,7,7">
+                                    <TextBlock Text="{Binding .}" FontSize="12" />
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <StackPanel Spacing="8" IsVisible="{Binding IsSongSocialVisible}">
+                        <TextBlock Text="{Binding SongSocialAccountText}" Classes="detailMuted" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding SongSocialStatus}" IsVisible="{Binding HasSongSocialStatus}" Classes="detailMuted" TextWrapping="Wrap" />
                     </StackPanel>
-                </arc:Button>
-                <StackPanel x:Name="CompactSongDetailsActions" Orientation="Horizontal" Spacing="4" IsVisible="False">
-                    <arc:Button x:Name="CompactRefreshSongCommentsButton" Classes="icon" Width="44" Height="44" Content="↻" FontSize="19" Command="{Binding RefreshSongSocialCommand}" ToolTip.Tip="刷新评论" AutomationProperties.Name="刷新评论" />
-                    <arc:Button x:Name="CompactDetailsPlayButton" Classes="icon" Width="44" Height="44" Click="OnPlaySelectedClicked" IsEnabled="{Binding CanPlay}" ToolTip.Tip="播放这首" AutomationProperties.Name="播放这首">
-                        <Path Data="M 4,2 L 13,8 L 4,14 Z" Fill="{DynamicResource MusicTextBrush}" Width="16" Height="16" Stretch="None" />
-                    </arc:Button>
-                    <arc:Button x:Name="CompactLoadMoreSongCommentsButton" Classes="icon" Width="44" Height="44" Content="⋯" FontSize="20" Command="{Binding LoadMoreSongCommentsCommand}" IsVisible="{Binding HasMoreSongComments}" ToolTip.Tip="加载更多评论" AutomationProperties.Name="加载更多评论" />
                 </StackPanel>
-            </StackPanel>
-            <arc:Button x:Name="CloseExpandedSongDetailsButton" Grid.Column="2" Width="44" Height="44" Classes="icon" Command="{Binding CloseExpandedSongDetailsCommand}" ToolTip.Tip="收起详情" AutomationProperties.Name="收起详情">
-                <Path Data="M 3,3 L 13,13 M 13,3 L 3,13" Stroke="{DynamicResource MusicTextBrush}" StrokeThickness="1.7" Width="16" Height="16" Stretch="None" />
-            </arc:Button>
-        </Grid>
-        <Grid x:Name="SongDetailsSummary" Grid.Row="1" ColumnDefinitions="96,*" ColumnSpacing="16" Height="96">
-            <Border Width="96" Height="96" CornerRadius="12" Background="{DynamicResource MusicRaisedBrush}" ClipToBounds="True">
-                <theme:CoverTransition Source="{Binding Cover}" Stretch="UniformToFill" />
-            </Border>
-            <StackPanel Grid.Column="1" Spacing="7" VerticalAlignment="Center">
-                <TextBlock Text="{Binding SelectedArtist}" FontSize="14" TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource DetailsDisplay}, ConverterParameter=source}" Classes="detailMuted" TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource DetailsDisplay}, ConverterParameter=duration}" Classes="detailMuted" />
-                <TextBlock Text="{Binding SelectedTrack, Converter={StaticResource DetailsDisplay}, ConverterParameter=audio}" Classes="detailMuted" TextTrimming="CharacterEllipsis" />
-            </StackPanel>
-        </Grid>
-        <Grid x:Name="SongDetailsTabs" Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="6">
-            <views:SongPreviewTabs x:Name="SongPreviewSegments" ShowOverview="True" />
-            <Grid Grid.Row="1" ClipToBounds="True">
-                <ScrollViewer x:Name="SongOverviewPane" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Spacing="16" Margin="0,12,0,8">
-                        <TextBlock Text="{Binding SelectedTrack.Description}" TextWrapping="Wrap" FontSize="13" />
-                        <ItemsControl ItemsSource="{Binding SelectedTrack.Tags}">
-                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="x:String">
-                                    <Border Background="{DynamicResource MusicRaisedBrush}" CornerRadius="8" Padding="9,5" Margin="0,0,7,7">
-                                        <TextBlock Text="{Binding .}" FontSize="12" />
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <StackPanel Spacing="8" IsVisible="{Binding IsSongSocialVisible}">
-                            <TextBlock Text="{Binding SongSocialAccountText}" Classes="detailMuted" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Text="{Binding SongSocialStatus}" IsVisible="{Binding HasSongSocialStatus}" Classes="detailMuted" TextWrapping="Wrap" />
-                        </StackPanel>
-                        <Grid ColumnDefinitions="*,44,Auto" ColumnSpacing="8">
-                            <arc:Select ItemsSource="{Binding Playlists}" TextSelector="{x:Static converters:MusicSelectLabels.Playlist}" SelectedItem="{Binding SelectedPlaylist}" Placeholder="加入歌单" Height="44" MinHeight="44" HorizontalAlignment="Stretch" />
-                            <arc:Button Grid.Column="1" Classes="icon" Content="+" Width="44" Height="44" Command="{Binding AddToPlaylistCommand}" ToolTip.Tip="加入歌单" AutomationProperties.Name="加入歌单" />
-                            <arc:Button Grid.Column="2" Classes="detailAction" Content="移除" Command="{Binding RemoveFromPlaylistCommand}" IsVisible="{Binding IsLocalPlaylistView}" />
-                        </Grid>
+            </ScrollViewer>
+            <Grid x:Name="SongCommentsLayout" RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="4" IsVisible="False">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="4">
+                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding SongCommentCountText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="加载中" Classes="detailMuted" IsVisible="{Binding IsSongSocialLoading}" />
                     </StackPanel>
-                </ScrollViewer>
-                <Grid x:Name="SongCommentsLayout" RowDefinitions="Auto,Auto,*,Auto,Auto,Auto" RowSpacing="8" Margin="0,8,0,0" IsVisible="False">
-                    <Grid x:Name="SongCommentsHeader" ColumnDefinitions="*,Auto,44" ColumnSpacing="8">
-                        <TextBlock Text="{Binding SongCommentCountText}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1" Text="加载中" Classes="detailMuted" IsVisible="{Binding IsSongSocialLoading}" VerticalAlignment="Center" />
-                        <arc:Button Grid.Column="2" Classes="icon" Width="44" Height="44" Content="↻" FontSize="19" Command="{Binding RefreshSongSocialCommand}" ToolTip.Tip="刷新评论" AutomationProperties.Name="刷新评论" />
-                    </Grid>
-                    <TextBlock x:Name="SongCommentsStatus" Grid.Row="1" Text="{Binding SongSocialStatus}" IsVisible="{Binding HasSongSocialStatus}" Classes="detailMuted" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SongSocialStatus}" />
-                    <ListBox x:Name="SongCommentsList" Grid.Row="2" ItemsSource="{Binding SongComments}" Padding="0" BorderThickness="0" Background="Transparent" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                        <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:SongCommentItemViewModel"><views:SongCommentRow /></DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                    <Grid x:Name="SongMoreCommentsHost" Grid.Row="3">
-                        <arc:Button x:Name="LoadMoreSongCommentsButton" Classes="detailAction" Content="加载更多" Command="{Binding LoadMoreSongCommentsCommand}" IsVisible="{Binding HasMoreSongComments}" HorizontalAlignment="Center" />
-                    </Grid>
-                    <Grid Grid.Row="4" ColumnDefinitions="*,44" ColumnSpacing="8" IsVisible="{Binding HasSongReplyTarget}">
-                        <TextBlock Text="{Binding ReplyingToText}" Classes="detailMuted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                        <arc:Button Grid.Column="1" Classes="icon" Width="44" Height="44" Content="×" Command="{Binding CancelSongReplyCommand}" ToolTip.Tip="取消回复" AutomationProperties.Name="取消回复" />
-                    </Grid>
-                    <Grid Grid.Row="5" ColumnDefinitions="*,64" ColumnSpacing="8" IsVisible="{Binding CanComposeSongComment}">
-                        <TextBox x:Name="SongCommentInput" Classes="commentComposer" Text="{Binding SongCommentDraft, Mode=TwoWay}" PlaceholderText="写下评论" AcceptsReturn="True" TextWrapping="Wrap" MaxLength="10000" Height="66" MinHeight="66" Padding="12,10" CornerRadius="10" VerticalContentAlignment="Top" Background="{DynamicResource MusicRaisedBrush}" Foreground="{DynamicResource MusicTextBrush}" BorderBrush="{DynamicResource MusicLineBrush}" BorderThickness="1" FontSize="13" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" IsEnabled="{Binding !IsSongCommentSending}" />
-                        <arc:Button x:Name="PostSongCommentButton" Grid.Column="1" Classes="detailAction" Content="发送" Height="66" MinHeight="66" Command="{Binding PostSongCommentCommand}" IsEnabled="{Binding CanPostSongComment}" VerticalAlignment="Stretch" />
-                    </Grid>
+                    <arc:Button x:Name="SongLikeButton" Grid.Column="1" Classes="detailAction" Classes.liked="{Binding IsSongLiked}" Command="{Binding ToggleSongLikeCommand}" IsEnabled="{Binding CanLikeSong}" AutomationProperties.Name="点赞">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="赞" IsVisible="{Binding !IsSongLiked}" />
+                            <TextBlock Text="已赞" IsVisible="{Binding IsSongLiked}" Foreground="{DynamicResource MusicAccentBrush}" />
+                            <TextBlock Text="{Binding SongLikeText}" />
+                        </StackPanel>
+                    </arc:Button>
+                    <arc:Button Grid.Column="2" Classes="icon" Width="44" Height="44" Content="↻" FontSize="19" Command="{Binding RefreshSongSocialCommand}" ToolTip.Tip="刷新评论" AutomationProperties.Name="刷新评论" />
+                    <arc:Button x:Name="LoadMoreSongCommentsButton" Grid.Column="3" Classes="icon" Width="44" Height="44" Content="⋯" FontSize="20" Command="{Binding LoadMoreSongCommentsCommand}" IsVisible="{Binding HasMoreSongComments}" ToolTip.Tip="加载更多评论" AutomationProperties.Name="加载更多评论" />
                 </Grid>
-                <Border x:Name="ChartPreviewHost" Background="{DynamicResource MusicRaisedBrush}" CornerRadius="12" ClipToBounds="True" IsVisible="False">
-                    <views:ChartPreviewPane />
-                </Border>
+                <TextBlock x:Name="SongCommentsStatus" Grid.Row="1" Text="{Binding SongSocialStatus}" IsVisible="{Binding HasSongSocialStatus}" Classes="detailMuted" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SongSocialStatus}" />
+                <ListBox x:Name="SongCommentsList" Classes="songComments" Grid.Row="2" ItemsSource="{Binding SongComments}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SongCommentItemViewModel"><views:SongCommentRow /></DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <Grid Grid.Row="3" ColumnDefinitions="*,44" ColumnSpacing="8" IsVisible="{Binding HasSongReplyTarget}">
+                    <TextBlock Text="{Binding ReplyingToText}" Classes="detailMuted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <arc:Button Grid.Column="1" Classes="icon" Width="44" Height="44" Content="×" Command="{Binding CancelSongReplyCommand}" ToolTip.Tip="取消回复" AutomationProperties.Name="取消回复" />
+                </Grid>
+                <Grid Grid.Row="4" Classes="commentInputRow" ColumnDefinitions="*,64" ColumnSpacing="8" IsVisible="{Binding CanComposeSongComment}">
+                    <TextBox x:Name="SongCommentInput" Classes="commentComposer" Text="{Binding SongCommentDraft, Mode=TwoWay}" PlaceholderText="写下评论" AcceptsReturn="True" TextWrapping="Wrap" MaxLength="10000" Padding="12,10" CornerRadius="10" VerticalAlignment="Stretch" VerticalContentAlignment="Top" Background="{DynamicResource MusicRaisedBrush}" Foreground="{DynamicResource MusicTextBrush}" BorderBrush="{DynamicResource MusicLineBrush}" BorderThickness="1" FontSize="13" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" IsEnabled="{Binding !IsSongCommentSending}" />
+                    <arc:Button x:Name="PostSongCommentButton" Grid.Column="1" Classes="detailAction" Content="发送" Command="{Binding PostSongCommentCommand}" IsEnabled="{Binding CanPostSongComment}" VerticalAlignment="Stretch" />
+                </Grid>
             </Grid>
-        </Grid>
-        <Grid x:Name="SongDetailsFooter" Grid.Row="3" RowDefinitions="44">
-            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
-                <arc:Button Classes="detailAction" Content="{Binding FavoriteButtonText}" Command="{Binding ToggleFavoriteCommand}" HorizontalAlignment="Stretch" />
-                <arc:Button Grid.Column="1" Classes="detailAction" Content="下载" Command="{Binding DownloadCommand}" HorizontalAlignment="Stretch" />
-                <arc:Button x:Name="ExpandedDetailsPlayButton" Grid.Column="2" Classes="detailAction" Content="播放这首" Click="OnPlaySelectedClicked" IsEnabled="{Binding CanPlay}" HorizontalAlignment="Stretch" />
-            </Grid>
+            <Border x:Name="ChartPreviewHost" Background="{DynamicResource MusicRaisedBrush}" CornerRadius="12" ClipToBounds="True" IsVisible="False">
+                <views:ChartPreviewPane />
+            </Border>
         </Grid>
     </Grid>
 </UserControl>

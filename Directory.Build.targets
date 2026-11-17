@@ -1,4 +1,9 @@
 <Project>
+  <Target Name="RequireMajViewRuntimeForPublish" BeforeTargets="PrepareForPublish"
+          Condition="'$(MSBuildProjectName)' == 'MajMusic' Or '$(MSBuildProjectName)' == 'MajMusic.Android'">
+    <Error Condition="!Exists('%(MajViewRuntimeFile.FullPath)')"
+           Text="Missing MajView renderer file %(MajViewRuntimeFile.Filename)%(MajViewRuntimeFile.Extension). Run Tools/Prepare-MajViewRuntime.ps1 before publishing." />
+  </Target>
   <!-- Arc's packaged controls already contain their generated assets. MajMusic defines no Arc token generators. -->
   <Target Name="ExcludeUnusedArcFoundationGenerator" BeforeTargets="CoreCompile">
     <ItemGroup>

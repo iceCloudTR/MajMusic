@@ -7,6 +7,9 @@ namespace MajMusic.Core.Abstractions
     /// <summary>Enriches a music entry with cached properties without changing its title or ownership.</summary>
     public interface ITrackMetadataProvider
     {
+        /// <summary>Gets the current parser revision used to identify older local metadata.</summary>
+        int CacheRevision => 0;
+
         /// <summary>Obtains available audio properties without starting playback or downloading online music.</summary>
         /// <param name="track">The entry whose existing local audio may be parsed.</param>
         /// <param name="cancellationToken">Cancels lookup and parsing.</param>

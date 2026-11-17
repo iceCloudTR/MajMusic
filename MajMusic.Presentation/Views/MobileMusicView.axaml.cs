@@ -60,6 +60,9 @@ namespace MajMusic.Presentation.Views
         public MobileMusicView()
         {
             InitializeComponent();
+            var sheet = this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!;
+            sheet.CompactContent = this.FindControl<StackPanel>("MobileSongHeader");
+            sheet.PropertyChanged += OnSongSheetChanged;
             DataContextChanged += OnOwnerChanged;
             SizeChanged += OnMobileSizeChanged;
             var timeline = this.FindControl<ArcSlider>("MobilePlaybackTimeline")!;
@@ -73,6 +76,46 @@ namespace MajMusic.Presentation.Views
             player.AddHandler(PointerMovedEvent, OnMiniPlayerMoved, RoutingStrategies.Bubble, true);
             player.AddHandler(PointerReleasedEvent, OnMiniPlayerReleased, RoutingStrategies.Bubble, true);
             player.PointerCaptureLost += OnMiniPlayerCaptureLost;
+        }
+
+        /// <summary>Retains expanded content until it leaves the viewport and adapts it to short screens.</summary>
+        /// <param name="sender">The song sheet.</param>
+        /// <param name="e">The changed expanded state or available size.</param>
+        private void OnSongSheetChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (sender is not InterruptibleSongSheet sheet)
+            {
+                return;
+            }
+
+            var detentChanged = e.Property == InterruptibleSongSheet.IsExpandedProperty;
+            var contentChanged = e.Property == InterruptibleSongSheet.ShowsExpandedContentProperty;
+            if (detentChanged || e.Property == BoundsProperty)
+            {
+                this.FindControl<StackPanel>("MobileSongQuickActions")!.IsVisible =
+                    !sheet.IsExpanded || sheet.Bounds.Height is not (> 0 and < 460);
+            }
+
+            if (_owner is { } owner)
+            {
+                if (detentChanged && sheet.IsExpanded)
+                {
+                    owner.IsSongDetailsExpanded = true;
+                }
+                else if ((detentChanged || contentChanged) && !sheet.IsExpanded && !sheet.ShowsExpandedContent)
+                {
+                    owner.IsSongDetailsExpanded = false;
+                }
+            }
+        }
+
+        /// <summary>Retargets the drawer directly, including while an earlier movement is still in flight.</summary>
+        /// <param name="sender">The expand or collapse action.</param>
+        /// <param name="e">The click notification.</param>
+        private void OnToggleExpandedDetailsClicked(object? sender, RoutedEventArgs e)
+        {
+            var sheet = this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!;
+            sheet.IsExpanded = !sheet.IsExpanded;
         }
 
         /// <summary>Gets or sets the visible home, playlists, directories, accounts or settings section.</summary>
@@ -137,6 +180,7 @@ namespace MajMusic.Presentation.Views
             if (_owner is not null)
             {
                 _owner.PropertyChanged -= OnOwnerPropertyChanged;
+                _owner.IsSongDetailsExpanded = false;
                 _owner.CancelSeek();
                 _owner = null;
             }
@@ -167,6 +211,7 @@ namespace MajMusic.Presentation.Views
             }
 
             _owner = _attached ? DataContext as MainViewModel : null;
+            this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!.IsExpanded = _owner?.IsSongDetailsExpanded == true;
             if (_owner is not null)
             {
                 _owner.PropertyChanged += OnOwnerPropertyChanged;
@@ -528,10 +573,13 @@ namespace MajMusic.Presentation.Views
                 ReleaseMiniPlayerGesture();
             }
 
-            if (e.PropertyName is nameof(MainViewModel.IsRecommendationsMode) or nameof(MainViewModel.IsPlaylistsMode)
-                or nameof(MainViewModel.IsLibraryMode) or nameof(MainViewModel.IsSearchExpanded))
+            if (e.PropertyName == nameof(MainViewModel.HomeMode))
             {
                 RestoreBrowsingMode();
+            }
+            else if (e.PropertyName == nameof(MainViewModel.IsSongDetailsExpanded) && sender is MainViewModel owner)
+            {
+                this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!.IsExpanded = owner.IsSongDetailsExpanded;
             }
         }
 
@@ -549,7 +597,7 @@ namespace MajMusic.Presentation.Views
             {
                 if (FindSectionControl<Segmented>("MobileHomeModes") is { } modes)
                 {
-                    modes.SelectedIndex = owner.IsLibraryMode ? 2 : owner.IsPlaylistsMode ? 1 : 0;
+                    modes.SelectedIndex = (int)owner.HomeMode;
                 }
 
             }
@@ -564,30 +612,70 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The selected mode.</param>
         private void OnHomeModeChanged(object? sender, SelectionChangedEventArgs e)
         {
-            if (!_restoringMode && e.AddedItems.Count > 0 && DataContext is MainViewModel owner && sender is Segmented modes)
+            if (!_restoringMode && e.AddedItems.Count > 0 && ReferenceEquals(e.Source, sender) && sender is Segmented modes)
             {
-                var mode = modes.SelectedIndex;
-                var request = ++_homeModeRequest;
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (!_attached || !modes.IsLoaded || request != _homeModeRequest || SelectedSectionIndex != 0
-                        || !ReferenceEquals(DataContext, owner) || modes.SelectedIndex != mode)
-                    {
-                        return;
-                    }
-
-                    var command = mode switch
-                    {
-                        1 => owner.ShowPlaylistsModeCommand,
-                        2 => owner.ShowLibraryModeCommand,
-                        _ => owner.ShowRecommendationsModeCommand
-                    };
-                    if (command.CanExecute(null))
-                    {
-                        command.Execute(null);
-                    }
-                }, DispatcherPriority.Background);
+                QueueHomeModeChange(modes);
             }
+        }
+
+        /// <summary>Leaves search when the current browsing segment is tapped again.</summary>
+        /// <param name="sender">The home mode selector.</param>
+        /// <param name="e">The completed pointer gesture.</param>
+        private void OnHomeModePointerReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (DataContext is MainViewModel { IsSearchExpanded: true } && sender is Segmented modes
+                && (e.InitialPressMouseButton == MouseButton.Left || e.Pointer.Type is PointerType.Touch or PointerType.Pen)
+                && modes.ContainerFromIndex(modes.SelectedIndex) is { } segment && e.Source is Visual hit
+                && (ReferenceEquals(segment, hit) || hit.GetVisualAncestors().Contains(segment)))
+            {
+                QueueHomeModeChange(modes);
+            }
+        }
+
+        /// <summary>Leaves search when the current browsing segment is activated by keyboard.</summary>
+        /// <param name="sender">The home mode selector.</param>
+        /// <param name="e">The segment activation key.</param>
+        private void OnHomeModeKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (DataContext is MainViewModel { IsSearchExpanded: true } && sender is Segmented modes
+                && e.KeyModifiers == KeyModifiers.None && e.Key is Key.Enter or Key.Space)
+            {
+                QueueHomeModeChange(modes);
+                e.Handled = true;
+            }
+        }
+
+        /// <summary>Coalesces queued input before invoking the existing browsing command.</summary>
+        /// <param name="modes">The active mobile home mode selector.</param>
+        private void QueueHomeModeChange(Segmented modes)
+        {
+            if (DataContext is not MainViewModel owner || modes.SelectedIndex < 0
+                || modes.SelectedIndex == (int)owner.HomeMode && !owner.IsSearchExpanded)
+            {
+                return;
+            }
+
+            var mode = (HomeBrowseMode)modes.SelectedIndex;
+            var request = ++_homeModeRequest;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!_attached || !modes.IsLoaded || request != _homeModeRequest || SelectedSectionIndex != 0
+                    || !ReferenceEquals(DataContext, owner) || modes.SelectedIndex != (int)mode)
+                {
+                    return;
+                }
+
+                var command = mode switch
+                {
+                    HomeBrowseMode.Playlists => owner.ShowPlaylistsModeCommand,
+                    HomeBrowseMode.Library => owner.ShowLibraryModeCommand,
+                    _ => owner.ShowRecommendationsModeCommand
+                };
+                if (command.CanExecute(null))
+                {
+                    command.Execute(null);
+                }
+            }, DispatcherPriority.Background);
         }
 
         /// <summary>Opens or exits progressive search while preserving the shared search behavior.</summary>
@@ -597,11 +685,21 @@ namespace MajMusic.Presentation.Views
         {
             if (DataContext is MainViewModel owner)
             {
-                var command = owner.IsSearchExpanded ? owner.CancelSearchCommand : owner.BeginSearchCommand;
+                var opening = !owner.IsSearchExpanded;
+                var command = opening ? owner.BeginSearchCommand : owner.CancelSearchCommand;
                 if (command.CanExecute(null))
                 {
                     command.Execute(null);
-                    Dispatcher.UIThread.Post(() => FindSectionControl<Searchbar>("MobileSearchBox")?.Focus(), DispatcherPriority.Input);
+                    if (opening)
+                    {
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            if (ReferenceEquals(DataContext, owner) && owner.IsSearchExpanded)
+                            {
+                                FindSectionControl<Searchbar>("MobileSearchBox")?.Focus();
+                            }
+                        }, DispatcherPriority.Input);
+                    }
                 }
             }
         }

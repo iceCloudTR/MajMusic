@@ -5,13 +5,6 @@
              xmlns:views="using:MajMusic.Presentation.Views"
              x:Class="MajMusic.Presentation.Views.DesktopSongDetailsView" x:DataType="vm:MainViewModel">
     <UserControl.Styles>
-        <Style Selector="ListBoxItem">
-            <Setter Property="Height" Value="NaN" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="Margin" Value="0" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="VerticalContentAlignment" Value="Top" />
-        </Style>
         <Style Selector="TextBlock.detailMuted">
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" />
@@ -53,13 +46,13 @@
                         <TextBlock Grid.Column="1" Text="加载中" Classes="detailMuted" IsVisible="{Binding IsSongSocialLoading}" />
                     </Grid>
                     <TextBlock Grid.Row="1" Text="{Binding SongSocialStatus}" Classes="detailMuted" IsVisible="{Binding HasSongSocialStatus}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
-                    <ListBox x:Name="SongCommentsList" Grid.Row="2" ItemsSource="{Binding SongComments}" Padding="0" BorderThickness="0" Background="Transparent" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox x:Name="SongCommentsList" Classes="songComments" Grid.Row="2" ItemsSource="{Binding SongComments}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
                         <ListBox.ItemTemplate><DataTemplate x:DataType="vm:SongCommentItemViewModel"><views:SongCommentRow /></DataTemplate></ListBox.ItemTemplate>
                     </ListBox>
                     <arc:Button x:Name="LoadMoreSongCommentsButton" Grid.Row="3" Content="加载更多" MinHeight="44" Command="{Binding LoadMoreSongCommentsCommand}" IsVisible="{Binding HasMoreSongComments}" HorizontalAlignment="Center" />
                 </Grid>
-                <Border x:Name="ChartPreviewHost" IsVisible="{Binding IsSongChartPreviewSelected}" Background="{DynamicResource MusicRaisedBrush}" CornerRadius="12">
+                <Border x:Name="ChartPreviewHost" IsVisible="{Binding IsSongChartPreviewSelected}" Background="{DynamicResource MusicRaisedBrush}" CornerRadius="12" ClipToBounds="True">
                     <views:ChartPreviewPane />
                 </Border>
             </Grid>

@@ -4,6 +4,7 @@
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ApplicationManifest>app.manifest</ApplicationManifest>
+        <ApplicationIcon>Assets/MajMusic.ico</ApplicationIcon>
     </PropertyGroup>
 
     <ItemGroup>
@@ -24,7 +25,15 @@
     </ItemGroup>
 
     <ItemGroup>
+        <AvaloniaResource Include="Assets/MajMusic.ico" />
         <Content Include="../ThirdPartyNotices/**/*" Link="ThirdPartyNotices/%(RecursiveDir)%(Filename)%(Extension)"
                  CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+        <Content Include="$(MajViewRuntimeManifest)" Link="ThirdPartyNotices/MajView.Runtime.json"
+                 CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+        <Content Include="@(MajViewSourceFile)" Link="ThirdPartyNotices/MajViewSource/%(Filename)%(Extension)"
+                 CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+        <Content Include="@(MajViewRuntimeFile)" Link="MajView/%(Filename)%(Extension)"
+                 CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+                 Condition="Exists('$(MajViewAssetsDirectory)/Build.wasm')" />
     </ItemGroup>
 </Project>

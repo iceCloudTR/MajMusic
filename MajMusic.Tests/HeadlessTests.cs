@@ -33,7 +33,14 @@ namespace MajMusic.Tests
     {
         /// <summary>Renders home modes, imported music and the account, directory and audio pages.</summary>
         /// <returns>A task representing the headless smoke checks.</returns>
-        public static async Task RunAsync()
+        public static Task RunAsync()
+        {
+            return HeadlessProcessIsolation.RunAsync("headless", RunHeadlessAsync);
+        }
+
+        /// <summary>Exercises the shared view on its own dispatcher and compositor.</summary>
+        /// <returns>A task representing the completed smoke checks.</returns>
+        private static async Task RunHeadlessAsync()
         {
             await using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApplication));
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -99,7 +106,8 @@ namespace MajMusic.Tests
                         Revision = "visual-fixture",
                         Duration = TimeSpan.FromSeconds(125 + index),
                         AudioInfo = new AudioStreamInfo { BitrateBitsPerSecond = 320000, SampleRateHz = 44100 },
-                        Audio = new MediaResource { LocalPath = Path.Combine(source, "track.mp3") }
+                        Audio = new MediaResource(),
+                        Cover = new MediaResource { RemoteUri = new Uri($"https://example.invalid/api/maichart/visual-{index}/image") }
                     }).ToArray(), timeout.Token);
                     viewModel.ShowLibraryModeCommand.Execute(null);
                     await viewModel.HomeUpdate;
@@ -111,8 +119,7 @@ namespace MajMusic.Tests
                         var position = item.TranslatePoint(default, trackList);
                         return position is { } point && point.Y >= 0 && point.Y + item.Bounds.Height <= trackList.Bounds.Height;
                     }).ToArray();
-                    TestAssert.True(visibleCards.Length >= viewModel.BrowseColumns && visibleCards.All(card => !card.IsCompact
-                        && Math.Abs(card.Bounds.Width - 2 * card.Bounds.Height) < 2),
+                    TestAssert.True(visibleCards.Length >= viewModel.BrowseColumns && visibleCards.All(HasLooseCardProportions),
                         "The indexed library must use the same complete artwork cards as recommendations.");
                     TestAssert.True(trackList.GetVisualDescendants().OfType<SongCard>().Count() < viewModel.CardTracks.Count,
                         "The complete library must retain row virtualization rather than realizing every song.");
@@ -321,13 +328,14 @@ namespace MajMusic.Tests
             await WaitForBrowseCoversAsync(view);
             TestAssert.True(viewModel.SelectedTrack is null && viewModel.CardTracks.Any(card => card.Cover is not null),
                 "Visible artwork must load before a song is selected or played.");
-            var cardsList = view.GetVisualDescendants().OfType<BrowseTracksView>().Single().ActiveList;
+            var browser = view.GetVisualDescendants().OfType<BrowseTracksView>().Single();
+            var cardsList = browser.ActiveList;
             var initialCards = cardsList.GetVisualDescendants().OfType<SongCard>().ToArray();
             TestAssert.True(initialCards.Length < viewModel.CardTracks.Count,
                 "A long artwork feed must realize only the viewport and its nearby rows.");
             TestAssert.Equal(2, viewModel.BrowseColumns, "A normal desktop must show two artwork columns.");
-            TestAssert.True(initialCards.All(card => Math.Abs(card.Bounds.Width - 2 * card.Bounds.Height) < 2),
-                "Artwork cards must retain a two-to-one aspect ratio.");
+            TestAssert.True(initialCards.Length > 0 && initialCards.All(HasLooseCardProportions),
+                "Artwork cards must retain two-to-one proportions inside their outline.");
             SaveFrame(window, Path.Combine(output, "ui-home.png"));
             AssertChromeGeometry(view);
             var initiallyHidden = new SongCard { DataContext = viewModel.CardTracks[0], Width = 320, IsVisible = false };
@@ -401,8 +409,10 @@ namespace MajMusic.Tests
             Dispatcher.UIThread.RunJobs();
             SaveFrame(window, Path.Combine(output, "ui-search.png"));
             AssertChromeGeometry(view);
-            TestAssert.True(cardsList.IsVisible && !cardsList.GetVisualDescendants().OfType<SongCard>().Any(card => card.IsCompact),
-                "Search results must reuse the recommendation card container without switching to compact rows.");
+            cardsList = browser.ActiveList;
+            var searchCards = cardsList.GetVisualDescendants().OfType<SongCard>().Where(card => card.IsEffectivelyVisible).ToArray();
+            TestAssert.True(cardsList.IsVisible && searchCards.Length > 0 && searchCards.All(HasLooseCardProportions),
+                "Search results must use the same artwork cards in the active library list.");
             var precedingCover = viewModel.Cover;
             TestAssert.True(cardsList.Focus(), "The shared artwork browser must accept keyboard focus.");
             window.KeyPressQwerty(PhysicalKey.Home, RawInputModifiers.None);
@@ -471,7 +481,7 @@ namespace MajMusic.Tests
             window.Width = 720;
             window.Height = 540;
             SaveFrame(window, Path.Combine(output, "ui-home-small.png"));
-            TestAssert.Equal(2, viewModel.BrowseColumns, "The compact desktop must keep two complete artwork columns.");
+            TestAssert.Equal(1, viewModel.BrowseColumns, "The narrow desktop preserves loose cards by fitting a single column beside the inspector.");
             AssertChromeGeometry(view);
             viewModel.SelectedTrack = viewModel.VisibleTracks[0];
             Dispatcher.UIThread.RunJobs();
@@ -519,7 +529,7 @@ namespace MajMusic.Tests
             await viewModel.AudioSettingsUpdate;
             TestAssert.True(viewModel.Volume is > 0 and < 100 && backend.Preferences.Volume == (int)viewModel.Volume,
                 "Dragging the aligned volume thumb must still update the actual output-control preference.");
-            viewModel.SelectedTrack = viewModel.Tracks[0];
+            viewModel.SelectedTrack = viewModel.Tracks.Single(track => track.RemoteId is null);
             await viewModel.PlaySelectedAsync();
             Dispatcher.UIThread.RunJobs();
             var slider = view.FindControl<ArcSlider>("PlaybackTimeline")!;
@@ -579,11 +589,15 @@ namespace MajMusic.Tests
         private static async Task WaitForBrowseCoversAsync(MainView view)
         {
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var browser = view.GetVisualDescendants().OfType<BrowseTracksView>().Single();
             while (true)
             {
                 Dispatcher.UIThread.RunJobs();
-                var cards = view.GetVisualDescendants().OfType<SongCard>()
-                    .Where(card => card.IsEffectivelyVisible && card.IsBrowsingActive && card.Bounds.Width > 0)
+                var list = browser.ActiveList;
+                var viewport = new Rect(list.Bounds.Size);
+                var cards = list.GetVisualDescendants().OfType<SongCard>()
+                    .Where(card => card.IsEffectivelyVisible && card.IsBrowsingActive && card.Bounds.Width > 0
+                        && card.TranslatePoint(default, list) is { } origin && viewport.Intersects(new Rect(origin, card.Bounds.Size)))
                     .Select(card => (SongCardViewModel)card.DataContext!).ToArray();
                 if (cards.Length > 0 && cards.All(card => card.Cover is not null))
                 {
@@ -592,6 +606,15 @@ namespace MajMusic.Tests
 
                 await Task.Delay(10, cancellation.Token);
             }
+        }
+
+        /// <summary>Checks the actual artwork and information grid inside a loose card's outline.</summary>
+        /// <param name="card">The realized card to measure.</param>
+        /// <returns>Whether its outlined content keeps the two-to-one aspect ratio within layout rounding.</returns>
+        private static bool HasLooseCardProportions(SongCard card)
+        {
+            var content = card.FindControl<Grid>("CardArtGrid")!.Bounds;
+            return !card.IsCompact && content.Height > 0 && Math.Abs(content.Width - 2 * content.Height) <= 2;
         }
 
         /// <summary>Captures an actual rendered headless frame.</summary>
@@ -632,15 +655,26 @@ namespace MajMusic.Tests
         {
             var player = view.FindControl<Border>("PlaybackBar")!;
             var contentBottom = player.TranslatePoint(default, view)!.Value.Y;
+            var settings = view.FindControl<ScrollViewer>("DesktopSettingsScroll")!;
             foreach (var control in view.GetVisualDescendants().OfType<Control>()
                 .Where(item => item.IsEffectivelyVisible && item is Button or ArcSelect or ArcSwitch or CheckBox or TextBox)
-                .Where(item => !item.GetVisualAncestors().Any(ancestor => ancestor is SongCard or EndpointCardView)))
+                .Where(item => !item.GetVisualAncestors().Any(ancestor => ancestor is SongCard or EndpointCardView || ancestor == settings)))
             {
                 var position = control.TranslatePoint(default, view)!.Value;
                 var maximum = control.GetVisualAncestors().Contains(player) ? view.Bounds.Height : contentBottom;
                 TestAssert.True(position.X >= 0 && position.X + control.Bounds.Width <= view.Bounds.Width + 1
                     && position.Y >= 0 && position.Y + control.Bounds.Height <= maximum + 1,
                     $"A common control must remain visible without scrolling: {control.Name ?? control.GetType().Name} at {position}.");
+            }
+
+            if (settings.IsEffectivelyVisible && TopLevel.GetTopLevel(settings) is not null)
+            {
+                var localMusic = view.FindControl<Border>("CacheSettingsPanel")!;
+                localMusic.BringIntoView();
+                Dispatcher.UIThread.RunJobs();
+                var position = localMusic.TranslatePoint(default, settings)!.Value;
+                TestAssert.True(position.Y >= -1 && position.Y + localMusic.Bounds.Height <= settings.Viewport.Height + 1,
+                    "Scrolling settings must bring the complete local music section into view at the minimum window height.");
             }
 
             foreach (var list in view.GetVisualDescendants().OfType<ListBox>().Where(item => item.IsEffectivelyVisible))

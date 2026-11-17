@@ -193,6 +193,17 @@
         <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
     </Style>
+    <Style Selector="ListBox.songComments ListBoxItem">
+        <Setter Property="Height" Value="NaN" />
+        <Setter Property="Margin" Value="0,0,6,6" />
+        <Setter Property="VerticalContentAlignment" Value="Top" />
+    </Style>
+    <Style Selector="ListBox.songComments ListBoxItem /template/ ContentPresenter#PART_ContentPresenter,
+                     ListBox.songComments ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter,
+                     ListBox.songComments ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter,
+                     ListBox.songComments ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
     <Style Selector="ListBox#PlaylistList ListBoxItem">
         <Setter Property="Padding" Value="10,0" />
     </Style>

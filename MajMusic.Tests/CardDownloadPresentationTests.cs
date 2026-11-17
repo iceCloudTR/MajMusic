@@ -53,8 +53,9 @@ namespace MajMusic.Tests
                 "Constructing an indexed library cannot scan all audio files or prelabel local music as downloaded.");
             await card.ActivateAsync();
             await local.ActivateAsync();
-            TestAssert.True(card.IsDownloaded && card.DownloadPercent == 100 && card.DownloadStatus == "下载完成",
+            TestAssert.True(card.IsDownloaded && card.DownloadPercent == 100,
                 "An attached online card must restore a completed file from its existing local audio path.");
+            TestAssert.Equal("已在本地", card.DownloadStatus, "An available online song must display the shared local media label.");
             TestAssert.True(!local.IsDownloaded && !local.HasDownloadStatus,
                 "An original local song cannot display the online-download completion label.");
             card.Deactivate();

@@ -57,8 +57,6 @@ namespace MajMusic.Presentation.Views
         public ListBox ActiveList => GetResidentList(_residentMode);
         /// <summary>Gets an existing native list without navigating to it.</summary>
         public ListBox GetResidentList(HomeBrowseMode mode) => _lists[(int)mode];
-        /// <summary>Gets the continuous horizontal position in page widths.</summary>
-        public double ResidentPosition => _strip.Position;
         /// <summary>Gets completion of the latest motion between home modes.</summary>
         public Task<bool> ResidentTransitionUpdate => _strip.TransitionUpdate;
 

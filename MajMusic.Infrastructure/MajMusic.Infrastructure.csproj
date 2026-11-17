@@ -7,5 +7,6 @@
     <ItemGroup>
         <EmbeddedResource Include="Preview/Web/index.html" LogicalName="MajMusic.MajView.index.html" />
         <EmbeddedResource Include="Preview/Web/preview.js" LogicalName="MajMusic.MajView.preview.js" />
+        <EmbeddedResource Include="$(MajViewRuntimeManifest)" LogicalName="MajMusic.MajView.runtime.json" />
     </ItemGroup>
 </Project>

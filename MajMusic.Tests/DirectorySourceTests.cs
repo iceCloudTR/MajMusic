@@ -58,7 +58,7 @@ namespace MajMusic.Tests
                 "Migrated directory identity remains stable across restart.");
 
             var shared = new LocalDirectorySource { Id = "music", Path = music, Kind = LocalDirectoryKind.MusicLibrary };
-            var typed = LocalDirectorySettings.NormalizeLegacy(new AppSettings
+            var typed = LocalDirectorySettings.Normalize(new AppSettings
             {
                 LocalDirectorySources =
                 [

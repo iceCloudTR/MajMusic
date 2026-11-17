@@ -25,10 +25,6 @@ namespace MajMusic.Presentation.Views
         private int _reusedPlaceholderCount;
         /// <summary>Retains the latest effective viewport update cost without observable notifications.</summary>
         private TimeSpan _lastSetViewportElapsed;
-        /// <summary>Accumulates effective viewport update cost for isolated navigation measurements.</summary>
-        private TimeSpan _totalSetViewportElapsed;
-        /// <summary>Accumulates constructor cost separately from attachment and layout work.</summary>
-        private TimeSpan _totalPlaceholderCreationElapsed;
         /// <summary>Identifies the viewport whose detached templates were last fully prepared.</summary>
         private Size _preparedViewport;
         /// <summary>Retains the column count used by the last complete detached preparation.</summary>
@@ -55,10 +51,6 @@ namespace MajMusic.Presentation.Views
         public int ReusedPlaceholderCount => _reusedPlaceholderCount;
         /// <summary>Gets the synchronous cost of the last effective update, excluding unchanged viewport calls.</summary>
         public TimeSpan LastSetViewportElapsed => _lastSetViewportElapsed;
-        /// <summary>Gets accumulated synchronous effective-update cost without including later layout or painting.</summary>
-        public TimeSpan TotalSetViewportElapsed => _totalSetViewportElapsed;
-        /// <summary>Gets accumulated card-construction cost without attachment, later layout or painting.</summary>
-        public TimeSpan TotalPlaceholderCreationElapsed => _totalPlaceholderCreationElapsed;
         /// <summary>Gets the number of completed idle template and layout preparation passes.</summary>
         public int PrewarmCount => _prewarmCount;
         /// <summary>Gets accumulated idle preparation cost, which is not part of a navigation callback.</summary>
@@ -97,7 +89,6 @@ namespace MajMusic.Presentation.Views
 
             InvalidateMeasure();
             _lastSetViewportElapsed = Stopwatch.GetElapsedTime(started);
-            _totalSetViewportElapsed += _lastSetViewportElapsed;
         }
 
         /// <summary>Detaches completed placeholders to stop their Arc loops, retaining only a bounded reusable prefix.</summary>
@@ -187,9 +178,7 @@ namespace MajMusic.Presentation.Views
                 return card;
             }
 
-            var started = Stopwatch.GetTimestamp();
             card = new SongCardSkeleton { DataContext = null, Margin = new Thickness(6), CardLayout = layout };
-            _totalPlaceholderCreationElapsed += Stopwatch.GetElapsedTime(started);
             _createdPlaceholderCount++;
             return card;
         }

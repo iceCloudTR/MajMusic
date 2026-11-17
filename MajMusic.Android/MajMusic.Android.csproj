@@ -24,6 +24,11 @@
         <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
     </ItemGroup>
     <ItemGroup>
+        <AndroidResource Include="../MajMusic.Presentation/Assets/MajMusic.png" Link="Resources/drawable-nodpi/majmusic_art.png" />
         <AndroidAsset Include="../ThirdPartyNotices/**/*" Link="ThirdPartyNotices/%(RecursiveDir)%(Filename)%(Extension)" />
+        <AndroidAsset Include="$(MajViewRuntimeManifest)" Link="ThirdPartyNotices/MajView.Runtime.json" />
+        <AndroidAsset Include="@(MajViewSourceFile)" Link="ThirdPartyNotices/MajViewSource/%(Filename)%(Extension)" />
+        <AndroidAsset Include="@(MajViewRuntimeFile)" Link="MajView/%(Filename)%(Extension)"
+                      Condition="Exists('$(MajViewAssetsDirectory)/Build.wasm')" />
     </ItemGroup>
 </Project>

@@ -101,39 +101,19 @@ namespace MajMusic.Audio.Desktop
 
             return ExecuteAsync(async token =>
             {
-                Media? candidate = new Media(_engine, fullPath, FromType.FromPath, ":no-video", ":no-spu", ":no-sub-autodetect-file");
+                Media? candidate = LocalAudioMedia.Create(_engine, fullPath);
                 try
                 {
-                    // LibVLCSharp completes its parse task from a native callback. Schedule the continuation
-                    // onto the managed pool before touching or releasing any further native objects.
-                    var parsed = await candidate.Parse(MediaParseOptions.ParseLocal, 5000, token)
-                        .ContinueWith(static task => task.GetAwaiter().GetResult(), CancellationToken.None,
-                            TaskContinuationOptions.None, TaskScheduler.Default).ConfigureAwait(false);
-                    token.ThrowIfCancellationRequested();
-                    MediaTrack? audioTrack = null;
-                    if (parsed == MediaParsedStatus.Done)
-                    {
-                        foreach (var track in candidate.Tracks)
-                        {
-                            if (track.TrackType == TrackType.Audio)
-                            {
-                                audioTrack = track;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (audioTrack is not { } parsedAudio)
+                    if (await LocalAudioMedia.ParseAudioTrackAsync(candidate, token).ConfigureAwait(false) is not { } parsedAudio)
                     {
                         throw new InvalidDataException("The selected file does not contain a supported audio stream.");
                     }
 
-                    var duration = PositiveDuration(candidate.Duration);
-                    var audioInfo = ReadAudioInfo(candidate, parsedAudio, new FileInfo(fullPath).Length, duration);
+                    var metadata = LocalAudioMedia.ReadMetadata(candidate, parsedAudio, new FileInfo(fullPath).Length);
                     ReleasePlayer();
                     _media = candidate;
                     candidate = null;
-                    _audioInfo = audioInfo;
+                    _audioInfo = metadata.AudioInfo;
                     _player = new MediaPlayer(_media);
                     ApplyOutputPreferences(_player, true);
                     _outputProbe?.Dispose();
@@ -141,8 +121,8 @@ namespace MajMusic.Audio.Desktop
                     SetSnapshot(new PlaybackSnapshot
                     {
                         State = PlaybackState.Stopped,
-                        Duration = duration,
-                        AudioInfo = audioInfo
+                        Duration = metadata.Duration,
+                        AudioInfo = metadata.AudioInfo
                     });
                 }
                 finally
@@ -443,40 +423,6 @@ namespace MajMusic.Audio.Desktop
                 Duration = duration,
                 AudioInfo = _audioInfo,
                 Error = state == PlaybackState.Failed ? "The local audio decoder reported a playback error." : null
-            };
-        }
-
-        /// <summary>Copies native audio metadata once after local parsing and labels any file-average bitrate fallback.</summary>
-        /// <param name="media">The parsed local media used to resolve the codec description.</param>
-        /// <param name="track">The parsed audio track.</param>
-        /// <param name="fileSize">The length of the complete local file.</param>
-        /// <param name="duration">The parsed media duration.</param>
-        /// <returns>Known stream properties; missing values remain null.</returns>
-        private static AudioStreamInfo ReadAudioInfo(Media media, MediaTrack track, long fileSize, TimeSpan? duration)
-        {
-            long? bitrate = track.Bitrate > 0 ? track.Bitrate : null;
-            var estimated = false;
-            if (bitrate is null && fileSize > 0 && duration is { TotalSeconds: > 0 } knownDuration)
-            {
-                var average = fileSize * 8d / knownDuration.TotalSeconds;
-                if (double.IsFinite(average) && average is > 0 and < long.MaxValue)
-                {
-                    bitrate = (long)Math.Round(average, MidpointRounding.AwayFromZero);
-                    estimated = true;
-                }
-            }
-
-            var codec = media.CodecDescription(TrackType.Audio, track.Codec);
-            var rate = track.Data.Audio.Rate;
-            var channels = track.Data.Audio.Channels;
-            return new AudioStreamInfo
-            {
-                CodecName = string.IsNullOrWhiteSpace(codec) ? null : codec,
-                BitrateBitsPerSecond = bitrate,
-                IsBitrateEstimated = estimated,
-                SampleRateHz = rate is > 0 and <= int.MaxValue ? (int)rate : null,
-                Channels = channels is > 0 and <= int.MaxValue ? (int)channels : null,
-                FileSizeBytes = fileSize >= 0 ? fileSize : null
             };
         }
 

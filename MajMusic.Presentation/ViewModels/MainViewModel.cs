@@ -418,6 +418,7 @@ namespace MajMusic.Presentation.ViewModels
                 Status = string.Empty;
                 CompleteOnlinePreferencesInitialization();
                 _accountSettingsLoaded = true;
+                QueueAudioMetadataUpgrade();
                 if (OnlineEnabled)
                 {
                     BeginAutomaticLogin();

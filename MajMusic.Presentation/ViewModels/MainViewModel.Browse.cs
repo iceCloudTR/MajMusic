@@ -167,7 +167,7 @@ namespace MajMusic.Presentation.ViewModels
                 while (!cancellation.IsCancellationRequested)
                 {
                     var track = card.Track;
-                    if (track.Duration is not null && track.AudioInfo is not null)
+                    if (track.Duration is not null && track.AudioInfo is not null && !NeedsAudioMetadataUpgrade(track))
                     {
                         return;
                     }
