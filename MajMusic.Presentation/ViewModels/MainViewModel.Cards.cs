@@ -23,10 +23,9 @@ namespace MajMusic.Presentation.ViewModels
         public int MaterializedCardCount => _cards.Count;
 
         /// <summary>Reconciles the browsed entries in one binding update while reusing unchanged card instances.</summary>
-        /// <param name="appendRows">Whether a recommendation continuation should preserve existing row containers.</param>
         /// <param name="snapshot">The prepared catalog and its background-built identity index.</param>
         /// <param name="preparedCovers">The first-screen artwork adopted before any row binding becomes visible.</param>
-        private void RefreshCardTracks(bool appendRows = false, BrowseSnapshot? snapshot = null, CoverThumbnailCache.PreloadBatch? preparedCovers = null)
+        private void RefreshCardTracks(BrowseSnapshot? snapshot = null, CoverThumbnailCache.PreloadBatch? preparedCovers = null)
         {
             _retiredCardResources.RemoveAll(task => task.IsCompletedSuccessfully);
             var tracks = snapshot?.Tracks ?? Tracks.ToArray();
@@ -75,7 +74,7 @@ namespace MajMusic.Presentation.ViewModels
 
             RefreshCardSelection();
             OnPropertyChanged(nameof(CardTracks));
-            RefreshBrowseRows(appendRows);
+            RefreshBrowseRows();
         }
 
         /// <summary>Finds the current row index without walking or materializing the entire catalog.</summary>

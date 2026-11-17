@@ -9,6 +9,7 @@ using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
 using TKCode.Arc.Motion;
+using ShapePath = Avalonia.Controls.Shapes.Path;
 
 namespace MajMusic.Tests
 {
@@ -20,6 +21,7 @@ namespace MajMusic.Tests
         /// <returns>A task representing real-control ownership and painted-geometry assertions.</returns>
         private static async Task ValidateSharedSongCardFlightAsync(ManualFrameClock clock)
         {
+            ValidateStaticIconContents(clock);
             var workspace = new SocialPresentationTests.SocialWorkspace();
             await using var model = new MainViewModel(workspace, new PlaybackService(new UnavailablePlaybackBackend()));
             await model.InitializeAsync();
@@ -90,8 +92,31 @@ namespace MajMusic.Tests
                 model.OpenExpandedSongDetailsCommand.Execute(null);
                 Pump(window);
                 var completeOpening = flight.MoveUpdate;
-                clock.Advance(TimeSpan.FromMilliseconds(400), TimeSpan.FromMilliseconds(5));
+                // Arc seeds an idle scheduler's first frame with 1/60 second, independently of the requested clock subdivision.
+                var firstFrame = TimeSpan.FromSeconds(1d / 60);
+                clock.Advance(firstFrame, firstFrame);
+                AdvanceSharedCardClock(clock, TimeSpan.FromMilliseconds(350) - firstFrame);
                 Pump(window);
+                var beforeDock = CaptureSharedCardElements(main, window, card);
+                AdvanceSharedCardClock(clock, TimeSpan.FromMilliseconds(9));
+                Pump(window);
+                var lastFlying = CaptureSharedCardElements(main, window, card);
+                TestAssert.True(!completeOpening.IsCompleted && ReferenceEquals(card.Parent, flight),
+                    "The 359ms sample must still inspect the real flying card, before the destination takes ownership.");
+                AdvanceSharedCardClock(clock, TimeSpan.FromMilliseconds(6));
+                Pump(window);
+                var firstDocked = CaptureSharedCardElements(main, window, card);
+                TestAssert.True(completeOpening.IsCompleted && ReferenceEquals(card.Parent, destination),
+                    "The 365ms sample must inspect the first committed layout after the real-card flight.");
+                AssertSharedCardDockContinuity(beforeDock, lastFlying, firstDocked);
+                AdvanceSharedCardClock(clock, TimeSpan.FromMilliseconds(35));
+                Pump(window);
+                var settled = CaptureSharedCardElements(main, window, card);
+                TestAssert.True(SharedCardRectDifference(firstDocked.Card, settled.Card) < .1
+                    && SharedCardRectDifference(firstDocked.Preview, settled.Preview) < .1
+                    && SharedCardRectDifference(firstDocked.Glyph, settled.Glyph) < .1
+                    && SharedCardRectDifference(firstDocked.Artwork, settled.Artwork) < .1,
+                    "The card, actual preview Path and cover must not rearrange again after their first docked frame.");
                 TestAssert.True(await completeOpening.WaitAsync(TimeSpan.FromSeconds(3)) && ReferenceEquals(destination.Content, card)
                     && ReferenceEquals(card.Parent, destination) && source.Content is null && flight.Children.Count == 0
                     && BoundsIn(card, window) == BoundsIn(destination, window) && Math.Abs(BoundsIn(card, window).Y - original.Y) < .1,
@@ -121,6 +146,72 @@ namespace MajMusic.Tests
             finally
             {
                 window.Close();
+            }
+        }
+
+        /// <summary>Reads actual painted cover coordinates through the Viewbox's scale as well as the preview button and outer card.</summary>
+        /// <param name="main">The production desktop view.</param>
+        /// <param name="window">The rendering viewport.</param>
+        /// <param name="card">The same real information card throughout the move.</param>
+        /// <returns>The independently transformed card, button, source Path and cover rectangles, plus the Path's template transforms.</returns>
+        private static (Rect Card, Rect Preview, Rect Glyph, Rect Artwork, string GlyphTransforms) CaptureSharedCardElements(MainView main, Window window, Border card)
+        {
+            var preview = main.FindControl<Control>("DesktopChartPreviewButton")!;
+            var glyph = (ShapePath)((TKCode.Arc.Button)preview).Content!;
+            var glyphBounds = PaintedIconBounds(glyph, window);
+            var transforms = IconTransformDescription(glyph, preview);
+            TestAssert.True(transforms.Length == 0,
+                "The preview source Path must not inherit a label entrance or nested scale during the card flight: " + transforms);
+            var artwork = main.FindControl<Viewbox>("DesktopDetailsCover")!.Child!;
+            var artworkStart = artwork.TranslatePoint(default, window)!.Value;
+            var artworkEnd = artwork.TranslatePoint(new Point(artwork.Bounds.Width, artwork.Bounds.Height), window)!.Value;
+            return (BoundsIn(card, window), BoundsIn(preview, window), glyphBounds, new Rect(artworkStart, artworkEnd), transforms);
+        }
+
+        /// <summary>Rejects a new geometry step when destination ownership replaces the flight layer at the end of a decelerating move.</summary>
+        /// <param name="before">The 350ms actual frame.</param>
+        /// <param name="last">The 359ms actual frame, before docking.</param>
+        /// <param name="docked">The 365ms actual frame, after docking.</param>
+        private static void AssertSharedCardDockContinuity((Rect Card, Rect Preview, Rect Glyph, Rect Artwork, string GlyphTransforms) before,
+            (Rect Card, Rect Preview, Rect Glyph, Rect Artwork, string GlyphTransforms) last,
+            (Rect Card, Rect Preview, Rect Glyph, Rect Artwork, string GlyphTransforms) docked)
+        {
+            foreach (var (name, earlier, previous, current) in new[]
+            {
+                ("card", before.Card, last.Card, docked.Card),
+                ("preview button", before.Preview, last.Preview, docked.Preview),
+                ("preview source Path", before.Glyph, last.Glyph, docked.Glyph),
+                ("cover", before.Artwork, last.Artwork, docked.Artwork)
+            })
+            {
+                var previousSpeed = SharedCardRectDifference(earlier, previous) / .009;
+                var allowed = Math.Max(1.5, previousSpeed * .006 + .5);
+                var actual = SharedCardRectDifference(previous, current);
+                TestAssert.True(actual <= allowed,
+                    $"The {name} must decelerate continuously through reparenting, rather than jump at the endpoint: {actual:0.###} DIP > {allowed:0.###} DIP; before={earlier}, last={previous}, docked={current}.");
+            }
+        }
+
+        /// <summary>Measures the largest independently visible edge or size change of a visual rectangle.</summary>
+        /// <param name="first">The earlier actual rectangle.</param>
+        /// <param name="second">The later actual rectangle.</param>
+        /// <returns>The largest displacement in logical pixels.</returns>
+        private static double SharedCardRectDifference(Rect first, Rect second)
+        {
+            return Math.Max(Math.Max(Math.Abs(first.X - second.X), Math.Abs(first.Y - second.Y)),
+                Math.Max(Math.Abs(first.Width - second.Width), Math.Abs(first.Height - second.Height)));
+        }
+
+        /// <summary>Advances exact elapsed time without the manual clock rounding a final partial interval up to a whole frame.</summary>
+        /// <param name="clock">The installed Arc frame source.</param>
+        /// <param name="duration">The exact remaining interval to observe.</param>
+        private static void AdvanceSharedCardClock(ManualFrameClock clock, TimeSpan duration)
+        {
+            while (duration > TimeSpan.Zero)
+            {
+                var step = duration < TimeSpan.FromMilliseconds(1) ? duration : TimeSpan.FromMilliseconds(1);
+                clock.Advance(step, step);
+                duration -= step;
             }
         }
     }

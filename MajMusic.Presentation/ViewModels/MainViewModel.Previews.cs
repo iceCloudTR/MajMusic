@@ -209,12 +209,13 @@ namespace MajMusic.Presentation.ViewModels
 
         /// <summary>Installs a warm real first screen in the same input turn after the old surface has been captured.</summary>
         /// <param name="loadingOwner">The loading presentation started for this navigation.</param>
-        private void TryPublishPreparedPreview(long loadingOwner)
+        /// <returns>Whether the current target's prepared real cards were published immediately.</returns>
+        private bool TryPublishPreparedPreview(long loadingOwner)
         {
             if (!_hasBrowseViewport || IsSearching || PreviewFor(_homeMode) is not { } target
                 || !_browsePreviews.TryGetValue(target.Key, out var prepared) || !ReferenceEquals(target.Origin, prepared.Origin))
             {
-                return;
+                return false;
             }
 
             var tracks = prepared.Tracks.Select(track => track.EndpointId is { } endpoint
@@ -231,6 +232,7 @@ namespace MajMusic.Presentation.ViewModels
             _publishedPreviewVersion = _homeVersion;
             PublishBrowseSnapshot(new BrowseSnapshot(tracks, indexes), false, covers);
             FinishBrowseLoad(loadingOwner);
+            return true;
         }
 
         /// <summary>Pins one bounded ready prefix and evicts the least recently used independent target.</summary>

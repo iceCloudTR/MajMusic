@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -60,6 +61,10 @@ namespace MajMusic.Presentation.Theme
         private Task<bool> _transitionUpdate = Task.FromResult(true);
         /// <summary>Allows a version's delayed content publication to join its already running transition.</summary>
         private bool _awaitingVersionContent;
+        /// <summary>Counts actual synchronous surface captures for scoped navigation diagnostics.</summary>
+        private long _captureCount;
+        /// <summary>Retains the allocation and rendering time of the latest capture without publishing frame notifications.</summary>
+        private TimeSpan _lastCaptureDuration;
 
         /// <summary>Creates a fixed-size two-surface presenter whose navigation does not move surrounding chrome.</summary>
         public MusicSurfaceHost()
@@ -115,6 +120,10 @@ namespace MajMusic.Presentation.Theme
         public Size SnapshotViewport => _snapshotViewport;
         /// <summary>Gets the bounded raster dimensions currently retained for the outgoing surface.</summary>
         public PixelSize SnapshotPixelSize => _snapshot?.PixelSize ?? default;
+        /// <summary>Gets how many outgoing frames this host has synchronously captured.</summary>
+        public long CaptureCount => _captureCount;
+        /// <summary>Gets the allocation and rendering time of the latest synchronous outgoing capture.</summary>
+        public TimeSpan LastCaptureDuration => _lastCaptureDuration;
 
         /// <inheritdoc />
         protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
@@ -234,6 +243,8 @@ namespace MajMusic.Presentation.Theme
             }
 
             var size = surface.Bounds.Size;
+            var captureStart = Stopwatch.GetTimestamp();
+            _captureCount++;
             var scale = Math.Min(TopLevel.GetTopLevel(this)?.RenderScaling ?? 1,
                 MaximumSnapshotEdge / Math.Max(size.Width, size.Height));
             // Leave room for the final ceil in both dimensions without exceeding the area budget.
@@ -250,6 +261,10 @@ namespace MajMusic.Presentation.Theme
             {
                 bitmap.Dispose();
                 return null;
+            }
+            finally
+            {
+                _lastCaptureDuration = Stopwatch.GetElapsedTime(captureStart);
             }
         }
 

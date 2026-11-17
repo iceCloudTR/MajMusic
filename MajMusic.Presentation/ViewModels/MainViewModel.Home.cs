@@ -189,8 +189,11 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             _homeUpdateCancellation?.Cancel();
-            var loadingOwner = BeginBrowseLoad(contentChanged, wasSearching ? -1 : Math.Sign((int)mode - (int)previousMode));
-            TryPublishPreparedPreview(loadingOwner);
+            var loadingOwner = BeginBrowseLoad(contentChanged, wasSearching ? -1 : Math.Sign((int)mode - (int)previousMode), notifyPlaceholder: false);
+            if (!TryPublishPreparedPreview(loadingOwner))
+            {
+                OnPropertyChanged(nameof(IsBrowsePlaceholderVisible));
+            }
             NotifyHomeState();
         }
 
@@ -294,8 +297,9 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Starts a target presentation before storage, metadata or network work can delay its first frame.</summary>
         /// <param name="transition">Whether the visible surface should begin a new transition.</param>
         /// <param name="direction">The horizontal navigation direction; zero uses the forward direction.</param>
+        /// <param name="notifyPlaceholder">Whether to publish loading visibility before checking an already prepared target.</param>
         /// <returns>The owner allowed to finish this loading presentation.</returns>
-        private long BeginBrowseLoad(bool transition, int direction = 1)
+        private long BeginBrowseLoad(bool transition, int direction = 1, bool notifyPlaceholder = true)
         {
             var owner = ++_browseLoadOwner;
             if (transition)
@@ -317,7 +321,10 @@ namespace MajMusic.Presentation.ViewModels
                 OnPropertyChanged(nameof(IsBrowseLoading));
             }
 
-            OnPropertyChanged(nameof(IsBrowsePlaceholderVisible));
+            if (notifyPlaceholder)
+            {
+                OnPropertyChanged(nameof(IsBrowsePlaceholderVisible));
+            }
             return owner;
         }
 

@@ -1018,13 +1018,14 @@ namespace MajMusic.Presentation.ViewModels
         {
             OverlayDownloadedMetadata(entries);
             var inspected = SelectedTrack;
+            // Row observers read readiness synchronously while the new card grouping is being published.
+            _presentedBrowseVersion = _homeVersion;
             _tracks.ReplaceAll(entries.Tracks);
-            RefreshCardTracks(preservePage, entries, covers);
+            RefreshCardTracks(entries, covers);
             SelectedTrack = Tracks.FirstOrDefault(item => item.Id == inspected?.Id) ?? inspected;
             _libraryPageIndex = preservePage ? Math.Clamp(_libraryPageIndex, 0, Math.Max(0, (Tracks.Count - 1) / LibraryPageSize)) : 0;
             RefreshVisibleTracks();
             OnPropertyChanged(nameof(LibrarySummary));
-            _presentedBrowseVersion = _homeVersion;
             OnPropertyChanged(nameof(IsBrowsePlaceholderVisible));
         }
 

@@ -53,6 +53,10 @@ namespace MajMusic.Presentation.Theme
         private const double CommitProgress = .62;
         /// <summary>Defines the travel before a pending press becomes a horizontal or vertical gesture.</summary>
         private const double DirectionSlop = 8;
+        /// <summary>Keeps a successful exit absent while the playback interface responds.</summary>
+        private const double RestoreDelaySeconds = .12;
+        /// <summary>Restores the resting affordance through opacity without replaying its travel.</summary>
+        private const double RestoreDurationSeconds = .14;
         /// <summary>Retains the latest finger or automatic destination independently of the displayed progress.</summary>
         private double _targetProgress;
         /// <summary>Owns one versioned display-frame callback until the current target is reached.</summary>
@@ -65,6 +69,12 @@ namespace MajMusic.Presentation.Theme
         private TaskCompletionSource<bool>? _transitionCompletion;
         /// <summary>Retains the actual reversible progress along the complete trajectory.</summary>
         private double _progress;
+        /// <summary>Restores an exited button independently of its already reset geometry.</summary>
+        private bool _restoring;
+        /// <summary>Retains display-frame time spent in the finite restore delay and fade.</summary>
+        private double _restoreElapsed;
+        /// <summary>Hides the geometric reset and fades the button back at its resting location.</summary>
+        private double _restoreOpacity = 1;
         /// <summary>Tracks the pointer whose initial press hit the cover-corner circle.</summary>
         private IPointer? _pointer;
         /// <summary>Stores the pointer's initial position independently of the animated circle.</summary>
@@ -142,7 +152,7 @@ namespace MajMusic.Presentation.Theme
         /// <returns>Whether this point belongs to the initial play affordance.</returns>
         public bool HitTest(Point point)
         {
-            if (!IsEffectivelyEnabled || Bounds.Width <= 0 || Bounds.Height <= 0)
+            if (!IsEffectivelyEnabled || _restoring && _restoreOpacity <= .01 || Bounds.Width <= 0 || Bounds.Height <= 0)
             {
                 return false;
             }
@@ -212,6 +222,10 @@ namespace MajMusic.Presentation.Theme
                 return;
             }
 
+            if (_restoring)
+            {
+                ResetGesture();
+            }
             _version++;
             _frameCallback = null;
             _framePending = false;
@@ -301,8 +315,12 @@ namespace MajMusic.Presentation.Theme
             else if (e.Key is Key.Enter or Key.Space && IsEffectivelyEnabled && _attached)
             {
                 e.Handled = true;
-                if (!_keyHeld && !_settling && _pointer is null)
+                if (!_keyHeld && !_settling && (!_restoring || _restoreOpacity > .01) && _pointer is null)
                 {
+                    if (_restoring)
+                    {
+                        ResetGesture();
+                    }
                     _keyHeld = true;
                     _transitionUpdate = SettleAsync(true);
                     await _transitionUpdate;
@@ -333,7 +351,7 @@ namespace MajMusic.Presentation.Theme
             var (start, initialRadius) = InitialButton();
             var center = start;
             var radius = initialRadius;
-            var opacity = IsEffectivelyEnabled ? 1 : .4;
+            var opacity = (IsEffectivelyEnabled ? 1 : .4) * _restoreOpacity;
             if (_level == ArcMotionLevel.Full)
             {
                 var pose = new CoverPlayTrajectory(Bounds.Size, start, initialRadius).GetPose(_progress);
@@ -462,6 +480,11 @@ namespace MajMusic.Presentation.Theme
 
             var elapsed = _lastFrameTime is { } previous ? (timestamp - previous).TotalSeconds : 0;
             _lastFrameTime = timestamp;
+            if (_restoring)
+            {
+                AdvanceRestoration(elapsed);
+                return;
+            }
             if (elapsed > 0)
             {
                 var seconds = Math.Min(elapsed, 1d / 30);
@@ -547,6 +570,10 @@ namespace MajMusic.Presentation.Theme
             _dragging = false;
             _frameCallback = null;
             _lastFrameTime = null;
+            if (commit)
+            {
+                _restoreOpacity = 0;
+            }
             try
             {
                 if (commit && _attached && IsEffectivelyEnabled)
@@ -560,8 +587,39 @@ namespace MajMusic.Presentation.Theme
                 {
                     _targetProgress = 0;
                     ApplyProgress(0);
+                    if (commit && _attached && IsEffectivelyEnabled && _level == ArcMotionLevel.Full)
+                    {
+                        _restoring = true;
+                        _restoreElapsed = 0;
+                        RequestNextFrame();
+                    }
+                    else
+                    {
+                        _restoreOpacity = 1;
+                        InvalidateVisual();
+                    }
                 }
                 completion?.TrySetResult(true);
+            }
+        }
+
+        /// <summary>Restores only the resting button's opacity after a finite display-clock pause.</summary>
+        /// <param name="elapsed">Seconds since the preceding display frame, or zero on the first restore frame.</param>
+        private void AdvanceRestoration(double elapsed)
+        {
+            _restoreElapsed += Math.Clamp(elapsed, 0, 1d / 30);
+            var progress = Math.Clamp((_restoreElapsed - RestoreDelaySeconds) / RestoreDurationSeconds, 0, 1);
+            _restoreOpacity = MusicMotion.InOut.Ease(progress);
+            InvalidateVisual();
+            if (progress >= 1)
+            {
+                _restoring = false;
+                _frameCallback = null;
+                _lastFrameTime = null;
+            }
+            else
+            {
+                RequestNextFrame();
             }
         }
 
@@ -584,6 +642,9 @@ namespace MajMusic.Presentation.Theme
             _framePending = false;
             _lastFrameTime = null;
             _targetProgress = 0;
+            _restoring = false;
+            _restoreElapsed = 0;
+            _restoreOpacity = 1;
             _transitionCompletion?.TrySetResult(false);
             _transitionCompletion = null;
             ReleasePointer();
@@ -629,7 +690,11 @@ namespace MajMusic.Presentation.Theme
             }
 
             _level = level;
-            if (_settling)
+            if (_restoring)
+            {
+                ResetGesture();
+            }
+            else if (_settling)
             {
                 var commit = _commitPending;
                 _transitionUpdate = SettleAsync(commit);

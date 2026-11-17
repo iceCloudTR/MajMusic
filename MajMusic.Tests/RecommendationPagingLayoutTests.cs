@@ -2,6 +2,8 @@
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
@@ -31,7 +33,8 @@ namespace MajMusic.Tests
                 var clock = new ManualFrameClock();
                 using var installed = clock.Install();
                 foreach (var scenario in new[] { (Width: 1100, Height: 760, Songs: 150), (Width: 390, Height: 844, Songs: 150),
-                    (Width: 1100, Height: 760, Songs: 61), (Width: 390, Height: 844, Songs: 7), (Width: 1100, Height: 760, Songs: 0) })
+                    (Width: 1100, Height: 760, Songs: 61), (Width: 1100, Height: 1050, Songs: 51),
+                    (Width: 390, Height: 844, Songs: 51), (Width: 390, Height: 844, Songs: 7), (Width: 1100, Height: 760, Songs: 0) })
                 {
                     await ValidateAsync(clock, scenario.Width, scenario.Height, scenario.Songs, timeout.Token);
                 }
@@ -105,7 +108,10 @@ namespace MajMusic.Tests
                     && !browser.GetVisualDescendants().OfType<Grid>().Any(item => item.Name == "RecommendationPagination"),
                     "A multipage recommendation footer must be the actual final scrolling item, outside the initial viewport.");
                 var scroll = list.GetVisualDescendants().OfType<ScrollViewer>().Single(item => ReferenceEquals(item.TemplatedParent, list));
+                var lane = browser.ContentViewport;
+                var cardSize = browser.GetVisualDescendants().OfType<SongCard>().First(card => card.IsEffectivelyVisible).Bounds.Size;
                 var footer = ScrollToFooter(window, browser, list);
+                AssertStableLane(browser, scroll, lane, cardSize, "The first full page and visible footer");
                 TestAssert.True(scroll.Offset.Y > 0 && browser.Bounds == viewport,
                     "Reaching the footer must scroll music content without reducing the browser viewport.");
                 Save(window, $"ui-recommendation-pages-{width}-bottom.png");
@@ -118,6 +124,7 @@ namespace MajMusic.Tests
                 TestAssert.True(surface.TransitionProgress is > 0 and < 1 && surface.IncomingOffset > 0
                     && list.Items.Cast<object>().All(item => item is not RecommendationFooterRow),
                     "The moving target must not display a footer beneath its temporary twelve-song warm prefix.");
+                AssertStableLane(browser, scroll, lane, cardSize, "The entering warm prefix before its footer");
                 Save(window, $"ui-recommendation-pages-{width}-middle.png");
                 Advance(clock, window, 330);
                 await model.HomeUpdate.WaitAsync(token);
@@ -125,6 +132,14 @@ namespace MajMusic.Tests
                 TestAssert.True(model.CardTracks[0].Track.Id == "recommendation-050" && model.CardTracks.Count == Math.Min(50, songs - 50)
                     && scroll.Offset.Y <= 1 && browser.Bounds == viewport,
                     "The complete second page must start at its first song and retain the existing viewport geometry.");
+                AssertStableLane(browser, scroll, lane, cardSize, "The complete target after its footer is appended");
+                if (songs == 51)
+                {
+                    var vertical = scroll.GetVisualDescendants().OfType<ScrollBar>()
+                        .Single(bar => ReferenceEquals(bar.TemplatedParent, scroll) && bar.Orientation == Avalonia.Layout.Orientation.Vertical);
+                    TestAssert.True(vertical.IsVisible && vertical.Maximum == 0 && vertical.Opacity == 0 && !vertical.IsHitTestVisible,
+                        "A one-song last page must keep its empty scroll lane without painting or activating a useless scrollbar.");
+                }
                 TestAssert.Equal(requests, workspace.RecommendationRequests.Count, "Selecting a cached recommendation page must send no new source request.");
                 footer = ScrollToFooter(window, browser, list);
                 Tap(window, PageButton(footer, 1));
@@ -163,6 +178,23 @@ namespace MajMusic.Tests
             {
                 window.Close();
             }
+        }
+
+        /// <summary>Checks real content and card geometry before, during and after recommendation-page publication.</summary>
+        /// <param name="browser">The unchanged production browser.</param>
+        /// <param name="viewer">The native viewer retaining the reserved lane.</param>
+        /// <param name="lane">The measured initial content viewport.</param>
+        /// <param name="cardSize">The initial real card size.</param>
+        /// <param name="phase">The publication phase being checked.</param>
+        private static void AssertStableLane(BrowseTracksView browser, ScrollViewer viewer, Size lane, Size cardSize, string phase)
+        {
+            var presenter = viewer.GetVisualDescendants().OfType<ScrollContentPresenter>()
+                .Single(control => ReferenceEquals(control.TemplatedParent, viewer));
+            TestAssert.True(Math.Abs(presenter.Bounds.Width - lane.Width) <= 0.01 && browser.ContentViewport == lane,
+                phase + " must retain the same native content lane, including when content starts or stops overflowing.");
+            TestAssert.True(browser.GetVisualDescendants().OfType<SongCard>().Where(card => card.IsEffectivelyVisible)
+                .All(card => Math.Abs(card.Bounds.Width - cardSize.Width) <= 1 && Math.Abs(card.Bounds.Height - cardSize.Height) <= 1),
+                phase + " must preserve card geometry rather than reallocating space when the scrollbar or pager appears.");
         }
 
         /// <summary>Reaches pagination by real keyboard scrolling and verifies all page actions fit its viewport.</summary>

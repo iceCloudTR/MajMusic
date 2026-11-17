@@ -30,6 +30,7 @@ namespace MajMusic.Tests
             {
                 var clock = new ManualFrameClock();
                 using var installed = clock.Install();
+                ValidateDetachedPlaceholderPool(clock);
                 var first = Endpoint("loading-a", "Alice");
                 var second = Endpoint("loading-b", "Bob");
                 var workspace = new LibraryExperienceTests.ExperienceWorkspace
@@ -92,6 +93,12 @@ namespace MajMusic.Tests
                         "A 24,000-song library must materialize only viewport presentations.");
                     var original = Capture(window, "ui-browse-loading-library.png");
                     var stableBounds = browser.Bounds;
+                    var stableLane = browser.ContentViewport;
+                    var stableCard = browser.GetVisualDescendants().OfType<SongCard>().First(card => card.IsEffectivelyVisible).Bounds.Size;
+                    TestAssert.True(skeleton.PrewarmCount > 0 && skeleton.PlaceholderCount == 0
+                        && skeleton.PooledPlaceholderCount > 0 && browser.PlaceholderWarmupFailures == 0,
+                        "A stable real page must prepare its hidden static templates in idle time without active placeholder controls.");
+                    var preparedCreations = skeleton.CreatedPlaceholderCount;
                     model.OnlineEnabled = true;
                     await model.AutomaticLogin;
                     var transition = model.BrowseTransitionVersion;
@@ -104,6 +111,12 @@ namespace MajMusic.Tests
                     await firstStarted.Task.WaitAsync(timeout.Token);
                     await AdvanceAsync(clock, window, 110, timeout.Token);
                     AssertSkeleton(browser, skeleton, model.BrowseColumns);
+                    TestAssert.Equal(preparedCreations, skeleton.CreatedPlaceholderCount,
+                        "The first cold-mode click must borrow the idle-prepared controls instead of constructing its loading tree on the input stack.");
+                    TestAssert.True(Math.Abs(skeleton.Bounds.Width - stableLane.Width) <= 0.01
+                        && skeleton.Children.OfType<SongCardSkeleton>().All(card => Math.Abs(card.Bounds.Width - stableCard.Width) <= 1
+                            && Math.Abs(card.Bounds.Height - stableCard.Height) <= 1),
+                        "The first moving placeholder frame must keep the real cards' reserved scrollbar lane and card dimensions.");
                     TestAssert.True(surface.HasSnapshot && surface.TransitionProgress > 0 && surface.TransitionProgress < 1,
                         "A slow target must already be painting its complete incoming surface while retaining one outgoing snapshot.");
                     var loading = Capture(window, "ui-browse-loading-pending.png");
@@ -138,6 +151,10 @@ namespace MajMusic.Tests
                     TestAssert.True(!model.IsBrowseLoading && model.Tracks.Count == 50 && list.IsVisible
                         && model.MaterializedCardCount < 50 && skeleton.PlaceholderCount == 0,
                         "Completion must replace bounded placeholders with only the first viewport of the current account's songs.");
+                    TestAssert.True(browser.ContentViewport == stableLane
+                        && browser.GetVisualDescendants().OfType<SongCard>().Where(card => card.IsEffectivelyVisible)
+                            .All(card => Math.Abs(card.Bounds.Width - stableCard.Width) <= 1 && Math.Abs(card.Bounds.Height - stableCard.Height) <= 1),
+                        "Replacing placeholders with the full overflowing page must not shrink the lane or reposition card contents.");
                     var completed = Capture(window, "ui-browse-loading-completed.png");
                     TestAssert.True(!completed.SequenceEqual(loading), "The loaded card frame must visibly replace its placeholders.");
 
@@ -165,12 +182,24 @@ namespace MajMusic.Tests
                         phoneStarted.TrySetResult();
                         return phoneRelease.Task;
                     };
-                    model.SelectedPlaylist = model.Playlists.Single(item => item.Id == "phone-loading");
+                    var coldPhonePlaylist = new MusicPlaylist
+                    {
+                        Id = "phone-loading-cold",
+                        Name = "New phone loading target",
+                        TrackIds = ["loading-track-00000", "loading-track-00001"]
+                    };
+                    workspace.LocalPlaylists.Add(coldPhonePlaylist.Id, coldPhonePlaylist);
+                    model.Playlists.Add(coldPhonePlaylist);
+                    model.SelectedPlaylist = coldPhonePlaylist;
                     model.ShowPlaylistsModeCommand.Execute(null);
+                    TestAssert.True(model.IsBrowseLoading && model.IsBrowsePlaceholderVisible,
+                        "A newly arrived, unprepared phone playlist must expose its loading presentation before querying storage.");
                     await phoneStarted.Task.WaitAsync(timeout.Token);
                     await AdvanceAsync(clock, window, 400, timeout.Token);
                     var phoneBrowser = view.GetVisualDescendants().OfType<BrowseTracksView>().Single();
                     var phoneSkeleton = phoneBrowser.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!;
+                    TestAssert.True(model.IsBrowseLoading && model.IsBrowsePlaceholderVisible,
+                        "The cold phone target must still own placeholders while its query is blocked, independently of existing warm playlists.");
                     AssertSkeleton(phoneBrowser, phoneSkeleton, 1);
                     Capture(window, "ui-browse-loading-phone.png");
                     window.Width = 1100;
@@ -197,6 +226,59 @@ namespace MajMusic.Tests
             }, timeout.Token);
         }
 
+        /// <summary>Checks bounded detached reuse, static preparation and pulse shutdown independently of a music workspace.</summary>
+        /// <param name="clock">The installed deterministic Arc frame clock.</param>
+        private static void ValidateDetachedPlaceholderPool(ManualFrameClock clock)
+        {
+            var skeleton = new BrowseSkeletonView();
+            var hidden = new Border { IsVisible = false, Child = skeleton };
+            var window = new Window { Width = 840, Height = 540, Content = hidden, DataContext = new object() };
+            var viewport = new Size(800, 480);
+            try
+            {
+                window.Show();
+                Pump(window);
+                skeleton.PrepareViewport(viewport, 2, SongCardLayout.Loose);
+                TestAssert.True(skeleton.PrewarmCount == 1 && skeleton.PlaceholderCount == 0
+                    && skeleton.PooledPlaceholderCount == skeleton.CreatedPlaceholderCount && skeleton.PooledPlaceholderCount is > 0 and <= 32,
+                    "Idle preparation must leave only a bounded detached pool and no visible loading children.");
+                var creations = skeleton.CreatedPlaceholderCount;
+                skeleton.PrepareViewport(viewport, 2, SongCardLayout.Loose);
+                TestAssert.True(skeleton.PrewarmCount == 1 && skeleton.CreatedPlaceholderCount == creations,
+                    "An unchanged viewport and density must not repeat static template preparation.");
+                skeleton.SetViewport(viewport, 2, SongCardLayout.Loose);
+                hidden.IsVisible = true;
+                Pump(window);
+                var cards = skeleton.Children.OfType<SongCardSkeleton>().ToArray();
+                TestAssert.True(skeleton.CreatedPlaceholderCount == creations && skeleton.ReusedPlaceholderCount == cards.Length
+                    && cards.All(card => card.DataContext is null), "A shown target must reuse static cards without inheriting a workspace.");
+                var beforePulse = clock.RequestCount;
+                clock.Advance(TimeSpan.FromMilliseconds(80), TimeSpan.FromMilliseconds(4));
+                Pump(window);
+                TestAssert.True(clock.RequestCount > beforePulse, "Reused visible placeholders must retain their real Arc pulse behavior.");
+                skeleton.ClearPlaceholders();
+                TestAssert.True(skeleton.PlaceholderCount == 0 && cards.All(card => card.GetVisualParent() is null && card.Parent is null),
+                    "Clearing placeholders must detach their visual and logical parents before retaining them.");
+                clock.Advance(TimeSpan.FromMilliseconds(80), TimeSpan.FromMilliseconds(4));
+                var afterDetach = clock.RequestCount;
+                clock.Advance(TimeSpan.FromMilliseconds(80), TimeSpan.FromMilliseconds(4));
+                TestAssert.Equal(afterDetach, clock.RequestCount, "Detached pooled skeletons must stop requesting animation frames.");
+                skeleton.SetViewport(viewport, 2, SongCardLayout.Loose);
+                TestAssert.True(skeleton.CreatedPlaceholderCount == creations && skeleton.Children.OfType<SongCardSkeleton>().SequenceEqual(cards),
+                    "A later loading interval must retain existing control identity without another XAML construction.");
+                skeleton.ClearPlaceholders();
+                hidden.IsVisible = false;
+                skeleton.PrepareViewport(new Size(800, 8192), 2, SongCardLayout.Small);
+                TestAssert.True(skeleton.PlaceholderCount == 0 && skeleton.PooledPlaceholderCount == 32,
+                    "A very tall preparation target must keep the detached pool bounded rather than caching its entire requested grid.");
+            }
+            finally
+            {
+                skeleton.ClearPlaceholders();
+                window.Close();
+            }
+        }
+
         /// <summary>Checks finite visible placeholders, real Arc text skeletons and square artwork geometry.</summary>
         /// <param name="browser">The currently attached target viewport.</param>
         /// <param name="skeleton">The bounded placeholder panel.</param>
@@ -205,11 +287,12 @@ namespace MajMusic.Tests
         {
             TestAssert.True(skeleton.IsEffectivelyVisible && skeleton.Columns == columns
                 && skeleton.PlaceholderCount >= columns && skeleton.PlaceholderCount < 40,
-                "Loading must instantiate only the current viewport's responsive placeholder rows.");
+                $"Loading must instantiate only the current viewport's responsive placeholder rows. Visible={skeleton.IsEffectivelyVisible}, columns={skeleton.Columns}/{columns}, count={skeleton.PlaceholderCount}, lane={browser.ContentViewport}, browser={browser.Bounds}.");
             var cards = skeleton.Children.OfType<SongCardSkeleton>().ToArray();
             var visible = cards.Where(card => card.Bounds.Top < browser.Bounds.Height).ToArray();
-            var outline = MusicGeometry.OutlineWidth * 2;
-            TestAssert.True(visible.Length >= columns && visible.All(card => Math.Abs((card.Bounds.Width - outline) - (card.Bounds.Height - outline) * 2) <= 1),
+            var pixel = 1 / (TopLevel.GetTopLevel(browser)?.RenderScaling ?? 1);
+            TestAssert.True(visible.Length >= columns && visible.All(card => Math.Abs(card.Bounds.Height
+                - SongCardGeometry.GetHeight(card.Bounds.Width, skeleton.CardLayout)) <= pixel),
                 "Every loading music card must reserve the real two-to-one card geometry: "
                 + string.Join("; ", cards.Select(card => card.Bounds.ToString())) + "; surface=" + skeleton.Bounds + "; viewport=" + browser.Bounds);
             TestAssert.True(cards.SelectMany(card => card.GetVisualDescendants()).OfType<Skeleton>().Any(),

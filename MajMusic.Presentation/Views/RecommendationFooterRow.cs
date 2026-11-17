@@ -34,8 +34,16 @@ namespace MajMusic.Presentation.Views
         /// <summary>Creates a live, indexed source with no additional music-row allocations.</summary>
         /// <param name="owner">The current music presentation.</param>
         public BrowseRowsPresentation(MainViewModel owner)
+            : this(owner, owner.BrowseRows)
         {
-            _rows = owner.BrowseRows;
+        }
+
+        /// <summary>Decorates an independently supplied observable row source without copying its items.</summary>
+        /// <param name="owner">The current owner of footer commands.</param>
+        /// <param name="rows">The indexed row source whose exact notifications are forwarded.</param>
+        internal BrowseRowsPresentation(MainViewModel owner, ObservableCollection<SongCardRow> rows)
+        {
+            _rows = rows;
             _footer = new RecommendationFooterRow(owner);
             _rows.CollectionChanged += OnRowsChanged;
         }
@@ -82,12 +90,12 @@ namespace MajMusic.Presentation.Views
             _rows.CollectionChanged -= OnRowsChanged;
         }
 
-        /// <summary>Forwards a complete source change without enumerating any song presentations.</summary>
+        /// <summary>Preserves source change ranges and indices because the optional footer always follows every music row.</summary>
         /// <param name="sender">The source's lightweight row collection.</param>
-        /// <param name="e">The replaced or resized row snapshot.</param>
+        /// <param name="e">The unchanged indexed source notification, including any range of affected rows.</param>
         private void OnRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
-            CollectionChanged?.Invoke(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+            CollectionChanged?.Invoke(this, e);
         }
 
         /// <inheritdoc />

@@ -78,8 +78,11 @@ namespace MajMusic.Presentation.ViewModels
             _homeSnapshots[owner] = snapshot with { PageIndex = pageIndex };
             _homeVersion++;
             _homeUpdateCancellation?.Cancel();
-            var loadingOwner = BeginBrowseLoad(true, direction);
-            TryPublishPreparedPreview(loadingOwner);
+            var loadingOwner = BeginBrowseLoad(true, direction, notifyPlaceholder: false);
+            if (!TryPublishPreparedPreview(loadingOwner))
+            {
+                OnPropertyChanged(nameof(IsBrowsePlaceholderVisible));
+            }
             NotifyHomeState();
             QueueHomeUpdate(false);
             QueueWarmBrowsePreviews();

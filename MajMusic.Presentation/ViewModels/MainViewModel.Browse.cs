@@ -2,14 +2,50 @@
 
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using MajMusic.Core.Models;
 
 namespace MajMusic.Presentation.ViewModels
 {
-    /// <summary>Groups a fixed number of songs into one virtualized card row.</summary>
-    /// <param name="Tracks">The stable song presentations in this row.</param>
-    /// <param name="Columns">The number of equal-width card columns.</param>
-    public sealed record SongCardRow(IReadOnlyList<SongCardViewModel> Tracks, int Columns);
+    /// <summary>Keeps one virtualized row in place while its bounded song slice changes.</summary>
+    public sealed class SongCardRow : INotifyPropertyChanged
+    {
+        /// <summary>Reuses the notification shared by every updated song slice.</summary>
+        private static readonly PropertyChangedEventArgs TracksChanged = new(nameof(Tracks));
+        /// <summary>Reuses the notification shared by responsive column changes.</summary>
+        private static readonly PropertyChangedEventArgs ColumnsChanged = new(nameof(Columns));
+
+        /// <summary>Creates an indexed row without materializing the songs in its lazy slice.</summary>
+        /// <param name="tracks">The bounded song slice represented by this row.</param>
+        /// <param name="columns">The number of equal-width card columns.</param>
+        public SongCardRow(IReadOnlyList<SongCardViewModel> tracks, int columns)
+        {
+            Tracks = tracks;
+            Columns = columns;
+        }
+
+        /// <inheritdoc />
+        public event PropertyChangedEventHandler? PropertyChanged;
+        /// <summary>Gets the current bounded slice of lazily materialized song presentations.</summary>
+        public IReadOnlyList<SongCardViewModel> Tracks { get; private set; }
+        /// <summary>Gets the current number of equal-width card columns.</summary>
+        public int Columns { get; private set; }
+
+        /// <summary>Commits both row values before notifying existing controls to rebind their visible content.</summary>
+        /// <param name="tracks">The incoming lazy song slice.</param>
+        /// <param name="columns">The incoming responsive column count.</param>
+        internal void Update(IReadOnlyList<SongCardViewModel> tracks, int columns)
+        {
+            var columnsChanged = Columns != columns;
+            Tracks = tracks;
+            Columns = columns;
+            PropertyChanged?.Invoke(this, TracksChanged);
+            if (columnsChanged)
+            {
+                PropertyChanged?.Invoke(this, ColumnsChanged);
+            }
+        }
+    }
 
     /// <summary>Exposes scrollable artwork browsing independently of the playback queue.</summary>
     public sealed partial class MainViewModel
@@ -22,7 +58,7 @@ namespace MajMusic.Presentation.ViewModels
         private readonly ConcurrentDictionary<string, byte> _browseMetadataRead = new(StringComparer.Ordinal);
         /// <summary>Lets another visible control retry after the current request owner's viewport interest ends.</summary>
         private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _browseMetadataPending = new(StringComparer.Ordinal);
-        /// <summary>Publishes row replacements as one virtualized-list reset.</summary>
+        /// <summary>Retains indexed row slots and publishes only changes to the complete row count.</summary>
         private readonly SnapshotCollection<SongCardRow> _browseRows = new();
 
         /// <summary>Gets whether browsing uses the shared artwork-card presentation in every mode.</summary>
@@ -75,13 +111,11 @@ namespace MajMusic.Presentation.ViewModels
             }
         }
 
-        /// <summary>Replaces row grouping while preserving song presentations and their loaded covers.</summary>
-        /// <param name="appendRows">Whether to retain existing containers when extending a recommendation feed.</param>
-        private void RefreshBrowseRows(bool appendRows = false)
+        /// <summary>Updates stable row slots and changes only their tail when the displayed catalog grows or shrinks.</summary>
+        private void RefreshBrowseRows()
         {
             var count = (CardTracks.Count + _browseColumns - 1) / _browseColumns;
             var rows = new SongCardRow[count];
-            var unchangedPrefix = true;
             for (var index = 0; index < count; index++)
             {
                 var start = index * _browseColumns;
@@ -94,33 +128,18 @@ namespace MajMusic.Presentation.ViewModels
                     continue;
                 }
 
-                rows[index] = new SongCardRow(new CardSlice(CardTracks, start, length), _browseColumns);
-                unchangedPrefix &= index >= BrowseRows.Count;
-            }
-
-            if (appendRows)
-            {
-                for (var index = 0; index < rows.Length; index++)
+                var slice = new CardSlice(CardTracks, start, length);
+                if (index < BrowseRows.Count)
                 {
-                    if (index >= BrowseRows.Count)
-                    {
-                        BrowseRows.Add(rows[index]);
-                    }
-                    else if (!ReferenceEquals(rows[index], BrowseRows[index]))
-                    {
-                        BrowseRows[index] = rows[index];
-                    }
+                    rows[index] = BrowseRows[index];
+                    rows[index].Update(slice, _browseColumns);
                 }
-
-                while (BrowseRows.Count > rows.Length)
+                else
                 {
-                    BrowseRows.RemoveAt(BrowseRows.Count - 1);
+                    rows[index] = new SongCardRow(slice, _browseColumns);
                 }
             }
-            else if (!unchangedPrefix || rows.Length != BrowseRows.Count)
-            {
-                _browseRows.ReplaceAll(rows);
-            }
+            _browseRows.ResizeMatchingPrefix(rows);
 
             OnPropertyChanged(nameof(BrowseColumns));
             OnPropertyChanged(nameof(BrowseSummary));

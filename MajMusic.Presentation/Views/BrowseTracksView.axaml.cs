@@ -2,6 +2,7 @@
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -33,6 +34,8 @@ namespace MajMusic.Presentation.Views
         }
         /// <summary>Gets the unchanged lightweight music rows followed by an available recommendation footer.</summary>
         public IEnumerable? PresentationRows => _rowsPresentation;
+        /// <summary>Gets the actual content lane after the native scrollbar's reserved track.</summary>
+        public Size ContentViewport => _browseViewport;
         /// <summary>Gets the active density selected in the music appearance settings.</summary>
         public SongCardLayout CardLayout
         {
@@ -44,9 +47,9 @@ namespace MajMusic.Presentation.Views
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
             base.OnPropertyChanged(change);
-            if (change.Property == ForceSingleColumnProperty && Bounds.Width > 0 && DataContext is MainViewModel owner)
+            if (change.Property == ForceSingleColumnProperty && Bounds.Width > 0 && _browseOwner is not null)
             {
-                SetBrowseViewport(owner, Bounds.Width, _browseViewport.Height);
+                RefreshBrowseViewport();
             }
         }
 
@@ -73,6 +76,7 @@ namespace MajMusic.Presentation.Views
             InitializeComponent();
             DataContextChanged += OnBrowseContextChanged;
             this.FindControl<ListBox>("CardRowsList")!.AddHandler(KeyDownEvent, OnBrowseKeyDown, RoutingStrategies.Tunnel);
+            AddHandler(ScrollViewer.ScrollChangedEvent, OnBrowseScrollChanged, RoutingStrategies.Bubble);
             this.FindControl<MusicSurfaceHost>("BrowseSurfaceTransition")!.PropertyChanged += OnBrowseSurfaceChanged;
         }
 
@@ -87,7 +91,7 @@ namespace MajMusic.Presentation.Views
                 owner.PropertyChanged += OnBrowseOwnerChanged;
                 if (Bounds.Width > 0)
                 {
-                    SetBrowseViewport(owner, Bounds.Width, _browseViewport.Height);
+                    RefreshBrowseViewport();
                 }
 
                 UpdateSkeletonViewport();
@@ -99,6 +103,7 @@ namespace MajMusic.Presentation.Views
         /// <inheritdoc />
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
+            CancelPlaceholderWarmup();
             ReleaseBrowseTransition();
             _keyboardNavigationVersion++;
             if (_browseOwner is { } owner)
@@ -116,6 +121,7 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The new data-context notification.</param>
         private void OnBrowseContextChanged(object? sender, EventArgs e)
         {
+            CancelPlaceholderWarmup();
             ReleaseBrowseTransition();
             if (_browseOwner is not null)
             {
@@ -140,7 +146,7 @@ namespace MajMusic.Presentation.Views
                     owner.PropertyChanged += OnBrowseOwnerChanged;
                     if (Bounds.Width > 0)
                     {
-                        SetBrowseViewport(owner, Bounds.Width, _browseViewport.Height);
+                        RefreshBrowseViewport();
                     }
                 }
 
@@ -162,7 +168,7 @@ namespace MajMusic.Presentation.Views
             if (e.PropertyName == nameof(MainViewModel.SelectedCardLayout) && _browseOwner is { } layoutOwner)
             {
                 CardLayout = layoutOwner.SelectedCardLayout;
-                SetBrowseViewport(layoutOwner, Bounds.Width, _browseViewport.Height);
+                RefreshBrowseViewport();
                 UpdateSkeletonViewport();
             }
             else if (e.PropertyName == nameof(MainViewModel.BrowseTransitionVersion) && _browseOwner is { } owner)
@@ -175,6 +181,7 @@ namespace MajMusic.Presentation.Views
             }
             else if (e.PropertyName is nameof(MainViewModel.IsBrowsePlaceholderVisible) or nameof(MainViewModel.BrowseColumns))
             {
+                RefreshBrowseViewport();
                 UpdateSkeletonViewport();
             }
 
@@ -200,7 +207,8 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The changed actual Arc progress.</param>
         private void OnBrowseSurfaceChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
         {
-            if (e.Property == MusicSurfaceHost.TransitionProgressProperty)
+            if (e.Property == MusicSurfaceHost.TransitionProgressProperty
+                && sender is MusicSurfaceHost { TransitionProgress: 0 or 1 })
             {
                 UpdateRecommendationFooter();
             }
@@ -247,11 +255,13 @@ namespace MajMusic.Presentation.Views
         {
             if (TopLevel.GetTopLevel(this) is not null && _browseOwner is { IsBrowsePlaceholderVisible: true } owner)
             {
+                CancelPlaceholderWarmup();
                 this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.SetViewport(_browseViewport, owner.BrowseColumns, CardLayout);
             }
             else
             {
                 this.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!.ClearPlaceholders();
+                QueuePlaceholderWarmup();
             }
         }
 
@@ -286,31 +296,44 @@ namespace MajMusic.Presentation.Views
         /// <param name="e">The new viewport dimensions.</param>
         private void OnBrowseSizeChanged(object? sender, SizeChangedEventArgs e)
         {
-            _browseViewport = e.NewSize;
-            if (DataContext is MainViewModel owner)
+            RefreshBrowseViewport();
+            UpdateSkeletonViewport();
+        }
+
+        /// <summary>Reports actual lane changes after native layout, ignoring offset or footer-only extent changes.</summary>
+        /// <param name="sender">The browser owning the two native presenters.</param>
+        /// <param name="e">The native viewport, extent or offset change.</param>
+        private void OnBrowseScrollChanged(object? sender, ScrollChangedEventArgs e)
+        {
+            if (e.ViewportDelta != default)
             {
-                SetBrowseViewport(owner, e.NewSize.Width, e.NewSize.Height);
+                RefreshBrowseViewport();
                 UpdateSkeletonViewport();
             }
         }
 
-        /// <summary>Updates responsive rows and bounded cover preparation from the same visible viewport.</summary>
-        /// <param name="owner">The current browsing presentation.</param>
-        /// <param name="width">The actual visible width.</param>
-        /// <param name="height">The actual visible height.</param>
-        private void SetBrowseViewport(MainViewModel owner, double width, double height)
+        /// <summary>Uses one measured native content lane for placeholders, card columns and cover preparation.</summary>
+        private void RefreshBrowseViewport()
         {
-            var cardWidth = CardViewportWidth(width);
-            owner.SetBrowseViewportWidth(cardWidth);
-            owner.SetBrowseViewportSize(cardWidth, height);
-        }
+            if (_browseOwner is not { } owner || TopLevel.GetTopLevel(this) is null)
+            {
+                return;
+            }
 
-        /// <summary>Preserves the actual viewport so card size preferences choose the same columns on every platform.</summary>
-        /// <param name="width">The actual content width.</param>
-        /// <returns>The logical width used only to choose the card column count.</returns>
-        private double CardViewportWidth(double width)
-        {
-            return width;
+            var list = this.FindControl<ListBox>("CardRowsList")!;
+            var viewer = owner.IsBrowsePlaceholderVisible
+                ? this.FindControl<ScrollViewer>("BrowseSkeletonScroll")
+                : list.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault(control => ReferenceEquals(control.TemplatedParent, list));
+            var presenter = viewer?.GetVisualDescendants().OfType<ScrollContentPresenter>()
+                .FirstOrDefault(control => ReferenceEquals(control.TemplatedParent, viewer));
+            if (presenter is not { Bounds.Width: > 0, Bounds.Height: > 0 })
+            {
+                return;
+            }
+
+            _browseViewport = presenter.Bounds.Size;
+            owner.SetBrowseViewportWidth(_browseViewport.Width);
+            owner.SetBrowseViewportSize(_browseViewport.Width, _browseViewport.Height);
         }
 
         /// <summary>Moves between individual artwork cards while keeping the selected row and inspector visible.</summary>

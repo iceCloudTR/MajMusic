@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -155,11 +156,59 @@ namespace MajMusic.Tests
                     "Preparing a 24,000-song catalog must retain only the bounded entry presentations.");
                 var requests = workspace.CoverRequests[target.Id];
                 workspace.Inner.SearchOverride = null;
+                await model.BrowsePreloadUpdate.WaitAsync(token);
                 Tap(window, view.FindControl<SegmentedControl>("HomeModeSegments")!.ContainerFromIndex(2)!);
-                Advance(clock, window, 420);
-                await model.HomeUpdate.WaitAsync(token);
-                Tap(window, view.FindControl<SegmentedControl>("HomeModeSegments")!.ContainerFromIndex(1)!);
-                Pump(window);
+                TestAssert.Equal(12, model.CardTracks.Count, "A warm library entry must first publish its bounded prepared prefix.");
+                var preparedRows = model.BrowseRows.ToArray();
+                var expansion = new List<NotifyCollectionChangedEventArgs>();
+                void OnLibraryExpanded(object? sender, NotifyCollectionChangedEventArgs args)
+                {
+                    expansion.Add(args);
+                }
+
+                model.BrowseRows.CollectionChanged += OnLibraryExpanded;
+                try
+                {
+                    Advance(clock, window, 420);
+                    await model.HomeUpdate.WaitAsync(token);
+                }
+                finally
+                {
+                    model.BrowseRows.CollectionChanged -= OnLibraryExpanded;
+                }
+                TestAssert.True(expansion.Count == 1 && expansion[0].Action == NotifyCollectionChangedAction.Add
+                    && expansion[0].NewStartingIndex == preparedRows.Length
+                    && expansion[0].NewItems!.Count == model.BrowseRows.Count - preparedRows.Length,
+                    "Completing a prepared library prefix must append its full tail once without resetting existing virtualized rows.");
+                TestAssert.True(preparedRows.Select((row, index) => ReferenceEquals(row, model.BrowseRows[index])).All(retained => retained),
+                    "Prepared first-screen rows must keep their presentation identities when the complete catalog arrives.");
+                var skeleton = browser.FindControl<BrowseSkeletonView>("BrowseSkeletonSurface")!;
+                var reusedBeforeEntry = skeleton.ReusedPlaceholderCount;
+                var createdBeforeEntry = skeleton.CreatedPlaceholderCount;
+                var notificationStates = new List<(string? Name, bool Placeholder)>();
+                void OnReadyEntryChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+                {
+                    if (args.PropertyName == nameof(MainViewModel.IsBrowsePlaceholderVisible))
+                    {
+                        notificationStates.Add((args.PropertyName, model.IsBrowsePlaceholderVisible));
+                    }
+                }
+
+                model.PropertyChanged += OnReadyEntryChanged;
+                try
+                {
+                    Tap(window, view.FindControl<SegmentedControl>("HomeModeSegments")!.ContainerFromIndex(1)!);
+                    Pump(window);
+                }
+                finally
+                {
+                    model.PropertyChanged -= OnReadyEntryChanged;
+                }
+                TestAssert.True(notificationStates.All(item => !item.Placeholder),
+                    "Ready-preview navigation must never notify bindings to display placeholders: "
+                    + string.Join(", ", notificationStates.Where(item => item.Placeholder).Select(item => item.Name)));
+                TestAssert.True(skeleton.ReusedPlaceholderCount == reusedBeforeEntry && skeleton.CreatedPlaceholderCount == createdBeforeEntry,
+                    "Entering an already prepared playlist must neither borrow nor construct placeholder controls on the input stack.");
                 var incoming = model.CardTracks.Count > 0 ? model.CardTracks[0] : null;
                 TestAssert.True(incoming is { Cover: not null } && incoming.Track.Id == target.Id,
                     "A cached playlist's first real card must have its cover before its horizontal entry starts.");

@@ -23,6 +23,15 @@
         <Style Selector="ListBox.browseList ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent" />
         </Style>
+        <!-- Keep the lane measured even when there is no scrollable data; only its ink disappears. -->
+        <Style Selector="ListBox.browseList /template/ ScrollViewer /template/ ScrollBar:vertical[Maximum=0]">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+        <Style Selector="ScrollViewer#BrowseSkeletonScroll /template/ ScrollBar">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
         <Style Selector="arc|Button.recommendationPage">
             <Setter Property="Width" Value="44" />
             <Setter Property="Height" Value="44" />
@@ -39,19 +48,8 @@
     </UserControl.Styles>
     <UserControl.DataTemplates>
         <DataTemplate DataType="vm:SongCardRow" x:DataType="vm:SongCardRow">
-            <ItemsControl ItemsSource="{Binding Tracks}" Focusable="False">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <UniformGrid Columns="{Binding Columns}" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:SongCardViewModel">
-                        <views:SongCard Margin="6" IsBrowsingActive="{Binding $parent[ListBox].IsVisible}"
-                                        CardLayout="{Binding CardLayout, RelativeSource={RelativeSource AncestorType=views:BrowseTracksView}}" />
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <views:SongCardRowView Columns="{Binding Columns}" IsBrowsingActive="{Binding $parent[ListBox].IsVisible}"
+                                   CardLayout="{Binding CardLayout, RelativeSource={RelativeSource AncestorType=views:BrowseTracksView}}" />
         </DataTemplate>
         <DataTemplate DataType="views:RecommendationFooterRow" x:DataType="views:RecommendationFooterRow">
             <Border DataContext="{Binding Owner}" Margin="6,12,6,8" Padding="10,8" CornerRadius="12"
@@ -85,19 +83,23 @@
             <Grid x:Name="BrowseContentPresentation" IsVisible="{Binding !IsBrowsePlaceholderVisible}"
                               IsHitTestVisible="{Binding !IsBrowsePlaceholderVisible}" IsEnabled="{Binding !IsBrowsePlaceholderVisible}">
                 <Grid>
-                    <ListBox x:Name="CardRowsList" Classes="browseList" ItemsSource="{Binding PresentationRows, RelativeSource={RelativeSource AncestorType=views:BrowseTracksView}}" Focusable="True" AutoScrollToSelectedItem="False"
+                    <views:BrowseCardListBox x:Name="CardRowsList" Classes="browseList" ItemsSource="{Binding PresentationRows, RelativeSource={RelativeSource AncestorType=views:BrowseTracksView}}" Focusable="True" AutoScrollToSelectedItem="False"
+                             CardLayout="{Binding CardLayout, RelativeSource={RelativeSource AncestorType=views:BrowseTracksView}}"
+                             Padding="0" BorderThickness="0"
                              IsVisible="{Binding !IsBrowsePlaceholderVisible}"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                             ScrollViewer.VerticalScrollBarVisibility="Visible" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <VirtualizingStackPanel />
                             </ItemsPanelTemplate>
                         </ListBox.ItemsPanel>
-                    </ListBox>
+                    </views:BrowseCardListBox>
                 </Grid>
             </Grid>
             <Grid x:Name="BrowseSkeletonPresentation" IsVisible="{Binding IsBrowsePlaceholderVisible}" IsHitTestVisible="False" ClipToBounds="True">
-                <views:BrowseSkeletonView x:Name="BrowseSkeletonSurface" />
+                <ScrollViewer x:Name="BrowseSkeletonScroll" Padding="0" VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                    <views:BrowseSkeletonView x:Name="BrowseSkeletonSurface" />
+                </ScrollViewer>
             </Grid>
         </Grid>
     </theme:MusicSurfaceHost>

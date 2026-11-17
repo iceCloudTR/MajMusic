@@ -501,13 +501,9 @@ namespace MajMusic.Presentation.Views
         /// <summary>Applies only a viewport grouping change without recreating the active page or its song presentations.</summary>
         private void UpdateBrowseViewport()
         {
-            if (FindSectionControl<BrowseTracksView>("MobileSongBrowser") is { } browser && DataContext is MainViewModel owner)
+            if (FindSectionControl<BrowseTracksView>("MobileSongBrowser") is { } browser)
             {
                 browser.ForceSingleColumn = false;
-                if (browser.Bounds.Width > 0)
-                {
-                    owner.SetBrowseViewportWidth(browser.Bounds.Width);
-                }
             }
         }
 

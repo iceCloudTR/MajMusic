@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="../../../MajMusic.Core/MajMusic.Core.csproj" />
+        <ProjectReference Include="../../../MajMusic.Infrastructure/MajMusic.Infrastructure.csproj" />
+        <ProjectReference Include="../../../MajMusic.Presentation/MajMusic.Presentation.csproj" />
+        <PackageReference Include="Avalonia.Desktop" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="$(AvaloniaVersion)" />
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
+    </ItemGroup>
+</Project>

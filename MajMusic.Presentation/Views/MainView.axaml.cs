@@ -32,6 +32,7 @@ namespace MajMusic.Presentation.Views
             DataContextChanged += OnViewDataContextChanged;
             InitializeResponsiveShell();
             InitializeDesktopSongDetails();
+            InitializeDesktopPageWarmup();
         }
 
         /// <summary>Returns to the library after explicitly opening the selected playlist.</summary>

@@ -269,3 +269,32 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- scroll-g
 `scroll-gutters` 不加载 MainView 的局部样式，直接检查普通与双轴 ScrollViewer、虚拟化 ListBox、多行 TextBox、Arc Textarea 和真实 Select 弹出根。在 720／390 宽度及 125% 缩放下，内容边界不进入滚动条区域，悬停与按压不改变滚动槽；滚轮、滑块拖动及虚拟化仍有效。
 
 最终桌面 Release 编译为 0 警告、0 错误。Android ARM64 包为 `artifacts/android-arm64-20261117-204528-b985349a/MajMusic-android-arm64.apk`，38.91 MiB，通过签名、单 ARM64 ABI 与 16 KB 对齐检查；本轮未安装或进行 Android 实机验证。
+
+## 固定内容宽度、稳定行与切页性能
+
+2026-11-18，音乐列表和加载占位都使用原生滚动容器预留同一条滚动槽，列数、封面准备和卡片尺寸取实际内容宽度。短页面隐藏滚动条的绘制与命中，保留其宽度；推荐页码加入后保持卡片位置。手机端移除重复提交外层宽度的路径。
+
+主页复用已有行与歌曲卡片。`SongCardRow` 在原位置更新歌曲切片和列数，集合只对尾部增删发送一次范围通知；页码包装层转发原集合事件。`BrowseCardListBox` 为歌曲行和页码使用不同回收键，行容器通过模板优先级保留原 `SongCardRowView`，继续调用框架的选中状态准备与清理。隐藏、回收和分离会清空旧卡片的数据及资源兴趣，恢复时只实例化当前可见行；未激活时按几何关系保留行高。
+
+已准备的首屏在发布行通知前标记就绪，跳过同一次输入内的占位创建与撤回。普通页面模板和最多 32 张静态占位在空闲帧准备，导航动画期间推迟工作；隐藏占位从可视树分离。图标按钮关闭额外的标签位移与按压缩放，封面快捷播放滑出后的坐标复位先隐藏，再在原位置淡入。
+
+原生测量使用独立可见 Win32／Skia 窗口、125% 缩放、600 首生成歌曲、20 个歌单和生成封面；HTTP 与凭据调用均为 0。相同测量流程记录输入调用和紧随其后的显式布局，旧实现与最终实现各运行两轮：
+
+| 场景 | 修改前调用＋布局 | 修改后调用＋布局 | 修改后首次布局 |
+| --- | ---: | ---: | ---: |
+| 首切歌单 | 36.65–50.78 ms | 9.66–10.04 ms | 1.41–1.58 ms |
+| 首切曲库 | 39.00–44.53 ms | 6.19–6.23 ms | 0.53–0.56 ms |
+
+最终两轮共八次主页模式切换均无集合 Reset／Replace、无新增歌曲卡片、复用原来的九张可见卡片，占位创建与借用增量均为 0；仅对列表尾部增删。最大 UI 心跳间隔为 11.42–18.23 ms。四个未打开的桌面页预热成功，导航前 `Loaded` 次数均为 0；目录首次布局从初始基线约 37.55 ms 降至最终约 5 ms，设置页从约 21.68 ms 降至约 3 ms。
+
+工具与复测方法见 [NativeNavigation](Tools/Diagnostics/NativeNavigation/README.md)。原始结果位于 `artifacts/native-navigation-row-before-a-76caee3b/`、`artifacts/native-navigation-row-before-b-070d982e/`、`artifacts/native-navigation-slots-quiet-a-4dc5e161/` 和 `artifacts/native-navigation-slots-quiet-b-d75b97ca/`；最后一处包含 `final-two-run-summary.csv`。这些是 UI 调度与布局测量，帧回调不代表 GPU 呈现时间或 Android 实机帧率。
+
+以下 21 组共享逻辑与绘制回归全部通过：
+
+```sh
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- mobile-player-gesture song-details-layout scroll-gutters arc-responsive surface-motion browse-loading browse-placeholder-lifecycle browse-entry browse-rows song-card-row-reuse recommendation-paging-layout cover-play-feedback playback-region-motion panel-paging cover-preload catalog-memory presentation-retention surface-geometry arc-motion context-actions context-menus-layout
+```
+
+新增检查覆盖真实列表 Reset 后保留控件、正常切换无 Reset、同一行更新标题与实际封面像素、旧快捷播放取消、隐藏与分离时零新歌曲索引、重新激活只读最新切片、小型密度、手机列数、End 键、页码回收隔离，以及 24,000 首曲库的首屏扩展。图标检查包含内部 Path 与所有祖先变换，尺寸过渡覆盖动画末帧。冷加载用新到达的歌单阻塞查询；已预热目标则验证零占位借用。比例检查保留封面正方形断言，允许原生布局舍入的一物理像素误差。
+
+桌面 Release 编译为 0 警告、0 错误。最终 Android ARM64 包为 `artifacts/android-arm64-20261118-000721-1cdbff34/MajMusic-android-arm64.apk`，38.92 MiB，通过签名、单 ARM64 ABI 与 16 KB 对齐检查；未安装或进行 Android 实机验证。

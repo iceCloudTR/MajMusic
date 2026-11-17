@@ -46,3 +46,7 @@ dotnet workload install android
 脚本自动查找 .NET SDK、Android SDK 与兼容的 Android Studio、Unity 或独立 JDK，构建并安装独立测试包 `com.icecloud.majmusic.tests`。测试使用随机值检查写入、读取、跨实例保留、更新和删除，共 12 项原生 Keystore 断言；完成后卸载测试包。日志保存在 `artifacts/android-credentials-*`。
 
 `-CredentialStoreSource <旧版源码路径>` 可链接旧实现做失败对照，`-KeepInstalled` 保留测试包用于检查。工具位置可通过 `-DotNet`、`-AndroidSdkDirectory` 和 `-JavaSdkDirectory` 指定。
+
+# Windows 切页测量
+
+[NativeNavigation](Diagnostics/NativeNavigation/README.md) 使用生成曲库和独立 Windows 窗口，记录切页调用、首次布局、界面帧回调及调度间隔，自动输出报告并关闭窗口。每次构建使用独立输出目录，可对照页面预热、卡片复用与切换前后的耗时。
