@@ -294,6 +294,9 @@
                                 <arc:Button Grid.Row="3" Grid.Column="1" Content="清理本地音乐" Command="{Binding CleanupLocalMediaCommand}" />
                             </Grid>
                         </Border>
+                        <Border Classes="card" Padding="10">
+                            <views:AppUpdateSettings />
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

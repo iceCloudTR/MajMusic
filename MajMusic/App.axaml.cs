@@ -6,6 +6,7 @@ using MajMusic.Core.Playback;
 using MajMusic.Audio.Desktop;
 using MajMusic.Infrastructure.Application;
 using MajMusic.Infrastructure.Metadata;
+using MajMusic.Infrastructure.Network;
 using MajMusic.Preview;
 using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
@@ -47,7 +48,8 @@ namespace MajMusic
                     Path.Combine(workspace.DataDirectory, "AudioMetadata"));
                 var collections = new MajCollectionExchange(workspace);
                 var directories = new LocalDirectoryService(workspace, collections);
-                var viewModel = new MainViewModel(workspace, playback, collections: collections, metadata: metadata, directories: directories);
+                var viewModel = new MainViewModel(workspace, playback, collections: collections, metadata: metadata, directories: directories,
+                    releases: new GitHubAppReleaseSource());
                 var mobilePreview = Array.Exists(desktop.Args ?? [], argument => argument == "--mobile-preview");
                 desktop.MainWindow = new MainWindow(viewModel, workspace, mobilePreview);
             }

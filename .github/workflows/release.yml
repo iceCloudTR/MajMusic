@@ -1,0 +1,173 @@
+name: Release MajMusic
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version (for example, 0.1.0)
+        required: true
+        type: string
+      publish:
+        description: Publish a GitHub Release after all packages pass
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: majmusic-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      android-code: ${{ steps.version.outputs.android-code }}
+    steps:
+      - name: Validate release inputs
+        id: version
+        env:
+          VERSION: ${{ inputs.version }}
+          PUBLISH: ${{ inputs.publish }}
+        shell: bash
+        run: |
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$ ]]; then
+            echo "::error::Enter a numeric version such as 0.1.0."
+            exit 1
+          fi
+          code=$((BASH_REMATCH[1] * 1000000 + BASH_REMATCH[2] * 1000 + BASH_REMATCH[3]))
+          if (( code < 1 || code > 2100000000 )); then
+            echo "::error::Version must produce an Android version code between 1 and 2100000000."
+            exit 1
+          fi
+          if [[ "$PUBLISH" == "true" && "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Publish from the main branch."
+            exit 1
+          fi
+          printf 'version=%s\nandroid-code=%s\n' "$VERSION" "$code" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: Windows x64
+    needs: validate
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Build Windows package
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $renderer = ./Tools/Prepare-MajViewRuntime.ps1 -ReleaseRuntime
+          ./Tools/Publish-Windows.ps1 -DotNet dotnet -Version $env:VERSION -MajViewDirectory $renderer.Directory
+          New-Item -ItemType Directory -Path dist | Out-Null
+          $package = Get-Item -Path 'artifacts/win-x64-self-contained-*/MajMusic-win-x64-self-contained.zip'
+          Copy-Item -LiteralPath $package.FullName -Destination 'dist/MajMusic-win-x64.zip'
+      - uses: actions/upload-artifact@v6
+        with:
+          name: MajMusic-win-x64
+          path: dist/MajMusic-win-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  android:
+    name: Android ARMv7 + ARM64
+    needs: validate
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android workload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet workload install android
+      - name: Build signed APKs
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          VERSION_CODE: ${{ needs.validate.outputs.android-code }}
+          PUBLISH: ${{ inputs.publish }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          MAJMUSIC_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MAJMUSIC_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          MAJMUSIC_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releaseSigning = $env:PUBLISH -eq 'true'
+          $renderer = ./Tools/Prepare-MajViewRuntime.ps1 -ReleaseRuntime
+          New-Item -ItemType Directory -Path dist | Out-Null
+          try {
+              if ($releaseSigning) {
+                  if (!$env:ANDROID_KEYSTORE_BASE64) {
+                      throw 'Set ANDROID_KEYSTORE_BASE64 to publish the release-signed APKs.'
+                  }
+                  $env:MAJMUSIC_ANDROID_KEYSTORE = Join-Path $env:RUNNER_TEMP 'majmusic-release.keystore'
+                  [IO.File]::WriteAllBytes($env:MAJMUSIC_ANDROID_KEYSTORE, [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64))
+              }
+              foreach ($rid in 'android-arm', 'android-arm64') {
+                  ./Tools/Publish-Android.ps1 -DotNet dotnet -RuntimeIdentifier $rid -Version $env:VERSION -VersionCode $env:VERSION_CODE `
+                      -AndroidSdkDirectory $env:ANDROID_HOME -JavaSdkDirectory $env:JAVA_HOME -MajViewDirectory $renderer.Directory -ReleaseSigning:$releaseSigning
+                  $package = Get-Item -Path "artifacts/$rid-*/MajMusic-$rid.apk"
+                  Copy-Item -LiteralPath $package.FullName -Destination "dist/MajMusic-$rid.apk"
+              }
+          } finally {
+              if ($env:MAJMUSIC_ANDROID_KEYSTORE) {
+                  Remove-Item -LiteralPath $env:MAJMUSIC_ANDROID_KEYSTORE -ErrorAction SilentlyContinue
+              }
+          }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: MajMusic-android
+          path: dist/*.apk
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    if: inputs.publish
+    needs: [validate, windows, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: MajMusic-*
+          path: dist
+          merge-multiple: true
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        working-directory: dist
+        shell: bash
+        run: |
+          files=(MajMusic-win-x64.zip MajMusic-android-arm.apk MajMusic-android-arm64.apk)
+          for file in "${files[@]}"; do
+            if [[ ! -s "$file" ]]; then
+              echo "::error::Missing release package $file"
+              exit 1
+            fi
+          done
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          gh release create "v$VERSION" "${files[@]}" SHA256SUMS.txt --draft --title "MajMusic $VERSION" --target "$GITHUB_SHA" --generate-notes
+          gh release edit "v$VERSION" --draft=false --latest

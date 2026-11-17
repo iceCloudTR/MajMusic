@@ -17,6 +17,7 @@ namespace MajMusic.Tests
                 ("account-preferences", AccountPreferencesTests.RunAsync, true),
                 ("cloud-collection-preferences", CloudCollectionPreferenceTests.RunAsync, true),
                 ("online-preferences", OnlinePreferencesTests.RunAsync, true),
+                ("app-updates", AppUpdateTests.RunAsync, true),
                 ("portable-data", PortableDataDirectoryTests.RunAsync, true),
                 ("majview-runtime", MajViewRuntimeTests.RunAsync, true),
                 ("majview-session", MajViewSessionTests.RunAsync, true),

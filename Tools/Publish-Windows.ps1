@@ -7,6 +7,8 @@ Publishes a Windows x64 application and distribution ZIP with .NET 10 and MajVie
 Specifies the dotnet command or SDK executable path.
 .PARAMETER MajViewDirectory
 Specifies a local MajView build folder with its runtime.json manifest.
+.PARAMETER Version
+Specifies the distributed application version.
 .PARAMETER SkipZip
 Produces the complete application folder without compressing it.
 .PARAMETER KeepBuild
@@ -17,6 +19,7 @@ Keeps this run's intermediate build directory for diagnostics.
 param(
     [string] $DotNet = '',
     [string] $MajViewDirectory = '',
+    [string] $Version = '',
     [switch] $SkipZip,
     [switch] $KeepBuild
 )
@@ -73,6 +76,9 @@ $publishArguments = @(
     '--artifacts-path', $buildDirectory,
     '-o', $applicationDirectory
 )
+if ($Version) {
+    $publishArguments += "-p:Version=$Version"
+}
 & $DotNet @publishArguments
 if ($LASTEXITCODE -ne 0) {
     throw 'Windows publish failed.'

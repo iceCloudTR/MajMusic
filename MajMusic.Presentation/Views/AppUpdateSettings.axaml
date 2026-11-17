@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ac="using:Avalonia.Data.Converters"
+             xmlns:vm="using:MajMusic.Presentation.ViewModels"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             x:Class="MajMusic.Presentation.Views.AppUpdateSettings"
+             x:DataType="vm:MainViewModel">
+    <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <StackPanel VerticalAlignment="Center" Spacing="3">
+                <TextBlock Text="应用更新" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding AppVersionText}" Classes="muted" FontSize="12" />
+            </StackPanel>
+            <arc:Button x:Name="CheckAppUpdateButton" Grid.Column="1" Content="检查更新" MinHeight="44" Command="{Binding CheckAppUpdateCommand}" />
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8"
+              IsVisible="{Binding AppUpdateStatus, Converter={x:Static ac:StringConverters.IsNotNullOrEmpty}}">
+            <TextBlock Text="{Binding AppUpdateStatus}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <HyperlinkButton Grid.Column="1" Content="前往下载" MinHeight="44" NavigateUri="{Binding AvailableReleasePage}"
+                             IsVisible="{Binding AvailableReleasePage, Converter={x:Static ac:ObjectConverters.IsNotNull}}" />
+        </Grid>
+    </StackPanel>
+</UserControl>

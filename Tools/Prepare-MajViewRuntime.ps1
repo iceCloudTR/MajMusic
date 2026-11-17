@@ -3,7 +3,8 @@
 [CmdletBinding()]
 param(
     [string] $SourceDirectory = '',
-    [string] $CustomDirectory = ''
+    [string] $CustomDirectory = '',
+    [switch] $ReleaseRuntime
 )
 
 Set-StrictMode -Version Latest
@@ -33,13 +34,36 @@ function Read-RuntimeManifest($Path) {
 }
 
 $defaultCustomDirectory = Join-Path $PSScriptRoot '../.work/majview-runtime-custom'
-if (!$CustomDirectory -and !$SourceDirectory -and (Test-Path -LiteralPath (Join-Path $defaultCustomDirectory 'runtime.json') -PathType Leaf)) {
-    $CustomDirectory = $defaultCustomDirectory
+if (!$ReleaseRuntime -and !$CustomDirectory -and !$SourceDirectory) {
+    if (Test-Path -LiteralPath (Join-Path $defaultCustomDirectory 'runtime.json') -PathType Leaf) {
+        $CustomDirectory = $defaultCustomDirectory
+    } else {
+        $ReleaseRuntime = $true
+    }
 }
+if ($ReleaseRuntime) {
+    $patch = Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'MajViewEmbedded.patch') -Algorithm SHA256
+    $patchId = $patch.Hash.Substring(0, 12).ToLowerInvariant()
+    $releaseAsset = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'MajViewReleaseRuntime.json') -Raw | ConvertFrom-Json
+    if (!$releaseAsset.revision.EndsWith("-$patchId", [StringComparison]::Ordinal)) {
+        throw 'The pinned release renderer does not match the checked-in MajView patch.'
+    }
+    $releaseDirectory = [IO.Path]::GetFullPath($defaultCustomDirectory)
+    $releaseArchive = Join-Path $PSScriptRoot "../ThirdParty/MajView/$($releaseAsset.file)"
+    if ((Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash -ne $releaseAsset.sha256) {
+        throw 'The checked-in MajView release archive has an unexpected SHA-256.'
+    }
+    Expand-Archive -LiteralPath $releaseArchive -DestinationPath $releaseDirectory -Force
+    $CustomDirectory = $releaseDirectory
+}
+
 if ($CustomDirectory) {
     $directory = (Resolve-Path -LiteralPath $CustomDirectory).ProviderPath
     $manifestPath = Join-Path $directory 'runtime.json'
     $manifest = Read-RuntimeManifest $manifestPath
+    if ($ReleaseRuntime -and ($manifest.revision -ne $releaseAsset.revision -or !$manifest.embeddedViewport)) {
+        throw 'The pinned MajView package does not contain the expected embedded renderer.'
+    }
     foreach ($file in $manifest.files) {
         if (!(Test-RuntimeFile (Join-Path $directory $file.name) $file)) {
             throw "Custom MajView runtime verification failed: $($file.name)."
@@ -51,7 +75,6 @@ if ($CustomDirectory) {
 $manifestPath = Join-Path $PSScriptRoot 'MajViewRuntime.json'
 $manifest = Read-RuntimeManifest $manifestPath
 $directory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../.work/majview-runtime'))
-$sourceUrl = "https://raw.githubusercontent.com/TeamMajdata/MajdataNet/$($manifest.revision)/public/WebGLBuild"
 New-Item -Path $directory -ItemType Directory -Force | Out-Null
 
 # Concurrent Windows and Android publishes share this cache.
@@ -74,11 +97,7 @@ try {
 
         $temporary = "$path.tmp"
         try {
-            if ($SourceDirectory) {
-                Copy-Item -LiteralPath (Join-Path $SourceDirectory $file.name) -Destination $temporary -Force
-            } else {
-                Invoke-WebRequest -UseBasicParsing -Uri "$sourceUrl/$($file.name)" -OutFile $temporary -TimeoutSec 120
-            }
+            Copy-Item -LiteralPath (Join-Path $SourceDirectory $file.name) -Destination $temporary -Force
             if (!(Test-RuntimeFile $temporary $file)) {
                 throw "MajView runtime verification failed: $($file.name)."
             }

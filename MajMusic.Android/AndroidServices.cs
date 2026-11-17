@@ -70,7 +70,8 @@ namespace MajMusic.Android
                 Path.Combine(directory, "AudioMetadata"));
             var collections = new MajCollectionExchange(_workspace, documentStorage: documents);
             var directories = new LocalDirectoryService(_workspace, collections);
-            _viewModel = new MainViewModel(_workspace, _playback, collections: collections, metadata: metadata, directories: directories);
+            _viewModel = new MainViewModel(_workspace, _playback, collections: collections, metadata: metadata, directories: directories,
+                releases: new GitHubAppReleaseSource());
             _viewModel.EnsureFileAccessAsync = AndroidStorageAccess.Instance.EnsureAccessAsync;
             _viewModel.RequestAllFilesAccessAsync = AndroidStorageAccess.Instance.RequestAllFilesAccessAsync;
             _viewModel.ResolveFileSystemPath = AndroidStorageAccess.Instance.ResolveFileSystemPath;

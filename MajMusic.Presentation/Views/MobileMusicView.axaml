@@ -290,6 +290,9 @@
                             <arcm:Button Content="清理本地音乐" Variant="Tinted" Command="{Binding CleanupLocalMediaCommand}" />
                         </StackPanel>
                     </Border>
+                    <Border Classes="mobilePanel">
+                        <views:AppUpdateSettings />
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
         </DataTemplate>

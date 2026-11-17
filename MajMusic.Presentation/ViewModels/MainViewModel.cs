@@ -98,8 +98,10 @@ namespace MajMusic.Presentation.ViewModels
         /// <param name="collections">The optional platform-independent Maj collection exchange.</param>
         /// <param name="metadata">The optional local audio metadata provider owned by this view.</param>
         /// <param name="directories">The optional independent local-directory scanning service.</param>
+        /// <param name="releases">The optional public application release source.</param>
         public MainViewModel(IMusicWorkspace workspace, PlaybackService playback, Action<Action>? dispatcher = null,
-            IMajCollectionExchange? collections = null, ITrackMetadataProvider? metadata = null, ILocalDirectoryService? directories = null)
+            IMajCollectionExchange? collections = null, ITrackMetadataProvider? metadata = null, ILocalDirectoryService? directories = null,
+            IAppReleaseSource? releases = null)
         {
             ArgumentNullException.ThrowIfNull(workspace);
             ArgumentNullException.ThrowIfNull(playback);
@@ -118,6 +120,8 @@ namespace MajMusic.Presentation.ViewModels
             OpenPlaylistCommand = CreateCommand(OpenPlaylistAsync, () => SelectedPlaylist is not null);
             ShowAllCommand = CreateCommand(ShowAllAsync);
             SaveSettingsCommand = CreateCommand(SaveSettingsAsync);
+            CheckAppUpdateCommand = new AsyncCommand(() => RunTrackedAsync(() => CheckAppUpdateAsync(releases!)),
+                _ => AppUpdateStatus = "无法检查更新，请稍后重试", () => releases is not null && !_isDisposing);
             SynchronizeCommand = CreateCommand(SynchronizeAsync, () => OnlineEnabled);
             DownloadCommand = CreateCommand(DownloadAsync, () => OnlineEnabled && SelectedTrack is not null);
             ClearCacheCommand = CreateCommand(ClearCacheAsync);
@@ -1558,7 +1562,7 @@ namespace MajMusic.Presentation.ViewModels
                 MoreRecommendationsCommand, PreviousRecommendationPageCommand, NextRecommendationPageCommand,
                 PreviousLibraryPageCommand, NextLibraryPageCommand, NewAccountCommand,
                 SaveAccountCommand, RemoveAccountCommand, NewDirectoryCommand, SaveDirectoryCommand, ScanDirectoryCommand, RemoveDirectoryCommand,
-                RefreshOutputDevicesCommand, SaveAudioSettingsCommand, SaveMediaStorageCommand, RequestFileAccessCommand, TogglePlayPauseCommand,
+                RefreshOutputDevicesCommand, SaveAudioSettingsCommand, SaveMediaStorageCommand, RequestFileAccessCommand, CheckAppUpdateCommand, TogglePlayPauseCommand,
                 ToggleShuffleCommand, CycleRepeatModeCommand,
                 PreviousPlaylistPageCommand, NextPlaylistPageCommand, PreviousDirectoryPageCommand, NextDirectoryPageCommand,
                 ShowRecommendationsModeCommand, ShowPlaylistsModeCommand, ShowLibraryModeCommand, BeginSearchCommand, CancelSearchCommand })

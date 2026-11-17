@@ -1,3 +1,9 @@
+# GitHub 发布
+
+打开 **Actions → Release MajMusic → Run workflow**，填写 `version`（例如 `0.1.0`）。构建 Windows x64、Android ARMv7 和 Android ARM64。启用 `publish` 时，全部包通过后发布到同一个 `v<version>` Release。关闭 `publish` 可只生成 Actions 测试产物。
+
+正式 APK 使用同一套 Android 签名。在仓库的 Actions Secrets 配置 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEY_ALIAS`、`ANDROID_STORE_PASSWORD` 和 `ANDROID_KEY_PASSWORD`。
+
 # Windows 发布
 
 在 Windows 安装 .NET 10 SDK 后，从仓库根目录运行：
@@ -10,7 +16,7 @@
 
 每次发布在 `artifacts` 下创建独立目录；分发生成的 ZIP 或完整 `app` 文件夹即可。脚本只包含 Windows x64 依赖，保留完整 LibVLC 插件，排除调试符号和本地运行数据，并生成大小清单。成功后自动清理本次中间产物，`-KeepBuild` 可保留它们用于排查。
 
-# Android ARM64 发布
+# Android 发布
 
 准备 .NET 10 SDK、Android workload、Android SDK 36 与 JDK 17 或 21：
 
@@ -19,11 +25,11 @@ dotnet workload install android
 ./Tools/Publish-Android.ps1
 ```
 
-脚本自动查找工具，也可通过 `-DotNet`、`-AndroidSdkDirectory` 和 `-JavaSdkDirectory` 指定位置。生成的 `artifacts/android-arm64-*/MajMusic-android-arm64.apk` 使用 Android SDK 标准开发密钥签名，仅包含 `arm64-v8a`，内置 .NET 10 和 MajView。脚本检查签名与包对齐。
+脚本默认生成 ARM64 APK，传入 `-RuntimeIdentifier android-arm` 可生成 ARMv7 APK。两种 APK 都内置 .NET 10 和 MajView，脚本会检查签名和对齐。
 
 # MajView 构建资源
 
-发布脚本会准备并校验 MajView 渲染器，存入 `.work/majview-runtime` 重复使用。使用 Rider 调试预览前可运行 `./Tools/Prepare-MajViewRuntime.ps1`；已有一套相同版本的渲染文件时，可以传入 `-SourceDirectory <目录>`。
+发布脚本校验仓库内的 MajView 构建压缩包，并将渲染器内置到 MajMusic 应用。使用 Rider 调试预览前可运行 `./Tools/Prepare-MajViewRuntime.ps1`。
 
 定制版构建输出到 `.work/majview-runtime-custom`，含四个 `Build.*` 文件与 `runtime.json`。发布脚本优先使用这个目录，也接受 `-MajViewDirectory <目录>` 指定经校验的构建。
 
