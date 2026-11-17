@@ -68,6 +68,7 @@ namespace MajMusic.Tests
                 ("headless", HeadlessTests.RunAsync, true),
                 ("alignment", AlignmentTests.RunAsync, true),
                 ("surface-geometry", SurfaceGeometryTests.RunAsync, true),
+                ("scroll-gutters", ScrollGutterLayoutTests.RunAsync, true),
                 ("arc-responsive", ArcResponsiveLayoutTests.RunAsync, true),
                 ("arc-motion", ArcMotionTests.RunAsync, true),
                 ("appearance", AppearanceTests.RunAsync, true),

@@ -48,6 +48,7 @@ namespace MajMusic.Tests
                 var firstParent = (card.Parent as Control)?.Name;
                 Pump(window);
                 var opening = flight.MoveUpdate;
+                var targetBounds = BoundsIn(destination, window);
                 TestAssert.True(!opening.IsCompleted && ReferenceEquals(card.Parent, flight)
                     && source.Content is null && destination.Content is null && card.Bounds.Size == original.Size,
                     $"Opening details must immediately transfer the original, unchanged-size card to the live flight layer. " +
@@ -55,14 +56,18 @@ namespace MajMusic.Tests
                     $"sourceOwns={ReferenceEquals(source.Content, card)}, destinationOwns={ReferenceEquals(destination.Content, card)}, " +
                     $"original={original}, card={BoundsIn(card, window)}, source={source.Bounds}, destination={destination.Bounds}, " +
                     $"flight={flight.Bounds}, visible={flight.IsEffectivelyVisible}, level={ArcMotion.GetEffectiveLevel(flight)}.");
+                TestAssert.True(targetBounds.Width > original.Width + 20 && targetBounds.Height > original.Height + 20,
+                    "The real expanded layout must provide a wider, taller left slot instead of forcing the original sidebar size.");
                 clock.Advance(TimeSpan.FromMilliseconds(180), TimeSpan.FromMilliseconds(5));
                 Pump(window);
                 var middle = BoundsIn(card, window);
                 var matrix = card.RenderTransform?.Value ?? Matrix.Identity;
                 TestAssert.True(!opening.IsCompleted && middle.X < original.X - 40 && middle.X > destination.TranslatePoint(default, window)!.Value.X
-                    && Math.Abs(middle.Y - original.Y) < .1 && middle.Size == original.Size
+                    && Math.Abs(middle.Y - original.Y) < .1
+                    && middle.Width > original.Width && middle.Width < targetBounds.Width
+                    && middle.Height > original.Height && middle.Height < targetBounds.Height
                     && matrix.M11 == 1 && matrix.M22 == 1 && matrix.M12 == 0 && matrix.M21 == 0,
-                    "The real mid-flight card must move left at its original Y and size, using translation without rotation or scale.");
+                    "The real mid-flight card must move left at its original Y while laying out an intermediate width and height, without rotating or scaling text.");
                 TestAssert.Equal(1, main.GetVisualDescendants().OfType<Border>().Count(control => control.Name == "LibraryDetails"),
                     "The flight must move the existing card rather than introduce a duplicate interactive tree.");
 
@@ -71,13 +76,15 @@ namespace MajMusic.Tests
                 var reversal = flight.MoveUpdate;
                 var reversedStart = BoundsIn(card, window);
                 TestAssert.True(opening.IsCompleted && !await opening && !reversal.IsCompleted
-                    && Math.Abs(reversedStart.X - middle.X) < .1 && Math.Abs(reversedStart.Y - middle.Y) < .1,
-                    "A fast reversal must retire the old move and begin at the exact currently painted position.");
+                    && Math.Abs(reversedStart.X - middle.X) < .1 && Math.Abs(reversedStart.Y - middle.Y) < .1
+                    && Math.Abs(reversedStart.Width - middle.Width) < .1 && Math.Abs(reversedStart.Height - middle.Height) < .1,
+                    "A fast reversal must retire the old move and begin at the exact currently painted position and size.");
                 clock.Advance(TimeSpan.FromMilliseconds(400), TimeSpan.FromMilliseconds(5));
                 Pump(window);
                 TestAssert.True(await reversal.WaitAsync(TimeSpan.FromSeconds(3)) && ReferenceEquals(source.Content, card)
                     && ReferenceEquals(card.Parent, source) && destination.Content is null && flight.Children.Count == 0
-                    && card.Width.Equals(originalWidth) && card.Height.Equals(originalHeight) && ReferenceEquals(card.RenderTransform, originalTransform),
+                    && card.Width.Equals(originalWidth) && card.Height.Equals(originalHeight) && ReferenceEquals(card.RenderTransform, originalTransform)
+                    && BoundsIn(card, window) == original,
                     "The reversed flight must return the same card and restore its original layout expressions and resting transform.");
 
                 model.OpenExpandedSongDetailsCommand.Execute(null);
@@ -87,14 +94,15 @@ namespace MajMusic.Tests
                 Pump(window);
                 TestAssert.True(await completeOpening.WaitAsync(TimeSpan.FromSeconds(3)) && ReferenceEquals(destination.Content, card)
                     && ReferenceEquals(card.Parent, destination) && source.Content is null && flight.Children.Count == 0
-                    && BoundsIn(card, window).Size == original.Size && Math.Abs(BoundsIn(card, window).Y - original.Y) < .1,
-                    "A complete expansion must land the original card in the left slot without resizing it or leaving an overlay child.");
+                    && BoundsIn(card, window) == BoundsIn(destination, window) && Math.Abs(BoundsIn(card, window).Y - original.Y) < .1,
+                    "A complete expansion must land the original card flush with the wider, taller left slot without leaving an overlay child.");
 
                 ArcMotion.SetLevel(flight, ArcMotionLevel.Off);
                 model.CloseExpandedSongDetailsCommand.Execute(null);
                 Pump(window);
                 TestAssert.True(flight.MoveUpdate.IsCompleted && await flight.MoveUpdate && ReferenceEquals(source.Content, card)
-                    && ReferenceEquals(card.Parent, source) && destination.Content is null && flight.Children.Count == 0,
+                    && ReferenceEquals(card.Parent, source) && destination.Content is null && flight.Children.Count == 0
+                    && BoundsIn(card, window) == original,
                     "Motion Off must place the real card directly in its requested slot without retaining a driver or orphan.");
 
                 ArcMotion.SetLevel(flight, ArcMotionLevel.Full);

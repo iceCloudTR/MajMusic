@@ -1,6 +1,7 @@
 #nullable enable
 
 using Avalonia;
+using Avalonia.Markup.Xaml.Styling;
 using MajMusic.Core.Models;
 using TKCode.Arc;
 using TKCode.Arc.Localization;
@@ -45,7 +46,23 @@ namespace MajMusic.Presentation.Theme
         {
             return builder.UseArc(arc => arc.UseArcControls().UseArcMobile()
                 .UseLanguages(LanguageTags.ZhCN, [LanguageTags.ZhCN, LanguageTags.EnUS])
-                .WithTheme(theme => theme.Appearance(appearance).Accent(ArcAccentPreset.Violet).MotionLevel(motion).Preset(Palette)));
+                .WithTheme(theme => theme.Appearance(appearance).Accent(ArcAccentPreset.Violet).MotionLevel(motion).Preset(Palette)))
+                .AfterSetup(_ => InstallScrollGutters());
+        }
+
+        /// <summary>Applies the same reserved scroll tracks to every window, mobile surface and popup root.</summary>
+        private static void InstallScrollGutters()
+        {
+            if (Application.Current is not { } application)
+            {
+                return;
+            }
+
+            var source = new Uri("avares://MajMusic.Presentation/Styles/ScrollGutterStyles.axaml");
+            if (!application.Styles.OfType<StyleInclude>().Any(style => style.Source == source))
+            {
+                application.Styles.Add(new StyleInclude(source) { Source = source });
+            }
         }
 
         /// <summary>Applies a persisted appearance while preserving the registered palette and motion policy.</summary>

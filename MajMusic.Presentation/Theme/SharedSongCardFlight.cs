@@ -31,7 +31,11 @@ namespace MajMusic.Presentation.Theme
         private Point _start;
         /// <summary>Retains the current segment's target in flight-layer coordinates.</summary>
         private Point _target;
-        /// <summary>Freezes the actual arranged card size for the entire flight.</summary>
+        /// <summary>Retains the actual painted card size at the beginning of the current segment.</summary>
+        private Size _startSize;
+        /// <summary>Retains the destination slot's available content size for the current segment.</summary>
+        private Size _targetSize;
+        /// <summary>Measures only the moving card at its current interpolated size.</summary>
         private Size _flightSize;
         /// <summary>Retains the current eased segment progress.</summary>
         private double _progress;
@@ -62,7 +66,7 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Gets completion of the latest move; false indicates supersession, resizing, or detachment.</summary>
         public Task<bool> MoveUpdate => _moveUpdate;
 
-        /// <summary>Assigns the real card and its two reserved, equally sized, padding-free slots on the UI thread.</summary>
+        /// <summary>Assigns the real card and its two reserved slots, which may have different sizes, on the UI thread.</summary>
         /// <param name="sourceSlot">The arranged ordinary-details slot, which keeps its size while empty.</param>
         /// <param name="destinationSlot">The arranged expanded-details slot, which keeps its size while empty.</param>
         /// <param name="card">The existing card, initially in either slot or unattached.</param>
@@ -128,9 +132,11 @@ namespace MajMusic.Presentation.Theme
             var start = _isFlying ? CurrentPosition : _card.TranslatePoint(default, this);
             var margin = _isFlying ? _originalMargin : _card.Margin;
             var target = slot.TranslatePoint(new Point(slot.Padding.Left + margin.Left, slot.Padding.Top + margin.Top), this);
-            var size = _isFlying ? _flightSize : _card.Bounds.Size;
+            var size = _card.Bounds.Size;
+            var targetSize = new Size(Math.Max(0, slot.Bounds.Width - slot.Padding.Left - slot.Padding.Right - margin.Left - margin.Right),
+                Math.Max(0, slot.Bounds.Height - slot.Padding.Top - slot.Padding.Bottom - margin.Top - margin.Bottom));
             if (_motion is null || !IsEffectivelyVisible || ArcMotion.GetEffectiveLevel(this) != ArcMotionLevel.Full
-                || start is null || target is null || !IsUsable(size) || !IsUsable(slot.Bounds.Size))
+                || start is null || target is null || !IsUsable(size) || !IsUsable(targetSize))
             {
                 PlaceInRequestedSlot();
                 _moveUpdate = Task.FromResult(true);
@@ -139,6 +145,8 @@ namespace MajMusic.Presentation.Theme
 
             _start = start.Value;
             _target = target.Value;
+            _startSize = size;
+            _targetSize = targetSize;
             _flightSize = size;
             _progress = 0;
             if (!_isFlying)
@@ -219,7 +227,7 @@ namespace MajMusic.Presentation.Theme
         private Point CurrentPosition => new(_start.X + (_target.X - _start.X) * _progress,
             _start.Y + (_target.Y - _start.Y) * _progress);
 
-        /// <summary>Temporarily gives the one real card a frozen rectangle in the overlay.</summary>
+        /// <summary>Temporarily gives the one real card an independently arranged rectangle in the overlay.</summary>
         private void TakeCardForFlight()
         {
             var card = _card!;
@@ -236,7 +244,7 @@ namespace MajMusic.Presentation.Theme
             Children.Add(card);
         }
 
-        /// <summary>Interpolates only translation, without changing the card's layout or its scale.</summary>
+        /// <summary>Interpolates translation and the real card's layout size without scaling its text or artwork.</summary>
         /// <param name="value">The eased progress of the current uninterrupted segment.</param>
         private void ApplyProgress(double value)
         {
@@ -246,6 +254,12 @@ namespace MajMusic.Presentation.Theme
                 var position = CurrentPosition;
                 _translation.X = position.X;
                 _translation.Y = position.Y;
+                _flightSize = new Size(_startSize.Width + (_targetSize.Width - _startSize.Width) * _progress,
+                    _startSize.Height + (_targetSize.Height - _startSize.Height) * _progress);
+                _card!.SetCurrentValue(WidthProperty, _flightSize.Width);
+                _card.SetCurrentValue(HeightProperty, _flightSize.Height);
+                InvalidateMeasure();
+                InvalidateArrange();
             }
         }
 

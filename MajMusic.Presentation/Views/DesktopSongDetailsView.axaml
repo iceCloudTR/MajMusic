@@ -30,11 +30,11 @@
             <Setter Property="BorderThickness" Value="1" />
         </Style>
     </UserControl.Styles>
-    <Grid x:Name="DesktopDetailsColumns" RowDefinitions="44,*,28" RowSpacing="10" ColumnSpacing="12">
+    <Grid x:Name="DesktopDetailsColumns" RowDefinitions="44,*" RowSpacing="10" ColumnSpacing="12">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="0.65*" MinWidth="180" MaxWidth="280" />
             <ColumnDefinition Width="*" MinWidth="190" />
-            <ColumnDefinition Width="0.7*" MinWidth="180" MaxWidth="300" />
+            <ColumnDefinition Width="0.65*" MinWidth="180" MaxWidth="280" />
         </Grid.ColumnDefinitions>
         <arc:Button Grid.Column="0" Classes="quiet" Content="‹ 返回" Command="{Binding CloseExpandedSongDetailsCommand}" HorizontalAlignment="Left" MinHeight="44" />
         <Grid Grid.Column="1" ColumnDefinitions="Auto,Auto,*,44" ColumnSpacing="6">
@@ -48,8 +48,8 @@
                 <Path Data="M 3,3 L 13,13 M 13,3 L 3,13" Stroke="{DynamicResource MusicTextBrush}" StrokeThickness="1.7" Width="16" Height="16" Stretch="None" />
             </arc:Button>
         </Grid>
-        <ContentControl x:Name="DesktopSongSummarySlot" Grid.Row="1" Width="220" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
-        <Border x:Name="DesktopDiscussionPane" Grid.Row="1" Grid.RowSpan="2" Grid.Column="1" Classes="card" Padding="12">
+        <ContentControl x:Name="DesktopSongSummarySlot" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+        <Border x:Name="DesktopDiscussionPane" Grid.Row="1" Grid.Column="1" Classes="card" Padding="12">
             <Grid>
                 <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="6" IsVisible="{Binding !IsSongChartPreviewSelected}">
                     <Grid ColumnDefinitions="*,Auto">
@@ -77,7 +77,7 @@
                 </Border>
             </Grid>
         </Border>
-        <Border x:Name="DesktopComposerPane" Grid.Row="1" Grid.RowSpan="2" Grid.Column="2" Classes="card" Padding="12">
+        <Border x:Name="DesktopComposerPane" Grid.Row="1" Grid.Column="2" Classes="card" Padding="12">
             <Grid RowDefinitions="44,*" RowSpacing="8">
                 <arc:Button x:Name="SongLikeButton" MinHeight="44" Command="{Binding ToggleSongLikeCommand}" IsEnabled="{Binding CanLikeSong}" IsVisible="{Binding IsSongSocialVisible}" AutomationProperties.Name="点赞" LabelSwapMode="None">
                     <StackPanel Orientation="Horizontal" Spacing="8">

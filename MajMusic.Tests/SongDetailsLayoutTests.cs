@@ -54,6 +54,7 @@ namespace MajMusic.Tests
                     var flight = main.FindControl<SharedSongCardFlight>("DesktopSongCardFlight")!;
                     var card = main.FindControl<Border>("LibraryDetails")!;
                     var originalX = card.TranslatePoint(default, window)!.Value.X;
+                    var originalSize = card.Bounds.Size;
                     TestAssert.True(ReferenceEquals(source.Content, card), "The ordinary inspector must initially own the one existing information card.");
                     var expand = main.FindControl<Control>("DesktopExpandDetailsButton")!;
                     var actions = main.FindControl<Control>("DesktopPlaylistActions")!;
@@ -90,6 +91,7 @@ namespace MajMusic.Tests
                     TestAssert.True(!model.IsSongDetailsExpanded, "The desktop close action returns to the existing music view.");
                     TestAssert.True(ReferenceEquals(source.Content, card) && destination.Content is null,
                         "Closing expanded details must return the same card to its original sidebar slot.");
+                    AssertFillsSlot(card, source, "The returned card must fill the original sidebar slot at the current window size.");
                     Tap(window, main.FindControl<Control>("DesktopChartPreviewButton")!);
                     await flight.MoveUpdate.WaitAsync(timeout.Token);
                     await model.SongSocialUpdate.WaitAsync(timeout.Token);
@@ -106,6 +108,12 @@ namespace MajMusic.Tests
                     await flight.MoveUpdate.WaitAsync(timeout.Token);
                     Layout(window);
                     TestAssert.True(ReferenceEquals(source.Content, card), "Preview navigation must return the original card without leaving another owner behind.");
+                    AssertFillsSlot(card, source, "Returning from preview must restore the original sidebar layout rather than retain the enlarged target size.");
+                    window.Width = 1100;
+                    window.Height = 800;
+                    Layout(window);
+                    TestAssert.True(Math.Abs(card.Bounds.Width - originalSize.Width) < 1 && Math.Abs(card.Bounds.Height - originalSize.Height) < 1,
+                        "Restoring the original window after the return flight must reproduce the card's original sidebar width and height.");
 
                     window.Width = 390;
                     window.Height = 844;
@@ -172,10 +180,12 @@ namespace MajMusic.Tests
             var left = BoundsIn(summary, root);
             var middle = BoundsIn(discussion, root);
             var right = BoundsIn(composer, root);
-            TestAssert.True(left.Width > 100 && middle.Width >= 180 && right.Width >= 170
+            TestAssert.True(left.Width >= 179 && middle.Width >= 180 && right.Width >= 179
                 && left.Right <= middle.X + 1 && middle.Right <= right.X + 1
-                && Math.Abs(left.Y - middle.Y) < 1 && Math.Abs(middle.Y - right.Y) < 1,
-                "Expanded desktop details must present three simultaneous nonoverlapping columns with aligned top edges.");
+                && Math.Abs(left.Y - middle.Y) < 1 && Math.Abs(middle.Y - right.Y) < 1
+                && Math.Abs(left.Bottom - middle.Bottom) < 1 && Math.Abs(middle.Bottom - right.Bottom) < 1
+                && Math.Abs(left.Width - right.Width) < 1,
+                $"Expanded desktop details must align all three panes at the top and bottom, give both side columns equal width and avoid overlap: left={left}, middle={middle}, right={right}.");
             foreach (var pane in new[] { summary, discussion, composer })
             {
                 AssertContained(pane, root, "Every desktop pane must fit the actual expanded viewport.");
@@ -183,7 +193,7 @@ namespace MajMusic.Tests
                 TestAssert.True(bounds.X >= -1 && bounds.Y >= -1 && bounds.Right <= window.ClientSize.Width + 1 && bounds.Bottom <= window.ClientSize.Height + 1,
                     "Desktop panes must remain inside the native client area at the minimum supported window size.");
             }
-            AssertContained(Find(root, "LibraryDetails"), summary, "The relocated information card must remain fully inside its left-hand slot.");
+            AssertFillsSlot(Find(root, "LibraryDetails"), summary, "The same relocated information card must fill the enlarged left slot on all four edges.");
             var input = Find(root, "SongCommentInput");
             var send = Find(root, "PostSongCommentButton");
             var like = Find(root, "SongLikeButton");
@@ -283,6 +293,18 @@ namespace MajMusic.Tests
         /// <param name="relativeTo">The coordinate owner.</param>
         /// <returns>The translated layout rectangle.</returns>
         private static Rect BoundsIn(Control control, Control relativeTo) => new(control.TranslatePoint(default, relativeTo)!.Value, control.Bounds.Size);
+
+        /// <summary>Checks that a shared information card uses its current slot's complete arranged size after a completed move.</summary>
+        /// <param name="card">The original reparented information card.</param>
+        /// <param name="slot">The active expanded or ordinary sidebar slot.</param>
+        /// <param name="message">The intended filled-slot boundary.</param>
+        private static void AssertFillsSlot(Control card, Control slot, string message)
+        {
+            var bounds = BoundsIn(card, slot);
+            TestAssert.True(Math.Abs(bounds.X) < 1 && Math.Abs(bounds.Y) < 1
+                && Math.Abs(bounds.Right - slot.Bounds.Width) < 1 && Math.Abs(bounds.Bottom - slot.Bounds.Height) < 1,
+                message + $" card={bounds}, slot={slot.Bounds.Size}.");
+        }
 
         /// <summary>Checks complete layout containment without substituting window size for a clipped child viewport.</summary>
         /// <param name="control">The visible element under test.</param>

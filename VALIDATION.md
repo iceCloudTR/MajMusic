@@ -253,3 +253,19 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- mobile-p
 额外运行 `headless` 在原有第 114 行卡片宽高比断言失败，合成卡片为 402×203，要求宽度与两倍高度差小于 2。隔离检出改动前的 `f56a466` 后，同组在同一位置复现。该断言及卡片比例实现保持不变；对照记录位于 `artifacts/headless-baseline-evidence-f803aef9/`。
 
 最终桌面 Release 编译为 0 警告、0 错误。Android ARM64 包为 `artifacts/android-arm64-20261117-194721-4991bd3e/MajMusic-android-arm64.apk`，38.91 MiB，通过签名、单 ARM64 ABI 与 16 KB 对齐检查；未安装或进行 Android 实机验证。
+
+## 等宽侧栏、尺寸过渡与统一滚动槽
+
+2026-11-17，完整详情三栏共用同一内容行，顶部与底部齐边，左右两栏采用相同的宽度范围。原歌曲卡片在横移过程中连续调整真实布局宽高，文字不做非等比拉伸；快速反向从当前尺寸与位置接续，关闭后恢复右侧原尺寸。封面与两侧内边距一同适配扩展宽度。
+
+滚动条设置由应用全局加载，覆盖桌面、手机与独立弹出根。统一在模板外层传递 `ScrollViewer.AllowAutoHide=False`，并让内容展示器只占内容格，滚动条使用独立的列或行。列表、输入框模板原先会从父控件重新绑定自动隐藏设置，已一并处理；保留原有虚拟化、滚轮与滑块拖动。
+
+```sh
+dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- scroll-gutters song-details-layout surface-motion surface-geometry mobile-player-gesture arc-responsive
+```
+
+六组全部通过。三栏检查覆盖 1100×800 和 720×540 的齐边、等宽、卡片贴合、独立评论滚动与输入区域。实际 Arc 中间帧验证尺寸位于起点与终点之间，快切位置与尺寸连续，落槽、减少动画与退出均还原控件归属。合成截图位于 `artifacts/social-details/`，已目视检查。
+
+`scroll-gutters` 不加载 MainView 的局部样式，直接检查普通与双轴 ScrollViewer、虚拟化 ListBox、多行 TextBox、Arc Textarea 和真实 Select 弹出根。在 720／390 宽度及 125% 缩放下，内容边界不进入滚动条区域，悬停与按压不改变滚动槽；滚轮、滑块拖动及虚拟化仍有效。
+
+最终桌面 Release 编译为 0 警告、0 错误。Android ARM64 包为 `artifacts/android-arm64-20261117-204528-b985349a/MajMusic-android-arm64.apk`，38.91 MiB，通过签名、单 ARM64 ABI 与 16 KB 对齐检查；本轮未安装或进行 Android 实机验证。

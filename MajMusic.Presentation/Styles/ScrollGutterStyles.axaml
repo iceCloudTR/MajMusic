@@ -1,0 +1,12 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Set the owner too: list and editor templates bind their viewers to this attached preference. -->
+    <Style Selector=":is(TemplatedControl)">
+        <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+    </Style>
+    <!-- Arc's fallback template spans both tracks even with auto-hide disabled; restore its grid cells too. -->
+    <Style Selector=":is(ScrollViewer)[AllowAutoHide=False] /template/ ScrollContentPresenter#PART_ContentPresenter">
+        <Setter Property="Grid.ColumnSpan" Value="1" />
+        <Setter Property="Grid.RowSpan" Value="1" />
+    </Style>
+</Styles>

@@ -16,10 +16,6 @@ namespace MajMusic.Presentation.Views
         private MainViewModel? _desktopDetailsOwner;
         /// <summary>Retains the one real inspector rather than creating a second artwork and action tree.</summary>
         private Border? _desktopSongCard;
-        /// <summary>Retains the stable source slot even while its card is displayed on the left.</summary>
-        private ContentControl? _desktopSongSource;
-        /// <summary>Retains the expanded destination with the same measured sidebar width.</summary>
-        private ContentControl? _desktopSongDestination;
         /// <summary>Coalesces pane requests until inherited visibility and layout bindings have reached the destination slot.</summary>
         private long _desktopDetailsRequest;
 
@@ -27,14 +23,13 @@ namespace MajMusic.Presentation.Views
         private void InitializeDesktopSongDetails()
         {
             _desktopSongCard = this.FindControl<Border>("LibraryDetails")!;
-            _desktopSongSource = this.FindControl<ContentControl>("DesktopSidebarDetailsSlot")!;
-            _desktopSongDestination = this.FindControl<DesktopSongDetailsView>("DesktopSongDetails")!.FindControl<ContentControl>("DesktopSongSummarySlot")!;
-            this.FindControl<SharedSongCardFlight>("DesktopSongCardFlight")!.Configure(_desktopSongSource, _desktopSongDestination, _desktopSongCard);
+            var source = this.FindControl<ContentControl>("DesktopSidebarDetailsSlot")!;
+            var destination = this.FindControl<DesktopSongDetailsView>("DesktopSongDetails")!.FindControl<ContentControl>("DesktopSongSummarySlot")!;
+            this.FindControl<SharedSongCardFlight>("DesktopSongCardFlight")!.Configure(source, destination, _desktopSongCard);
             DataContextChanged += OnDesktopDetailsContextChanged;
             AttachedToVisualTree += OnDesktopDetailsAttached;
             DetachedFromVisualTree += OnDesktopDetailsDetached;
             _desktopSongCard.SizeChanged += OnDesktopSongCardSizeChanged;
-            _desktopSongSource.SizeChanged += OnDesktopSongSourceSizeChanged;
         }
 
         /// <summary>Rebinds explicit detail navigation when the root receives another workspace.</summary>
@@ -109,28 +104,9 @@ namespace MajMusic.Presentation.Views
                 {
                     return;
                 }
-                UpdateDesktopSongSlotWidth();
                 UpdateLayout();
                 this.FindControl<SharedSongCardFlight>("DesktopSongCardFlight")!.MoveTo(expanded);
             }, DispatcherPriority.Loaded);
-        }
-
-        /// <summary>Keeps both inspector slots the same width when the window changes size.</summary>
-        /// <param name="sender">The stable sidebar slot.</param>
-        /// <param name="e">Its new measured rectangle.</param>
-        private void OnDesktopSongSourceSizeChanged(object? sender, SizeChangedEventArgs e)
-        {
-            UpdateDesktopSongSlotWidth();
-        }
-
-        /// <summary>Uses the real source-column width so relocating never stretches the artwork or text.</summary>
-        private void UpdateDesktopSongSlotWidth()
-        {
-            if (_desktopSongSource is { Bounds.Width: > 0 } source && _desktopSongDestination is { } destination
-                && Math.Abs(destination.Width - source.Bounds.Width) > 0.1)
-            {
-                destination.Width = source.Bounds.Width;
-            }
         }
 
         /// <summary>Collapses secondary metadata and playlist controls only when the card has insufficient vertical room.</summary>
@@ -143,7 +119,7 @@ namespace MajMusic.Presentation.Views
             if (e.NewSize.Height > 0 && this.FindControl<Viewbox>("DesktopDetailsCover") is { } artwork)
             {
                 // Reserve the measured card chrome's maximum two-line title and fixed action rows.
-                artwork.MaxHeight = Math.Clamp(e.NewSize.Height - (compact ? 169 : 217), 40, 240);
+                artwork.MaxHeight = Math.Clamp(e.NewSize.Height - (compact ? 169 : 217), 40, 320);
             }
         }
     }

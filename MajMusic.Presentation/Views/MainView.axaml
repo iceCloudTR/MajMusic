@@ -116,7 +116,7 @@
                         <views:BrowseTracksView x:Name="SongBrowser" />
                     </Border>
                     <ContentControl x:Name="DesktopSidebarDetailsSlot" Grid.Row="1" Grid.Column="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                    <Border x:Name="LibraryDetails" Classes="card" Padding="10">
+                    <Border x:Name="LibraryDetails" Classes="card" Padding="12">
                         <Grid RowSpacing="6" IsVisible="{Binding SelectedBrowseTrack, Converter={x:Static ac:ObjectConverters.IsNotNull}}">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
