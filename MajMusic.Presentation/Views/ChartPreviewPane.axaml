@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajMusic.Presentation.ViewModels"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             x:Class="MajMusic.Presentation.Views.ChartPreviewPane"
+             x:DataType="vm:MainViewModel">
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Margin="16">
+        <TextBlock Text="MajView" FontWeight="SemiBold" FontSize="20" HorizontalAlignment="Center" />
+        <arc:Checkbox Content="背景 PV" IsChecked="{Binding ShowPreviewVideo, Mode=TwoWay}" HorizontalAlignment="Center" />
+        <arc:Button x:Name="OpenMajViewButton" Content="{Binding MajViewOpenLabel}" IsEnabled="{Binding CanOpenMajView}"
+                    Click="OnOpenMajView" MinHeight="44" HorizontalAlignment="Stretch" />
+        <TextBlock Text="{Binding MajViewStatus}" Classes="detailMuted" TextWrapping="Wrap"
+                   TextAlignment="Center" MaxWidth="300" />
+    </StackPanel>
+</UserControl>

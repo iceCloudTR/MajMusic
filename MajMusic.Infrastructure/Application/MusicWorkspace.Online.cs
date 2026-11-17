@@ -304,6 +304,8 @@ namespace MajMusic.Infrastructure.Application
                         {
                             Audio = MergeResource(track.Audio, current.Audio),
                             Cover = track.Cover is null ? null : MergeResource(track.Cover, current.Cover),
+                            Chart = current.Chart,
+                            Video = current.Video,
                             Duration = track.Duration ?? current.Duration,
                             LocalMediaSavedAt = current.LocalMediaSavedAt,
                             AudioInfo = MergeStreamInfo(track.AudioInfo, current.AudioInfo),

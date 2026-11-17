@@ -94,6 +94,13 @@ namespace MajMusic.Infrastructure.Downloads
                 ?? throw new FileNotFoundException("The resource is not available locally or remotely.");
         }
 
+        internal async Task<string> GetPreviewAsync(MediaResource resource, Uri requestAddress, long maximumTransferLength,
+            HttpClient client, CancellationToken token)
+        {
+            return await GetCoreAsync(resource, true, token, client, null, true, maximumTransferLength, requestAddress).ConfigureAwait(false)
+                ?? throw new FileNotFoundException("The preview file is unavailable.");
+        }
+
         /// <summary>Reads or pins a completed local resource without requiring a session or allowing an HTTP request.</summary>
         /// <param name="resource">The complete descriptor, including its revision-scoped address alias.</param>
         /// <param name="keepOffline">Whether a managed completed object should be retained against cleanup.</param>
@@ -144,9 +151,11 @@ namespace MajMusic.Infrastructure.Downloads
         /// <param name="downloadClient">The optional borrowed authenticated media transport.</param>
         /// <param name="progress">The optional actual-transfer observer.</param>
         /// <param name="allowDownload">Whether a cache miss may issue a request.</param>
+        /// <param name="maximumTransferLength">The optional ceiling on an uncached response body.</param>
+        /// <param name="requestAddress">The optional transient preview URL, independent of the stable index alias.</param>
         /// <returns>The completed local path, or null for a local-only cache miss.</returns>
         private async Task<string?> GetCoreAsync(MediaResource resource, bool keepOffline, CancellationToken cancellationToken, HttpClient? downloadClient,
-            IProgress<MediaTransferProgress>? progress, bool allowDownload)
+            IProgress<MediaTransferProgress>? progress, bool allowDownload, long? maximumTransferLength = null, Uri? requestAddress = null)
         {
             ArgumentNullException.ThrowIfNull(resource);
             var expectedHash = NormalizeHash(resource.Sha256);
@@ -178,7 +187,7 @@ namespace MajMusic.Infrastructure.Downloads
                 expectedHash = objectHash;
             }
 
-            var address = resource.RemoteUri;
+            var address = requestAddress ?? resource.RemoteUri;
             var uriKey = GetUriKey(resource);
             var key = expectedHash is not null ? $"sha256:{expectedHash}" : uriKey;
             if (key is null)
@@ -220,12 +229,18 @@ namespace MajMusic.Infrastructure.Downloads
                         throw new HttpRequestException($"The media source returned HTTP {(int)response.StatusCode}.", null, response.StatusCode);
                     }
 
+                    var contentLength = response.Content.Headers.ContentLength ?? resource.Length;
+                    if (maximumTransferLength is { } limit && contentLength > limit)
+                    {
+                        throw new InvalidDataException("The media file exceeds its allowed size.");
+                    }
+
                     MediaTransferProgress completed;
                     await using (var source = await response.Content.ReadAsStreamAsync(lifetime.Token).ConfigureAwait(false))
                     await using (var destination = new FileStream(partialPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous))
                     {
-                        completed = await CopyResponseAsync(source, destination, response.Content.Headers.ContentLength ?? resource.Length,
-                            transfer, lifetime.Token).ConfigureAwait(false);
+                        completed = await CopyResponseAsync(source, destination, contentLength,
+                            transfer, lifetime.Token, maximumTransferLength).ConfigureAwait(false);
                     }
 
                     var length = await ValidateFileAsync(partialPath, expectedHash, resource.Length, lifetime.Token).ConfigureAwait(false);
@@ -373,9 +388,10 @@ namespace MajMusic.Infrastructure.Downloads
         /// <param name="totalBytes">The expected body length, when known.</param>
         /// <param name="transfer">The resource-specific progress subscribers.</param>
         /// <param name="cancellationToken">Cancels the current online request.</param>
+        /// <param name="maximumTransferLength">The maximum allowed transfer size, when provided.</param>
         /// <returns>The final received-byte snapshot, ready for a successful publication report.</returns>
         private async Task<MediaTransferProgress> CopyResponseAsync(Stream source, Stream destination, long? totalBytes,
-            ResourceTransfer transfer, CancellationToken cancellationToken)
+            ResourceTransfer transfer, CancellationToken cancellationToken, long? maximumTransferLength)
         {
             var buffer = ArrayPool<byte>.Shared.Rent(81920);
             var clock = Stopwatch.StartNew();
@@ -401,6 +417,11 @@ namespace MajMusic.Infrastructure.Downloads
                     if (count == 0)
                     {
                         break;
+                    }
+
+                    if (maximumTransferLength is { } limit && count > limit - received)
+                    {
+                        throw new InvalidDataException("The media file exceeds its allowed size.");
                     }
 
                     await destination.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);

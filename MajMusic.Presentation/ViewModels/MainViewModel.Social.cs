@@ -71,7 +71,7 @@ namespace MajMusic.Presentation.ViewModels
         public AsyncCommand OpenExpandedSongDetailsCommand { get; private set; } = null!;
         /// <summary>Gets the action returning to the compact details presentation.</summary>
         public AsyncCommand CloseExpandedSongDetailsCommand { get; private set; } = null!;
-        /// <summary>Gets the action opening the reserved chart viewport for the inspected song.</summary>
+        /// <summary>Gets the action opening the chart preview controls for the inspected song.</summary>
         public AsyncCommand OpenSongChartPreviewCommand { get; private set; } = null!;
         /// <summary>Gets the action returning the expanded center pane to source comments.</summary>
         public AsyncCommand ShowSongCommentsCommand { get; private set; } = null!;
@@ -79,7 +79,14 @@ namespace MajMusic.Presentation.ViewModels
         public bool IsSongChartPreviewSelected
         {
             get => _isSongChartPreviewSelected;
-            set => SetField(ref _isSongChartPreviewSelected, value);
+            set
+            {
+                if (SetField(ref _isSongChartPreviewSelected, value) && !value)
+                {
+                    CancelMajView();
+                    MajViewStatus = string.Empty;
+                }
+            }
         }
         /// <summary>Gets the independent chart upvote action, separate from favorites.</summary>
         public AsyncCommand ToggleSongLikeCommand { get; private set; } = null!;

@@ -64,16 +64,7 @@
                     <arc:Button x:Name="LoadMoreSongCommentsButton" Grid.Row="3" Content="加载更多" MinHeight="44" Command="{Binding LoadMoreSongCommentsCommand}" IsVisible="{Binding HasMoreSongComments}" HorizontalAlignment="Center" />
                 </Grid>
                 <Border x:Name="ChartPreviewHost" IsVisible="{Binding IsSongChartPreviewSelected}" Background="{DynamicResource MusicRaisedBrush}" CornerRadius="12">
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14" Margin="16">
-                        <Canvas Width="136" Height="136" Opacity="0.35">
-                            <Ellipse Width="112" Height="112" Canvas.Left="12" Canvas.Top="12" Stroke="{DynamicResource MusicMutedBrush}" StrokeThickness="1" />
-                            <Ellipse Width="72" Height="72" Canvas.Left="32" Canvas.Top="32" Stroke="{DynamicResource MusicMutedBrush}" StrokeThickness="1" />
-                            <Ellipse Width="10" Height="10" Canvas.Left="63" Canvas.Top="7" Fill="{DynamicResource MusicAccentBrush}" />
-                            <Ellipse Width="10" Height="10" Canvas.Left="112" Canvas.Top="82" Fill="{DynamicResource MusicAccentBrush}" />
-                            <Ellipse Width="10" Height="10" Canvas.Left="14" Canvas.Top="82" Fill="{DynamicResource MusicAccentBrush}" />
-                        </Canvas>
-                        <TextBlock Text="谱面预览" Classes="detailMuted" HorizontalAlignment="Center" />
-                    </StackPanel>
+                    <views:ChartPreviewPane />
                 </Border>
             </Grid>
         </Border>

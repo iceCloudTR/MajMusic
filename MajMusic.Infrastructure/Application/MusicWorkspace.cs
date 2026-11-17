@@ -279,6 +279,8 @@ namespace MajMusic.Infrastructure.Application
                             {
                                 Audio = MergeResource(track.Audio, previous.Audio),
                                 Cover = track.Cover is null ? null : MergeResource(track.Cover, previous.Cover),
+                                Chart = previous.Chart,
+                                Video = previous.Video,
                                 Duration = track.Duration ?? previous.Duration,
                                 LocalMediaSavedAt = previous.LocalMediaSavedAt,
                                 AudioInfo = MergeStreamInfo(track.AudioInfo, previous.AudioInfo),
@@ -350,7 +352,12 @@ namespace MajMusic.Infrastructure.Application
         }
 
         /// <inheritdoc />
-        public async Task<string> ResolveAudioAsync(MusicTrack track, bool keepOffline, CancellationToken cancellationToken = default)
+        public Task<string> ResolveAudioAsync(MusicTrack track, bool keepOffline, CancellationToken cancellationToken = default)
+        {
+            return ResolveAudioCoreAsync(track, keepOffline, true, cancellationToken);
+        }
+
+        private async Task<string> ResolveAudioCoreAsync(MusicTrack track, bool keepOffline, bool resolveOnlineDetails, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(track);
             var mediaVersion = LocalMediaVersion(track);
@@ -358,7 +365,7 @@ namespace MajMusic.Infrastructure.Application
             var operation = BeginAudioDownload(track);
             try
             {
-                var resolved = await ResolveMetadataAsync(track, !keepOffline, cancellationToken).ConfigureAwait(false);
+                var resolved = await ResolveMetadataAsync(track, !keepOffline || !resolveOnlineDetails, cancellationToken).ConfigureAwait(false);
                 string? path = null;
                 if (DocumentReference.IsContentUri(resolved.Audio.LocalPath))
                 {
@@ -382,7 +389,10 @@ namespace MajMusic.Infrastructure.Application
                     ?? await _defaultCache.TryGetCachedAsync(ScopeResourceForCache(resolved, resolved.Audio), true, cancellationToken).ConfigureAwait(false);
                 if (path is null)
                 {
-                    resolved = await ResolveMetadataAsync(track, false, cancellationToken).ConfigureAwait(false);
+                    if (resolveOnlineDetails)
+                    {
+                        resolved = await ResolveMetadataAsync(track, false, cancellationToken).ConfigureAwait(false);
+                    }
                     if (!IsOnline && resolved.RemoteId is not null && resolved.Audio.Sha256 is null
                         && !File.Exists(resolved.Audio.LocalPath))
                     {
@@ -421,7 +431,8 @@ namespace MajMusic.Infrastructure.Application
         public async Task ClearCacheAsync(CancellationToken cancellationToken = default)
         {
             var tracks = (await _library.SearchAsync(null, cancellationToken).ConfigureAwait(false))
-                .Where(track => RequiresManagedMedia(track) && (track.Audio.LocalPath is not null || track.Cover?.LocalPath is not null)).ToArray();
+                .Where(track => RequiresManagedMedia(track) && (track.Audio.LocalPath is not null || track.Cover?.LocalPath is not null
+                    || track.Chart?.LocalPath is not null || track.Video?.LocalPath is not null)).ToArray();
             await RemoveTrackMediaBatchAsync(tracks, cancellationToken).ConfigureAwait(false);
         }
 
@@ -564,6 +575,8 @@ namespace MajMusic.Infrastructure.Application
                         Cover = SameRevision(detailed, resolved) || string.IsNullOrWhiteSpace(detailed.Revision)
                             ? detailed.Cover is { } detailedCover ? MergeResource(detailedCover, resolved.Cover) : resolved.Cover
                             : detailed.Cover,
+                        Chart = SameRevision(detailed, resolved) || string.IsNullOrWhiteSpace(detailed.Revision) ? resolved.Chart : null,
+                        Video = SameRevision(detailed, resolved) || string.IsNullOrWhiteSpace(detailed.Revision) ? resolved.Video : null,
                         Duration = detailed.Duration ?? (SameRevision(detailed, resolved) || string.IsNullOrWhiteSpace(detailed.Revision) ? resolved.Duration : null),
                         AudioInfo = detailed.AudioInfo ?? (SameRevision(detailed, resolved) || string.IsNullOrWhiteSpace(detailed.Revision) ? resolved.AudioInfo : null)
                     };

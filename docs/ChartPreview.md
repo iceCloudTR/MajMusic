@@ -1,24 +1,18 @@
-# 谱面预览后续方案
+# MajView 谱面预览
 
-本轮仅保留谱面预览的位置，不实现渲染器，也不改变音乐播放。
+在歌曲详情打开「谱面预览」，选择是否播放背景 PV，然后打开 MajView。首次打开按需安装约 49 MB 的官方渲染器；安装后，本地歌曲和已缓存的预览资源可离线打开。难度选项在页面顶部，音符流速、触摸流速、音乐和各类音效音量在「流速与音效」中设置。应用设置会从头加载当前难度。背景遮罩和偏移仍可在 MajView 画面内调整。
 
-后续采用独立谱面解析与绘制组件。主时钟来自现有 `PlaybackService`，预览跟随同一首歌的播放、暂停和跳转，不启动第二套音乐播放器。谱面由明确选择的本地文件或所属接入点提供，沿用 Music 的存储和账号边界。
+预览当前在系统浏览器里运行。MajMusic 暂停原来的播放，保留队列与进度；MajView 统一管理预览里的音乐、打击音、谱面和静音 PV。关闭预览或在 MajMusic 继续播放会结束该预览会话。
 
-## 已核实的上游
+## 实现
 
-- [MajdataView，9406e3e](https://github.com/TeamMajdata/MajdataView/tree/9406e3e5b171449e434256f504b5b42d4d21eab3)：Unity 2022.3.15f1，[GPLv3](https://github.com/TeamMajdata/MajdataView/blob/9406e3e5b171449e434256f504b5b42d4d21eab3/LICENSE)。[HttpHandler](https://github.com/TeamMajdata/MajdataView/blob/9406e3e5b171449e434256f504b5b42d4d21eab3/Assets/Scripts/HttpHandler.cs) 接收外部控制，[JsonDataLoader](https://github.com/TeamMajdata/MajdataView/blob/9406e3e5b171449e434256f504b5b42d4d21eab3/Assets/Scripts/JsonDataLoader.cs) 读取时间点和音符；[AudioTimeProvider](https://github.com/TeamMajdata/MajdataView/blob/9406e3e5b171449e434256f504b5b42d4d21eab3/Assets/Scripts/AudioTimeProvider.cs) 从外部起始时间、位置和速度推进。绘制依赖 Unity 场景、Prefab、SpriteRenderer、动画和材质。
-- [MajdataView_web，9653126](https://github.com/TeamMajdata/MajdataView_web/tree/9653126c960a8b29830cbb84e5e5b2f4bbbc3965)：Unity 2021.3.21f1，[GPLv3](https://github.com/TeamMajdata/MajdataView_web/blob/9653126c960a8b29830cbb84e5e5b2f4bbbc3965/LICENSE)。增加 maidata 解析和 Unity AudioSource；当前资源入口仍与旧赛事服务耦合，不能直接作为通用预览控件。
-- [MajSimai，a0a0c64](https://github.com/TeamMajdata/MajSimai/tree/a0a0c64a3e38ed855201acc7d8ca4b846db2f043)：[项目配置](https://github.com/TeamMajdata/MajSimai/blob/a0a0c64a3e38ed855201acc7d8ca4b846db2f043/MajSimai.csproj) 支持 net10.0、netstandard2.1，许可证为 GPL-3.0-or-later，可作为独立解析层。
+- 本地曲读取原目录的 `maidata.txt`、音轨、封面和可选的 `pv.mp4`、`mv.mp4` 或 `bg.mp4`；不改动原文件。在线曲从该歌曲所属接入点读取，沿用 Music 的会话和缓存，勾选 PV 时才读取视频。
+- 使用 [MajdataNet 的正式 WebGL 构建（e9db7b4）](https://github.com/TeamMajdata/MajdataNet/tree/e9db7b4b431954f2e9fefa7745d3650b93fc4671/public/WebGLBuild)。运行时文件校验后放入 `Runtime/MajView`，不打进桌面或 Android 包。渲染器源码见 [MajdataView_web Unity 6 分支（7b7addc）](https://github.com/TeamMajdata/MajdataView_web/tree/7b7addc468f41786e2ec8672406238befeb8f86d)（GPLv3）。
+- 浏览器只读取当前预览的本机临时地址。MajMusic 将原始谱面、音轨、封面和可选 PV 交给 [上游的五行消息协议](https://github.com/TeamMajdata/MajdataNet/blob/e9db7b4b431954f2e9fefa7745d3650b93fc4671/src/components/song/Majdata.tsx)。难度编号直接对应原 `inote_1` 至 `inote_7`，不会把稀疏的难度重新编号。
+- 切难度时重新打开同一预览页的渲染实例，复用媒体和运行时缓存。同一实例重复切难度会让上游 PV 纹理变黑；重新创建能稳定显示 PV，并保留本次预览内的流速和音效设置。
 
-优先验证 MajSimai 加 [Avalonia/Skia 自定义绘制](https://docs.avaloniaui.net/docs/graphics-animation/custom-rendering)，逐步迁移音符轨迹和视觉规则。皮肤、字体和插件在实际引用时分别记录许可与署名。
+## 验证范围
 
-整套 Unity 嵌入作为备选：[Unity as a Library](https://docs.unity3d.com/2022.3/Documentation/Manual/UnityasaLibrary.html) 的标准移动方案限定全屏，卸载后仍保留部分运行时内存；Web 分支当前使用的 [Unity 2021.3 WebGL](https://docs.unity3d.com/cn/2021.3/Manual/webgl-browsercompatibility.html) 不支持移动设备。直接嵌入不足以满足统一的小型预览控件目标。
+Windows Chromium 使用生成的 MP3、带可见时间码的 H.264 PV、封面及 Simai 谱面。覆盖 2／5／7 难度、无 PV 回落封面、暂停和跳转、不同流速下同一时间的音符位置、打击音及 PV 静音。基于 MajdataView 的视频时间轴从音轨时间同步；MajdataPlay 扩展的 `&mv_seek`、`&mv_wait` 目前没有应用。已验证的音轨格式为 MP3。
 
-## 最小下一阶段
-
-1. 用一个本地 maidata 建立解析、时间线和固定比例绘制面，先实现 Tap/Hold，再补 Slide、Touch、WiFi。
-2. 接入现有播放时钟，验证暂停、跳转、换歌和关闭释放；预览开关保留当前播放队列。
-3. 用同一组件验证桌面和 Android 的尺寸、帧率与视觉，再扩展 iOS。
-4. 最后接入在线谱面读取与缓存，复用所属接入点会话；不读取其他应用目录或数据库。
-
-上述为源码研究和实施顺序，尚未验证实际渲染与平台运行效果。
+下一步是用各平台的嵌入浏览器承载同一个预览页，再在真机验证视频解码、跳转和音轨切换。继续使用官方渲染器可保留完整音符和音效规则；如果改为跟随 MajMusic 主播放器的实时预览，需要单独实现时钟同步和播放权交接。

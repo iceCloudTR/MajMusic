@@ -308,3 +308,11 @@ dotnet run --project MajMusic.Tests/MajMusic.Tests.csproj -c Release -- mobile-p
 与前一版按相同步骤比较，重复切换的输入到选中反馈约由桌面 15–22 ms 降至 4–6 ms、窄屏 8–17 ms 降至 3–5 ms。数字是选中反馈耗时；窄屏使用 Windows 上的移动布局。报告见 `artifacts/native-navigation-rapid-resident-final/rapid-report.json` 和 `artifacts/native-navigation-rapid-mobile-resident-final/rapid-report.json`。
 
 26 组回归通过，覆盖快速切页图标、快捷播放回退、滚动槽、搜索恢复、推荐分页、加载占位和曲库延迟实例化。桌面 Release 零警告、零错误。Android ARM64 包为 `artifacts/android-arm64-20261118-022810-eabd3590/MajMusic-android-arm64.apk`，38.92 MiB，通过签名、ABI 与对齐检查。
+
+## MajView 谱面预览
+
+使用官方 WebGL 构建和 MajMusic 的实际预览页面，在 Windows Chrome 的 1080 和 420 像素窗口播放生成的谱面、MP3 与带时间码的 H.264 PV。确认难度 7 → 5 → 2 按原编号切换，三档的 PV 均显示并静音，无 PV 时显示原封面。暂停后跳到 2.5 秒，PV 时间约为 2.500–2.504 秒。流速 2.5 和 8.0 的落点时间与音乐速率不变，音符位置不同；Web Audio 记录到测试谱面的首个打击音在音乐起点后 260 和 268 ms 调度，谱面预期 250 ms。
+
+从页内表单应用设置后，使用 MajView 的原生菜单读回音符流速 8、触摸流速 9.5、打击音 −24 dB。同一难度重新加载后 PV 仍显示，关闭后本机预览地址失效。报告和截图在 `artifacts/majview-preview-fixture/browser/session/`、`fresh-views/` 和 `settings-final/`。
+
+14 组回归通过，覆盖官方构建的校验和离线复用、谱面与 PV 按需读取、旧接入点兼容、账号隔离、本机预览的 Range 请求与关闭、预览前暂停主播放器及保留队列、选曲中断、详情布局。桌面 Release 编译为 0 警告、0 错误；安卓只做 ARM64 包构建与产物校验。

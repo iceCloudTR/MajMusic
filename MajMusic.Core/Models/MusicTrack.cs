@@ -2,7 +2,7 @@
 
 namespace MajMusic.Core.Models
 {
-    /// <summary>Represents a playable music entry without gameplay or video dependencies.</summary>
+    /// <summary>Represents a playable music entry with optional chart-preview resources.</summary>
     public sealed record MusicTrack
     {
         /// <summary>Gets the stable local identity including its source scope.</summary>
@@ -59,6 +59,12 @@ namespace MajMusic.Core.Models
 
         /// <summary>Gets the optional cover resource.</summary>
         public MediaResource? Cover { get; init; }
+
+        /// <summary>Gets the original maidata reference, when indexed locally or cached after preview.</summary>
+        public MediaResource? Chart { get; init; }
+
+        /// <summary>Gets the optional preview background video reference.</summary>
+        public MediaResource? Video { get; init; }
 
     }
 }

@@ -160,6 +160,7 @@ namespace MajMusic.Infrastructure.Import
             }
 
             var coverPath = FindNamedFile(files, "bg", [".png", ".jpg", ".jpeg"]);
+            var videoPath = FindNamedFile(files, "pv", [".mp4"]) ?? FindNamedFile(files, "mv", [".mp4"]) ?? FindNamedFile(files, "bg", [".mp4"]);
             var normalizedAudioPath = Path.GetFullPath(audioPath);
             var identityPath = OperatingSystem.IsWindows() ? normalizedAudioPath.ToUpperInvariant() : normalizedAudioPath;
             return new MusicTrack
@@ -171,7 +172,9 @@ namespace MajMusic.Infrastructure.Import
                 SourceId = "local/reference",
                 Revision = $"{audio.Length}:{audio.LastWriteTimeUtc.Ticks}",
                 Audio = new MediaResource { LocalPath = normalizedAudioPath, Length = audio.Length },
-                Cover = coverPath is null ? null : new MediaResource { LocalPath = Path.GetFullPath(coverPath) }
+                Cover = coverPath is null ? null : new MediaResource { LocalPath = Path.GetFullPath(coverPath) },
+                Chart = metadataPath is null ? null : new MediaResource { LocalPath = metadataPath },
+                Video = videoPath is null ? null : new MediaResource { LocalPath = videoPath }
             };
         }
 

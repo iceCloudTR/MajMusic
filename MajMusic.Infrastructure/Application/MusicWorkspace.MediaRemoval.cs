@@ -65,6 +65,10 @@ namespace MajMusic.Infrastructure.Application
                 {
                     resources.Add(ScopeResourceForCache(current, cover) with { LocalPath = null, ManagedStorageRoot = null });
                 }
+                foreach (var preview in new[] { current.Chart, current.Video }.OfType<MediaResource>())
+                {
+                    resources.Add(ScopeResourceForCache(current, preview) with { LocalPath = null, ManagedStorageRoot = null });
+                }
                 var library = _batchRemovalLibrary.Value ?? await _library.SearchAsync(null, cancellationToken).ConfigureAwait(false);
                 var protection = _batchMediaProtection.Value ?? CreateMediaProtection(cache, library.Where(item => LocalMediaOwner(item) != LocalMediaOwner(current)));
                 var hashes = protection.Hashes;
@@ -80,6 +84,8 @@ namespace MajMusic.Infrastructure.Application
                 {
                     Audio = audioRemoved ? current.Audio with { LocalPath = null, ManagedStorageRoot = null } : current.Audio,
                     Cover = coverRemoved ? current.Cover! with { LocalPath = null, ManagedStorageRoot = null } : current.Cover,
+                    Chart = null,
+                    Video = null,
                     LocalMediaSavedAt = audioRemoved ? null : current.LocalMediaSavedAt,
                     AudioMetadataLength = audioRemoved ? null : current.AudioMetadataLength,
                     AudioMetadataLastWriteUtcTicks = audioRemoved ? null : current.AudioMetadataLastWriteUtcTicks
@@ -106,7 +112,7 @@ namespace MajMusic.Infrastructure.Application
         /// <returns>Content hashes and canonical native paths which must remain.</returns>
         private (IReadOnlySet<string> Hashes, IReadOnlySet<string> Paths) CreateMediaProtection(MediaCache cache, IEnumerable<MusicTrack> library)
         {
-            var descriptors = library.SelectMany(item => new[] { item.Audio, item.Cover }).OfType<MediaResource>().ToArray();
+            var descriptors = library.SelectMany(item => new[] { item.Audio, item.Cover, item.Chart, item.Video }).OfType<MediaResource>().ToArray();
             var hashes = descriptors.Select(item => item.Sha256).OfType<string>()
                 .Where(hash => hash.Length == 64 && hash.All(Uri.IsHexDigit)).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var paths = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);

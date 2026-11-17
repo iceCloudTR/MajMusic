@@ -350,8 +350,16 @@ namespace MajMusic.Presentation.ViewModels
             get => _selectedTrack;
             set
             {
+                var previous = _selectedTrack;
                 if (SetField(ref _selectedTrack, value))
                 {
+                    if ((previous?.Id, previous?.SourceId, previous?.EndpointId, previous?.Revision)
+                        != (value?.Id, value?.SourceId, value?.EndpointId, value?.Revision))
+                    {
+                        CancelMajView();
+                        MajViewStatus = string.Empty;
+                        OnPropertyChanged(nameof(CanOpenMajView));
+                    }
                     OnPropertyChanged(nameof(SelectedTitle));
                     OnPropertyChanged(nameof(SelectedArtist));
                     OnPropertyChanged(nameof(SelectedVisibleTrack));
@@ -775,6 +783,7 @@ namespace MajMusic.Presentation.ViewModels
         private async Task DisposeCoreAsync(Task[] operations)
         {
             _lifetime.Cancel();
+            await ReleaseMajViewSessionAsync();
             CancelSongSocialRequests();
             DisposeAudioDownloadProgress();
             foreach (var card in EndpointCards)
@@ -1479,6 +1488,10 @@ namespace MajMusic.Presentation.ViewModels
                         || _playbackSnapshot.Error != current.Error;
                     var audioChanged = !ReferenceEquals(_playbackSnapshot.AudioInfo, current.AudioInfo);
                     _playbackSnapshot = current;
+                    if (changed && _majViewSession is not null && current.State is (PlaybackState.Loading or PlaybackState.Playing))
+                    {
+                        CancelMajView();
+                    }
                     SyncAudioOutputState();
                     PublishPlaybackMetadata(current);
                     if (_seekInvalidated && (_isSeeking || _committedSeek is not null))

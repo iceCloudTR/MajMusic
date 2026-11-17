@@ -265,6 +265,7 @@ namespace MajMusic.Presentation.Storage
             }
 
             var cover = Find(files, "bg", [".png", ".jpg", ".jpeg"]);
+            var video = Find(files, "pv", [".mp4"]) ?? Find(files, "mv", [".mp4"]) ?? Find(files, "bg", [".mp4"]);
             StorageItemProperties? coverProperties = cover is null ? null : await cover.GetBasicPropertiesAsync().ConfigureAwait(false);
             var reference = audio.Path.AbsoluteUri;
             return new MusicTrack
@@ -280,7 +281,9 @@ namespace MajMusic.Presentation.Storage
                 {
                     LocalPath = cover.Path.AbsoluteUri,
                     CacheVersion = coverProperties?.Size + ":" + coverProperties?.DateModified?.UtcTicks
-                }
+                },
+                Chart = chart is null ? null : new MediaResource { LocalPath = chart.Path.AbsoluteUri },
+                Video = video is null ? null : new MediaResource { LocalPath = video.Path.AbsoluteUri }
             };
         }
 
