@@ -7,6 +7,10 @@ namespace MajMusic.Presentation.ViewModels
     /// <summary>Retains each song revision's download fill independently of the current query and selection.</summary>
     public sealed partial class MainViewModel
     {
+        /// <summary>Gets whether the inspected song still needs downloadable audio.</summary>
+        public bool ShowSelectedDownload => OnlineEnabled && SelectedTrack is { RemoteId: not null } track
+            && !HasDownloadedTrack(track) && !IsTrackDownloadInProgress(track);
+
         /// <summary>Preserves completed and active operations while their songs leave the visible query.</summary>
         private readonly Dictionary<CardDownloadOwner, SongDownloadState> _cardDownloadStates = new();
 
@@ -57,6 +61,11 @@ namespace MajMusic.Presentation.ViewModels
                 card.NotifyDownloadState();
             }
 
+            if (SelectedTrack is { } selected && MatchesCardDownload(selected, progress))
+            {
+                OnPropertyChanged(nameof(ShowSelectedDownload));
+                DownloadCommand.NotifyCanExecuteChanged();
+            }
             ObserveDownloadedMetadata(owner, progress);
         }
 
@@ -91,6 +100,28 @@ namespace MajMusic.Presentation.ViewModels
             }
 
             await Task.WhenAll(checks);
+        }
+
+        /// <summary>Uses the latest checked download state, or the catalog's owned file reference before the first check.</summary>
+        /// <param name="track">The exact song and revision captured by the menu.</param>
+        /// <returns>Whether complete local audio is available.</returns>
+        private bool HasDownloadedTrack(MusicTrack track)
+        {
+            if (_cardDownloadStates.TryGetValue(DownloadOwner(track), out var state) && state.Version > 0)
+            {
+                return state.IsAvailable;
+            }
+
+            return !string.IsNullOrWhiteSpace(track.Audio.LocalPath);
+        }
+
+        /// <summary>Identifies an active audio lookup or transfer for the captured song revision.</summary>
+        /// <param name="track">The song to check.</param>
+        /// <returns>Whether its download has begun and has not yet finished.</returns>
+        private bool IsTrackDownloadInProgress(MusicTrack track)
+        {
+            return _cardDownloadStates.TryGetValue(DownloadOwner(track), out var state)
+                && state.Progress?.State is AudioDownloadState.Preparing or AudioDownloadState.Downloading;
         }
 
         /// <summary>Checks requested track identity and, when available, its complete source ownership.</summary>

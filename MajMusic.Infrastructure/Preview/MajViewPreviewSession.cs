@@ -12,7 +12,7 @@ using MajMusic.Core.Models;
 
 namespace MajMusic.Infrastructure.Preview
 {
-    internal sealed class MajViewPreviewSession : IMajViewPreviewSession
+    internal sealed partial class MajViewPreviewSession : IMajViewPreviewSession
     {
         private static readonly byte[] FallbackCover = Convert.FromBase64String(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWPQ0ND4DwADTAGEEUpS3gAAAABJRU5ErkJggg==");
@@ -136,6 +136,11 @@ namespace MajMusic.Infrastructure.Preview
                 }
 
                 var route = url.AbsolutePath[Address.AbsolutePath.Length..];
+                if (route is "transport" or "notes" or "waveform" or "failed")
+                {
+                    await HandleTransportAsync(context, route, token).ConfigureAwait(false);
+                    return;
+                }
                 if (route == "closed" && request.HttpMethod == "POST")
                 {
                     response.StatusCode = 204;

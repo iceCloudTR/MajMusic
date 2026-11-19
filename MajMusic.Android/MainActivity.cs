@@ -1,6 +1,8 @@
 #nullable enable
 
 using Avalonia.Android;
+using System.ComponentModel;
+using MajMusic.Presentation.ViewModels;
 using global::Android.App;
 using global::Android.Content.PM;
 using global::Android.OS;
@@ -15,6 +17,28 @@ namespace MajMusic.Android
             | ConfigChanges.ScreenLayout | ConfigChanges.UiMode | ConfigChanges.Density)]
     public sealed class MainActivity : AvaloniaMainActivity
     {
+        private MainViewModel? _player;
+        private ScreenOrientation? _beforePractice;
+
+        private void OnPracticeChanged(object? sender, PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName == nameof(MainViewModel.IsChartFullscreen)) ApplyPracticeOrientation();
+        }
+
+        private void ApplyPracticeOrientation()
+        {
+            if (_player?.IsChartFullscreen == true && _beforePractice is null)
+            {
+                _beforePractice = RequestedOrientation;
+                RequestedOrientation = ScreenOrientation.FullSensor;
+            }
+            else if (_player?.IsChartFullscreen != true && _beforePractice is { } orientation)
+            {
+                _beforePractice = null;
+                RequestedOrientation = orientation;
+            }
+        }
+
         /// <summary>Restores the native host and asks for media-notification visibility on supported devices.</summary>
         /// <param name="savedInstanceState">The previous Android activity state, when available.</param>
         protected override void OnCreate(Bundle? savedInstanceState)
@@ -31,6 +55,12 @@ namespace MajMusic.Android
         protected override void OnResume()
         {
             base.OnResume();
+            if (_player is null && (Avalonia.Application.Current as MobileApplication)?.Player is { } player)
+            {
+                _player = player;
+                player.PropertyChanged += OnPracticeChanged;
+                ApplyPracticeOrientation();
+            }
             AndroidStorageAccess.Instance.OnActivityResumed(this);
         }
 
@@ -51,6 +81,7 @@ namespace MajMusic.Android
         /// <summary>Releases this native host while preserving pending work across configuration recreation.</summary>
         protected override void OnDestroy()
         {
+            if (_player is not null) _player.PropertyChanged -= OnPracticeChanged;
             base.OnDestroy();
             AndroidStorageAccess.Instance.OnActivityDestroyed(this);
         }

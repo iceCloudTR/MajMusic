@@ -14,6 +14,8 @@ namespace MajMusic.Android
         /// <summary>Owns the workspace and audio session independently of the activity.</summary>
         private AndroidServices? _services;
 
+        internal MajMusic.Presentation.ViewModels.MainViewModel? Player => _services?.Player;
+
         /// <inheritdoc />
         public override void Initialize()
         {

@@ -90,6 +90,20 @@ namespace MajMusic.Tests
                         Layout(window);
                     }
 
+                    var start = PlayerPoint(player, window);
+                    Swipe(window, start, new Vector(0, window.ClientSize.Height * 0.47 - start.Y));
+                    await ((InterruptibleSongSheet)sheet).SheetUpdate.WaitAsync(timeout.Token);
+                    Layout(window);
+                    TestAssert.True(((InterruptibleSongSheet)sheet).IsExpanded && model.IsSongDetailsExpanded,
+                        "A single pull from the player into the upper half must reach expanded details.");
+                    var footerTop = player.TranslatePoint(default, window)!.Value.Y;
+                    var sheetBottom = sheet.TranslatePoint(new Point(0, sheet.Bounds.Height), window)!.Value.Y;
+                    TestAssert.True(sheetBottom <= footerTop + 1 && player.IsEffectivelyVisible,
+                        "Expanded details must end above the persistent transport.");
+                    sheet.IsOpen = false;
+                    await ((InterruptibleSongSheet)sheet).SheetUpdate.WaitAsync(timeout.Token);
+                    Layout(window);
+
                     foreach (var movement in new[] { new Vector(100, -30), new Vector(0, 60) })
                     {
                         model.SelectedTrack = selected;

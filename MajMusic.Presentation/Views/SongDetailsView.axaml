@@ -30,7 +30,7 @@
         </Style>
     </UserControl.Styles>
     <Grid x:Name="SongDetailsTabs" RowDefinitions="Auto,*" RowSpacing="6" Margin="8,0,8,8">
-        <views:SongPreviewTabs x:Name="SongPreviewSegments" ShowOverview="True" />
+        <views:SongPreviewTabs IsVisible="{Binding !IsChartFullscreen}" x:Name="SongPreviewSegments" ShowOverview="True" />
         <Grid Grid.Row="1" ClipToBounds="True">
             <ScrollViewer x:Name="SongOverviewPane" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Spacing="16" Margin="0,12,0,8">

@@ -7,7 +7,67 @@ const query = new URL(location.href).searchParams;
 document.documentElement.dataset.theme = query.get("theme") === "light" ? "light" : "dark";
 let instance;
 let stopped = false;
-let heartbeat;
+let watchdog;
+let clock = null;
+let noteTimes = [];
+let waveformStarted = false;
+const generation = query.get("g");
+const controller = new AbortController();
+const wire = (name, args = {}) => name + "?" + new URLSearchParams({ g: generation, ...args });
+const send = (method, value) => instance.SendMessage("HandleJSMessages", method, value);
+const post = (name, data, args) => fetch(wire(name, args), { method:"POST", body:JSON.stringify(data), signal:controller.signal });
+window.majPosition = (time, duration, playing) => { clock = { time, duration, playing }; };
+window.majNoteTimes = (kind, times) => { noteTimes[kind] = times; };
+
+// Decode only on the first full-screen request for this track. A low sample rate bounds PCM memory.
+async function analyzeWaveform() {
+    waveformStarted = true;
+    try {
+        const source = await fetch("track", {signal:controller.signal});
+        if (!source.ok) return;
+        const context = new OfflineAudioContext(1, 1, 8000);
+        const audio = await context.decodeAudioData(await source.arrayBuffer());
+        if (stopped) return;
+        const peaks = Array(128).fill(0);
+        for (let c = 0; c < audio.numberOfChannels; c++) {
+            const samples = audio.getChannelData(c);
+            for (let b = 0; b < peaks.length; b++) {
+                let peak = 0;
+                const end = Math.floor((b+1) * samples.length / peaks.length);
+                for (let i = Math.floor(b * samples.length / peaks.length); i < end; i++) peak = Math.max(peak, Math.abs(samples[i]));
+                peaks[b] = Math.max(peaks[b], Math.min(255, Math.round(peak * 255)));
+            }
+        }
+        await post("waveform", peaks);
+    } catch { /* The note density and transport remain available when the codec cannot decode a waveform. */ }
+}
+
+async function runTransport() {
+    let revision = -1, seekRevision = -1, settingsKey = "";
+    while (!stopped) {
+        if (noteTimes) {
+            await post("notes", noteTimes, { len: clock.duration });
+            noteTimes = null;
+        }
+        const response = await fetch(wire("transport", { ack:revision, time:clock.time, len:clock.duration, play:clock.playing ? 1 : 0 }),
+            {cache:"no-store", signal:controller.signal});
+        if (response.status === 204) continue;
+        if (!response.ok) { await closePreview(); return; }
+        const intent = await response.json();
+        if (stopped) return;
+        if (intent.lightTheme != null) document.documentElement.dataset.theme = intent.lightTheme ? "light" : "dark";
+        const options = JSON.stringify({...intent.options, gain:intent.gain});
+        if (options !== settingsKey) { send("ConfigurePreview", options); settingsKey = options; }
+        if (!intent.playing && clock.playing) send("SetPreviewPlaying", 0);
+        if (seekRevision !== intent.seekRevision) {
+            send("SeekPreview", Math.min(intent.position, clock.duration));
+            seekRevision = intent.seekRevision;
+        }
+        if (intent.playing !== clock.playing) send("SetPreviewPlaying", intent.playing ? 1 : 0);
+        if (intent.needWaveform && !waveformStarted) void analyzeWaveform();
+        revision = intent.revision;
+    }
+}
 
 function loadLevel(song, level) {
     const resource = name => new URL(name, document.baseURI).href;
@@ -24,7 +84,8 @@ function loadLevel(song, level) {
 async function closePreview() {
     if (stopped) return;
     stopped = true;
-    clearInterval(heartbeat);
+    controller.abort();
+    clearTimeout(watchdog);
     stage.hidden = true;
     status.textContent = "预览已关闭";
     if (instance) {
@@ -70,17 +131,21 @@ async function start() {
     stage.classList.toggle("reverse", query.get("direction") === "-1");
     stage.classList.toggle("no-motion", query.get("motion") === "off");
     stage.classList.add("entered");
+    status.textContent = "正在准备谱面";
+    const deadline = Date.now() + 60000;
+    while (!clock && !stopped && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    if (stopped) return;
+    if (!clock) throw new Error("谱面未就绪");
     status.textContent = "";
-    heartbeat = setInterval(async () => {
-        try {
-            const alive = await fetch("alive", { cache: "no-store" });
-            if (alive.ok) return;
-        } catch { }
-        void closePreview();
-    }, 500);
+    clearTimeout(watchdog);
+    await runTransport();
 }
 
+watchdog = setTimeout(() => { if (!stopped) void post("failed", null).catch(() => {}); }, 90000);
 start().catch(error => {
-    if (!stopped) status.textContent = "MajView 加载失败";
+    if (stopped) return;
+    clearTimeout(watchdog);
+    status.textContent = "MajView 加载失败";
+    void post("failed", null).catch(() => {});
     console.error(error);
 });

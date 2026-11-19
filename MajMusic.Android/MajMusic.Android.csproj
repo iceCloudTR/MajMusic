@@ -7,7 +7,7 @@
         <SupportedOSPlatformVersion>23.0</SupportedOSPlatformVersion>
         <ApplicationId>com.icecloud.majmusic</ApplicationId>
         <ApplicationTitle>MajMusic</ApplicationTitle>
-        <ApplicationVersion>1</ApplicationVersion>
+        <ApplicationVersion>2000</ApplicationVersion>
         <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
         <AndroidPackageFormats>apk</AndroidPackageFormats>
         <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>

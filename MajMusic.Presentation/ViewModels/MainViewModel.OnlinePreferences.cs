@@ -17,8 +17,6 @@ namespace MajMusic.Presentation.ViewModels
         private bool _onlinePreferenceWorkerRunning;
         /// <summary>Prevents initial defaults from being saved over an existing preference.</summary>
         private bool _onlinePreferencesReady;
-        /// <summary>Suppresses write scheduling while restoring the saved checkbox.</summary>
-        private bool _restoringOnlinePreference;
         /// <summary>Retains a user choice made before initial settings finish loading.</summary>
         private bool _onlinePreferencePending;
         /// <summary>Exposes completion of the current merged local-save batch.</summary>
@@ -35,22 +33,33 @@ namespace MajMusic.Presentation.ViewModels
             await OnlineSettingsUpdate;
         }
 
-        /// <summary>Restores a saved choice without scheduling a redundant preference write or early login.</summary>
-        /// <param name="enabled">The fully loaded saved online choice.</param>
-        private void RestoreOnlinePreference(bool enabled)
+        /// <summary>Restores the loaded permission unless the user already operated the switch.</summary>
+        /// <param name="saved">The online choice from the settings snapshot.</param>
+        private void RestoreOnlinePreference(bool saved)
         {
-            _restoringOnlinePreference = true;
-            try
+            ApplyOnlinePermission(_onlinePreferencePending ? OnlineEnabled : saved);
+        }
+
+        /// <summary>Applies network permission before notifying the switch and its dependent actions.</summary>
+        /// <param name="enabled">Whether to allow configured source requests.</param>
+        /// <exception cref="ObjectDisposedException">The workspace has already closed.</exception>
+        private void ApplyOnlinePermission(bool enabled)
+        {
+            if (OnlineEnabled != enabled || _workspace.IsOnline != enabled)
             {
-                OnlineEnabled = enabled;
+                _workspace.SetOnlineEnabled(enabled);
             }
-            finally
+
+            _settings = _settings with { OnlineEnabled = enabled };
+            if (SetField(ref _onlineEnabled, enabled, nameof(OnlineEnabled)))
             {
-                _restoringOnlinePreference = false;
+                QueueWarmBrowsePreviews();
+                RefreshCommands();
+                OnPropertyChanged(nameof(HasMoreRecommendations));
             }
         }
 
-        /// <summary>Enables user-save scheduling after all initial settings have loaded.</summary>
+        /// <summary>Allows local writes as soon as the persisted preferences have loaded.</summary>
         private void CompleteOnlinePreferencesInitialization()
         {
             _onlinePreferencesReady = true;
@@ -61,15 +70,9 @@ namespace MajMusic.Presentation.ViewModels
             }
         }
 
-        /// <summary>Records an explicit checkbox edit while leaving loaded account and directory choices intact.</summary>
-        private void OnOnlinePreferenceChanged()
+        /// <summary>Schedules persistence for an explicit switch edit once the settings store is ready.</summary>
+        private void RecordOnlinePreferenceEdit()
         {
-            _settings = _settings with { OnlineEnabled = OnlineEnabled };
-            if (_restoringOnlinePreference)
-            {
-                return;
-            }
-
             if (!_onlinePreferencesReady)
             {
                 _onlinePreferencePending = true;

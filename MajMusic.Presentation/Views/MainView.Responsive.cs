@@ -85,7 +85,7 @@ namespace MajMusic.Presentation.Views
         private void OnShellSizeChanged(object? sender, SizeChangedEventArgs e)
         {
             var mobile = OperatingSystem.IsAndroid() || OperatingSystem.IsIOS() || e.NewSize.Width is > 0 and < 680;
-            if (mobile == IsMobileLayout || _desktopContent is null)
+            if (mobile == IsMobileLayout || _desktopContent is null || DataContext is MainViewModel { IsChartFullscreen: true })
             {
                 return;
             }

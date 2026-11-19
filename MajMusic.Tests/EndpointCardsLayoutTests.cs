@@ -153,6 +153,7 @@ namespace MajMusic.Tests
         private static void AssertToolbar(MainView view, double scale)
         {
             var toggle = view.FindControl<ArcSwitch>("OnlineModeToggle")!;
+            ArcTestVisuals.AssertOnlineSwitchGeometry(toggle);
             var inline = (StackPanel)toggle.Parent!;
             var toolbar = (Grid)inline.Parent!;
             var label = inline.Children.OfType<TextBlock>().Single();

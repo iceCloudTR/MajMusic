@@ -21,5 +21,11 @@ namespace MajMusic.Core.Abstractions
     {
         /// <summary>Gets the address to open using the device browser.</summary>
         Uri Address { get; }
+
+        /// <summary>Publishes renderer feedback from the session thread.</summary>
+        event Action<ChartFrame>? FrameReceived;
+
+        /// <summary>Replaces any unconsumed transport request with the latest native intent.</summary>
+        void SetIntent(ChartIntent intent);
     }
 }

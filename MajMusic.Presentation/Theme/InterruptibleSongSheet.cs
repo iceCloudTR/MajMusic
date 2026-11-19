@@ -122,9 +122,22 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Gets the stable full-height pane size used for all three resting points.</summary>
         private double FullPanelHeight => Math.Max(0, Bounds.Height) * Math.Clamp(MaxHeightFraction, 0.1, 1);
         /// <summary>Gets the frame height above and below the compact body.</summary>
-        private double FrameHeight => (_handle is { Bounds.Height: > 0 } handle
+        private double FrameHeight => (_practiceFullscreen ? 0 : _handle is { Bounds.Height: > 0 } handle
             ? handle.Bounds.Height + handle.Margin.Top + handle.Margin.Bottom : 20)
             + (_panel?.BorderThickness.Top ?? 0) + (_panel?.BorderThickness.Bottom ?? 0);
+        private bool _practiceFullscreen;
+
+        /// <summary>Gives the practice surface the space normally reserved for the sheet grabber.</summary>
+        internal void SetPracticeFullscreen(bool fullscreen)
+        {
+            _practiceFullscreen = fullscreen;
+            if (_handle is not null)
+            {
+                _handle.IsVisible = !fullscreen;
+            }
+            UpdatePanelSize();
+        }
+
         /// <summary>Gets the height of the song information, actions and grabber.</summary>
         private double CompactPanelHeight => Math.Min(FullPanelHeight, FrameHeight +
             (_compactContentHeight > 0 ? _compactContentHeight : 172));
@@ -175,7 +188,8 @@ namespace MajMusic.Presentation.Theme
         /// <summary>Settles an external pull from its current position after release or cancellation.</summary>
         /// <param name="upwardVelocity">The final upward pointer velocity, in logical pixels per second.</param>
         /// <param name="cancelled">Whether capture, viewport or playback ownership invalidated the gesture.</param>
-        public void EndInteractiveOpen(double upwardVelocity, bool cancelled = false)
+        /// <param name="reachedUpperHalf">Whether release reached the upper half of the mobile screen.</param>
+        public void EndInteractiveOpen(double upwardVelocity, bool cancelled = false, bool reachedUpperHalf = false)
         {
             if (!_interactiveOpening)
             {
@@ -187,7 +201,7 @@ namespace MajMusic.Presentation.Theme
             var distance = _interactiveOriginOffset - PanelOffset;
             var open = cancelled ? _interactiveOriginOpen : distance >= 8 ||
                 _progress >= CompactProgress * 0.5 || upwardVelocity > 500 && distance >= 6;
-            var expanded = cancelled ? _interactiveOriginExpanded : open && _progress > (CompactProgress + 1) * 0.5;
+            var expanded = cancelled ? _interactiveOriginExpanded : open && (reachedUpperHalf && distance > 32 || _progress > (CompactProgress + 1) * 0.5);
             CommitDetent(open, expanded);
         }
 
@@ -537,7 +551,8 @@ namespace MajMusic.Presentation.Theme
                 HandledEventsToo = content,
             })
             {
-                CanBegin = args => IsOpen && (!content || args.Pointer.Type == PointerType.Touch),
+                CanBegin = args => DataContext is not MajMusic.Presentation.ViewModels.MainViewModel { IsChartFullscreen: true } &&
+                    DataContext is not MajMusic.Presentation.ViewModels.MainViewModel { IsPracticeLocked: true } && IsOpen && (!content || args.Pointer.Type == PointerType.Touch),
             };
             tracker.Started += OnDragStarted;
             tracker.Moved += OnDragMoved;
@@ -552,7 +567,7 @@ namespace MajMusic.Presentation.Theme
         private void OnBodyDragStarting(object? sender, DragGestureEventArgs e)
         {
             var ancestors = _bodyGestureSource?.GetVisualAncestors().OfType<Control>().ToArray() ?? [];
-            if (_bodyGestureSource is TextBox || ancestors.Any(control => control is TextBox))
+            if (_bodyGestureSource is TextBox or Avalonia.Controls.Button || ancestors.Any(control => control is TextBox or Avalonia.Controls.Button or MajMusic.Presentation.Views.PracticeTimeline))
             {
                 e.Cancel = true;
                 return;

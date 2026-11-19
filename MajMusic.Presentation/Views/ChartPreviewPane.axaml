@@ -1,17 +1,84 @@
-<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:MajMusic.Presentation.ViewModels"
-             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
-             x:Class="MajMusic.Presentation.Views.ChartPreviewPane"
-             x:DataType="vm:MainViewModel">
-    <Grid ClipToBounds="True">
-        <StackPanel x:Name="PreviewSetup" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="8">
-            <TextBlock Text="{Binding MajViewStatus}" Classes="detailMuted" TextWrapping="Wrap"
-                       TextAlignment="Center" MaxWidth="300" />
-            <arc:Button Content="重试" IsVisible="{Binding CanRetryMajView}" Click="OnRetryMajView"
-                        MinHeight="36" HorizontalAlignment="Center" />
-        </StackPanel>
-        <ContentControl x:Name="PreviewSurface" IsVisible="False"
-                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" ClipToBounds="True" />
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajMusic.Presentation.ViewModels" xmlns:views="using:MajMusic.Presentation.Views"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="MajMusic.Presentation.Views.ChartPreviewPane"
+             x:DataType="vm:MainViewModel" ClipToBounds="True">
+    <UserControl.Resources>
+        <StreamGeometry x:Key="PracticeExpandGlyph">M 3,6 L 3,3 L 6,3 M 10,3 L 13,3 L 13,6 M 13,10 L 13,13 L 10,13 M 6,13 L 3,13 L 3,10</StreamGeometry>
+    </UserControl.Resources>
+    <UserControl.Styles>
+        <Style Selector="Button.practiceTool">
+            <Setter Property="Width" Value="44" /><Setter Property="Height" Value="44" />
+            <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="11" />
+            <Setter Property="BorderBrush" Value="{DynamicResource MusicLineBrush}" /><Setter Property="BorderThickness" Value="1" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource MusicPanelBrush}" />
+        </Style>
+        <Style Selector="Button.practiceTool.latched">
+            <Setter Property="Background" Value="{DynamicResource MusicSelectionBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource MusicAccentBrush}" />
+        </Style>
+        <Style Selector="Path.practiceGlyph">
+            <Setter Property="Width" Value="19" /><Setter Property="Height" Value="19" /><Setter Property="Stretch" Value="Uniform" />
+            <Setter Property="Stroke" Value="{DynamicResource MusicTextBrush}" /><Setter Property="StrokeThickness" Value="1.65" />
+            <Setter Property="StrokeLineCap" Value="Round" /><Setter Property="StrokeJoin" Value="Round" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+        <Style Selector="TextBlock.noteLegend">
+            <Setter Property="FontSize" Value="11" /><Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontFeatures" Value="tnum" /><Setter Property="LineHeight" Value="15" />
+            <Setter Property="Foreground" Value="{DynamicResource MusicMutedBrush}" /><Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+        <Style Selector="Button.practiceAction">
+            <Setter Property="MinWidth" Value="44" /><Setter Property="MinHeight" Value="44" />
+            <Setter Property="Padding" Value="8,3" /><Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Background" Value="{DynamicResource MusicPanelBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource MusicTextBrush}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+    </UserControl.Styles>
+    <Grid x:Name="PracticeGrid" Background="{DynamicResource MusicRaisedBrush}">
+        <views:PracticeStage x:Name="Stage" ClipToBounds="True">
+            <Grid x:Name="PracticeDisc" ClipToBounds="True">
+                <StackPanel x:Name="PreviewSetup" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="8">
+                    <TextBlock Text="{Binding MajViewStatus}" Classes="detailMuted" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="300" />
+                    <arc:Button Content="重试" IsVisible="{Binding CanRetryMajView}" Click="OnRetryMajView" MinHeight="36" HorizontalAlignment="Center" />
+                </StackPanel>
+                <ContentControl x:Name="PreviewSurface" IsVisible="False" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+            </Grid>
+            <StackPanel x:Name="PracticeNavigation" views:PracticeStage.Slot="Navigation" Orientation="Horizontal" Spacing="4">
+                <Button x:Name="PracticeBack" Classes="practiceTool" IsVisible="{Binding IsChartFullscreen}" Click="OnFullscreenClick"
+                        ToolTip.Tip="返回歌曲详情" AutomationProperties.Name="返回歌曲详情">
+                    <Path Classes="practiceGlyph" Data="{x:Static arc:ArcIcons.ArrowLeft}" />
+                </Button>
+                <views:PracticeLockButton x:Name="PracticeLock" Classes="practiceTool" />
+            </StackPanel>
+            <StackPanel x:Name="PracticeTools" views:PracticeStage.Slot="Options" Orientation="Horizontal" Spacing="4">
+                <Button x:Name="PracticeFullscreen" Classes="practiceTool" IsVisible="{Binding !IsChartFullscreen}" Click="OnFullscreenClick"
+                        ToolTip.Tip="全屏看谱" AutomationProperties.Name="全屏看谱">
+                    <Path Classes="practiceGlyph" Data="{StaticResource PracticeExpandGlyph}" />
+                </Button>
+                <Button x:Name="PracticeSettings" Classes="practiceTool" Click="OnSettingsClick" ToolTip.Tip="谱面设置" AutomationProperties.Name="谱面设置">
+                    <Path Classes="practiceGlyph" Data="{x:Static arc:ArcIcons.Settings}" />
+                </Button>
+            </StackPanel>
+            <TextBlock x:Name="PracticeNotes" views:PracticeStage.Slot="NotesLeft" Classes="noteLegend" AutomationProperties.Name="{Binding ChartNotes}" />
+            <TextBlock x:Name="PracticeRightNotes" views:PracticeStage.Slot="NotesRight" Classes="noteLegend" TextAlignment="Right" />
+        </views:PracticeStage>
+        <Grid x:Name="PracticeTransport" IsVisible="{Binding IsChartFullscreen}" RowDefinitions="*,Auto">
+            <views:PracticeTimeline x:Name="PracticeOverview" />
+            <StackPanel x:Name="PracticeClock" Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="5">
+                <TextBlock Text="{Binding PositionText}" FontSize="12" VerticalAlignment="Center" />
+                <Button Classes="practiceAction" Command="{Binding PreviousCommand}" AutomationProperties.Name="从头播放或上一首">
+                    <Path Data="M 3,2 L 5,2 L 5,14 L 3,14 Z M 14,2 L 5,8 L 14,14 Z" Fill="{DynamicResource MusicTextBrush}" Width="16" Height="16" />
+                </Button>
+                <Button x:Name="PracticePlay" Classes="practiceAction" Command="{Binding TogglePlayPauseCommand}" Content="{Binding TransportButtonText}" />
+                <Button Classes="practiceAction" Command="{Binding NextCommand}" AutomationProperties.Name="下一首">
+                    <Path Data="M 2,2 L 11,8 L 2,14 Z M 11,2 L 13,2 L 13,14 L 11,14 Z" Fill="{DynamicResource MusicTextBrush}" Width="16" Height="16" />
+                </Button>
+                <TextBlock Text="{Binding DurationText}" FontSize="12" VerticalAlignment="Center" />
+            </StackPanel>
+        </Grid>
     </Grid>
 </UserControl>

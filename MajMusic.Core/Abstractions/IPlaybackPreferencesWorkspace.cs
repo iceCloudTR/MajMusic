@@ -4,6 +4,13 @@ using MajMusic.Core.Models;
 
 namespace MajMusic.Core.Abstractions
 {
+    /// <summary>Updates chart practice controls without replacing unrelated settings.</summary>
+    public interface IChartPracticePreferencesWorkspace
+    {
+        /// <summary>Persists only chart practice preferences and returns the resulting settings.</summary>
+        Task<AppSettings> UpdateChartPracticeAsync(ChartPracticeOptions options, CancellationToken cancellationToken = default);
+    }
+
     /// <summary>Updates application audio preferences without replacing independently edited accounts or directories.</summary>
     public interface IPlaybackPreferencesWorkspace
     {

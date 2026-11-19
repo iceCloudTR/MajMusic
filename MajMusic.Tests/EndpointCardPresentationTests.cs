@@ -244,6 +244,16 @@ namespace MajMusic.Tests
             await WaitUntilAsync(() => view.IsIdle);
             TestAssert.True(view.Tracks.Any(track => track.Title == "Fixture previous owner private music")
                 && view.Playlists.Any(playlist => playlist.IsCloud), "Successful reauthentication restores the selected owner's private snapshots before another account is chosen.");
+
+            harness.Transport.RejectedUsername = "Fixture previous owner";
+            first.Password = "Generated-rejected-replacement-fixture";
+            TestAssert.True(first.LoginCommand.CanExecute(null), "A remembered account can explicitly retry with a newly typed password.");
+            await ExecuteCardAsync(first, first.LoginCommand);
+            TestAssert.True(harness.Vault.ContainsSecret("Generated-previous-owner-fixture")
+                && !harness.Vault.ContainsSecret("Generated-rejected-replacement-fixture"),
+                "A rejected login must not overwrite the previously remembered password.");
+
+            harness.Transport.RejectedUsername = "Fixture failed selection";
             first.SelectedAccount = first.Accounts.Single(option => option.AccountId == failingAccount);
             TestAssert.True(first.SelectAccountCommand.CanExecute(null), "The alternate saved-account selection must be available.");
             first.SelectAccountCommand.Execute(null);

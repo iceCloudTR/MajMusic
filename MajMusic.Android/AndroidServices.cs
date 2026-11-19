@@ -37,6 +37,7 @@ namespace MajMusic.Android
         private readonly PlaybackService _playback;
         /// <summary>Shares current music actions across replacement activity views.</summary>
         private readonly MainViewModel _viewModel;
+        internal MainViewModel Player => _viewModel;
         /// <summary>Locates the current storage picker without retaining destroyed activity views.</summary>
         private WeakReference<Control>? _currentView;
         /// <summary>Coalesces application initialization across activity recreation.</summary>
@@ -46,7 +47,7 @@ namespace MajMusic.Android
         /// <param name="context">The process-owned Android application context.</param>
         public AndroidServices(global::Android.Content.Context context)
         {
-            var directory = context.FilesDir?.AbsolutePath ?? throw new InvalidOperationException("Application storage is unavailable.");
+            var directory = AndroidDataDirectory.Resolve(context);
             _apiClient = CreateClient(TimeSpan.FromSeconds(100));
             _resourceClient = CreateClient(TimeSpan.FromMinutes(5));
             var documents = new AvaloniaDocumentStorage(CurrentStorageProvider, Path.Combine(directory, "DocumentCovers"));
@@ -71,7 +72,10 @@ namespace MajMusic.Android
             var collections = new MajCollectionExchange(_workspace, documentStorage: documents);
             var directories = new LocalDirectoryService(_workspace, collections);
             _viewModel = new MainViewModel(_workspace, _playback, collections: collections, metadata: metadata, directories: directories,
-                releases: new GitHubAppReleaseSource());
+                releases: new GitHubAppReleaseSource())
+            {
+                TrackArchiveDestination = new AndroidTrackArchiveDestination(context)
+            };
             _viewModel.EnsureFileAccessAsync = AndroidStorageAccess.Instance.EnsureAccessAsync;
             _viewModel.RequestAllFilesAccessAsync = AndroidStorageAccess.Instance.RequestAllFilesAccessAsync;
             _viewModel.ResolveFileSystemPath = AndroidStorageAccess.Instance.ResolveFileSystemPath;

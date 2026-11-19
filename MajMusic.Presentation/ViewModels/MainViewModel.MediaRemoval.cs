@@ -13,12 +13,11 @@ namespace MajMusic.Presentation.ViewModels
 
         /// <summary>Checks whether the captured online song can expose the shared local-file removal action.</summary>
         /// <param name="track">The source-scoped song captured by the menu.</param>
-        /// <returns>Whether a supporting idle workspace may remove its managed copies.</returns>
+        /// <returns>Whether a supporting idle workspace has a completed download to remove.</returns>
         public bool CanRemoveTrackMediaForMenu(MusicTrack track)
         {
             return IsIdle && _workspace is ITrackMediaRemovalWorkspace && track.RemoteId is not null
-                && (!_cardDownloadStates.TryGetValue(DownloadOwner(track), out var state)
-                    || state.Progress?.State is not (AudioDownloadState.Preparing or AudioDownloadState.Downloading));
+                && HasDownloadedTrack(track) && !IsTrackDownloadInProgress(track);
         }
 
         /// <summary>Removes application-managed local files without deleting the source song or playlist references.</summary>
@@ -27,13 +26,13 @@ namespace MajMusic.Presentation.ViewModels
         public Task RemoveTrackMediaFromMenuAsync(MusicTrack track)
         {
             ArgumentNullException.ThrowIfNull(track);
+            if (_workspace is not ITrackMediaRemovalWorkspace removal || !CanRemoveTrackMediaForMenu(track))
+            {
+                return Task.CompletedTask;
+            }
+
             return RunBusyAsync(async () =>
             {
-                if (_workspace is not ITrackMediaRemovalWorkspace removal || track.RemoteId is null)
-                {
-                    return;
-                }
-
                 PrepareLocalMediaRemoval();
                 await PrepareTrackMediaRemovalAsync(track);
                 var result = await removal.RemoveTrackMediaAsync(track, _lifetime.Token);

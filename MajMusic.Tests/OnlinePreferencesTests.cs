@@ -12,13 +12,15 @@ namespace MajMusic.Tests
     /// <summary>Checks automatically saved online choices without real credentials or network access.</summary>
     internal static class OnlinePreferencesTests
     {
-        /// <summary>Runs restart, rapid-choice, concurrent-edit and shutdown regressions.</summary>
+        /// <summary>Runs startup, restart, rapid-choice, concurrent-edit and shutdown regressions.</summary>
         /// <returns>A task representing the completed preference cases.</returns>
         public static async Task RunAsync()
         {
             var root = Path.Combine(Path.GetTempPath(), "MajMusic-online-preferences-" + Guid.NewGuid().ToString("N"));
             try
             {
+                await ValidateStartupChoiceAsync(requested: true);
+                await ValidateStartupChoiceAsync(requested: false);
                 await ValidateRestartAsync(Path.Combine(root, "restart"));
                 await ValidateRapidChoicesAsync(Path.Combine(root, "rapid"));
                 await ValidateConcurrentEditsAsync(Path.Combine(root, "concurrent"));
@@ -40,6 +42,48 @@ namespace MajMusic.Tests
                     Directory.Delete(resolved, true);
                 }
             }
+        }
+
+        /// <summary>Retains and saves a startup edit made after a settings snapshot was read.</summary>
+        /// <param name="requested">The user's new online choice.</param>
+        /// <returns>A task representing the startup preference race.</returns>
+        private static async Task ValidateStartupChoiceAsync(bool requested)
+        {
+            var libraryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseLibrary = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var workspace = new StartupWorkspace
+            {
+                Settings = new AppSettings { OnlineEnabled = !requested },
+                SearchOverride = async (_, cancellationToken) =>
+                {
+                    libraryStarted.TrySetResult();
+                    await releaseLibrary.Task.WaitAsync(cancellationToken);
+                    return Array.Empty<MusicTrack>();
+                }
+            };
+            workspace.SetOnlineEnabled(!requested);
+            await using var view = CreateView(workspace);
+            var initialization = view.InitializeAsync();
+            try
+            {
+                await workspace.SettingsCaptured.Task.WaitAsync(TimeSpan.FromSeconds(3));
+                TestAssert.Equal(!requested, view.OnlineEnabled, "The switch must initially match a preloaded workspace.");
+                view.OnlineEnabled = requested;
+                TestAssert.Equal(requested, workspace.IsOnline, "A startup edit must apply immediately.");
+                workspace.ReleaseSettings.TrySetResult();
+                await libraryStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+                await view.OnlineSettingsUpdate.WaitAsync(TimeSpan.FromSeconds(3));
+                TestAssert.Equal(requested, view.OnlineEnabled, "An older settings snapshot must not undo a startup switch edit.");
+                TestAssert.Equal(requested, workspace.IsOnline, "Restoring settings must preserve the immediate network permission.");
+                TestAssert.Equal(requested, workspace.Settings.OnlineEnabled, "Local persistence must not wait for the library to finish loading.");
+            }
+            finally
+            {
+                workspace.ReleaseSettings.TrySetResult();
+                releaseLibrary.TrySetResult();
+            }
+
+            await initialization.WaitAsync(TimeSpan.FromSeconds(3));
         }
 
         /// <summary>Restores saved enabled and disabled choices while preserving an independent Guest selection.</summary>
@@ -73,7 +117,9 @@ namespace MajMusic.Tests
 
             using (var workspace = new MusicWorkspace(root, client, client, store, vault))
             {
+                await workspace.LoadSettingsAsync();
                 await using var view = CreateView(workspace);
+                TestAssert.True(view.OnlineEnabled && workspace.IsOnline, "The switch must reflect online permission on the first frame after a preloaded restart.");
                 await view.InitializeAsync();
                 await view.AutomaticLogin.WaitAsync(TimeSpan.FromSeconds(3));
                 TestAssert.True(view.OnlineEnabled && workspace.IsOnline, "Restart must restore an explicitly saved enabled choice.");
@@ -194,7 +240,7 @@ namespace MajMusic.Tests
         /// <summary>Creates a preference-only view without a native audio backend.</summary>
         /// <param name="workspace">The explicit test workspace.</param>
         /// <returns>The test-owned presentation model.</returns>
-        private static MainViewModel CreateView(MusicWorkspace workspace)
+        private static MainViewModel CreateView(IMusicWorkspace workspace)
         {
             return new MainViewModel(workspace, new PlaybackService(new UnavailablePlaybackBackend()), static action => action());
         }
@@ -204,6 +250,27 @@ namespace MajMusic.Tests
         private static EndpointConfiguration Endpoint()
         {
             return new EndpointConfiguration { Id = "source", Name = "Source", BaseUri = new Uri("https://example.invalid/api/") };
+        }
+
+        /// <summary>Delays the first settings snapshot before the view can restore it.</summary>
+        private sealed class StartupWorkspace : LibraryExperienceTests.ExperienceWorkspace, IMusicWorkspace
+        {
+            /// <summary>Signals that initialization has captured its original settings.</summary>
+            public TaskCompletionSource SettingsCaptured { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            /// <summary>Allows initialization to continue with the captured snapshot.</summary>
+            public TaskCompletionSource ReleaseSettings { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            /// <inheritdoc />
+            async Task<AppSettings> IMusicWorkspace.LoadSettingsAsync(CancellationToken cancellationToken)
+            {
+                var snapshot = await base.LoadSettingsAsync(cancellationToken);
+                if (SettingsCaptured.TrySetResult())
+                {
+                    await ReleaseSettings.Task.WaitAsync(cancellationToken);
+                }
+
+                return snapshot;
+            }
         }
 
         /// <summary>Blocks one local save to expose ordering and coalescing without timing assumptions.</summary>
@@ -234,6 +301,7 @@ namespace MajMusic.Tests
                 Release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 Interlocked.Exchange(ref _pause, 1);
             }
+
             /// <inheritdoc />
             public Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
             {

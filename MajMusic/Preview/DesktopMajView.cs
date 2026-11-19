@@ -10,7 +10,7 @@ using MajMusic.Presentation.Views;
 namespace MajMusic.Preview
 {
     /// <summary>Embeds the session in the desktop window using its system web renderer.</summary>
-    internal sealed class DesktopMajView : NativeWebView, IMajViewNavigator
+    internal sealed partial class DesktopMajView : NativeWebView, IMajViewNavigator, IPracticeDisc
     {
         private readonly Action<string> _reportFailure;
         private readonly Uri _sessionAddress;
@@ -38,6 +38,8 @@ namespace MajMusic.Preview
                 {
                     windows.UserDataFolder = Path.Combine(dataDirectory, "Runtime", "MajViewWebView");
                     windows.AllowSingleSignOnUsingOSPrimaryAccount = false;
+                    // Playback is explicitly requested on an app button outside the trusted chart document.
+                    windows.AdditionalBrowserArguments = "--autoplay-policy=no-user-gesture-required";
                 }
                 else if (options is AppleWKWebViewEnvironmentRequestedEventArgs apple)
                 {
@@ -65,6 +67,10 @@ namespace MajMusic.Preview
 
                 if (args.IsSuccess)
                 {
+                    if (OperatingSystem.IsWindows())
+                    {
+                        AttachWindowsDisc(this, EventArgs.Empty);
+                    }
                     _documentLoaded = true;
                     _startupTimeout.Stop();
                 }
@@ -92,11 +98,18 @@ namespace MajMusic.Preview
             _documentLoaded = false;
             _startupTimeout.Start();
             base.OnAttachedToVisualTree(e);
+            if (OperatingSystem.IsWindows())
+            {
+                LayoutUpdated += AttachWindowsDisc;
+                AttachWindowsDisc(this, EventArgs.Empty);
+            }
         }
 
         /// <inheritdoc />
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
+            LayoutUpdated -= AttachWindowsDisc;
+            ReleaseWindowsDisc();
             _attached = false;
             _startupTimeout.Stop();
             base.OnDetachedFromVisualTree(e);

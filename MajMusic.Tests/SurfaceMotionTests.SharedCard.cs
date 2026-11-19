@@ -9,7 +9,6 @@ using MajMusic.Presentation.Theme;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
 using TKCode.Arc.Motion;
-using ShapePath = Avalonia.Controls.Shapes.Path;
 
 namespace MajMusic.Tests
 {
@@ -113,10 +112,9 @@ namespace MajMusic.Tests
                 Pump(window);
                 var settled = CaptureSharedCardElements(main, window, card);
                 TestAssert.True(SharedCardRectDifference(firstDocked.Card, settled.Card) < .1
-                    && SharedCardRectDifference(firstDocked.Preview, settled.Preview) < .1
-                    && SharedCardRectDifference(firstDocked.Glyph, settled.Glyph) < .1
+                    && SharedCardRectDifference(firstDocked.Entry, settled.Entry) < .1
                     && SharedCardRectDifference(firstDocked.Artwork, settled.Artwork) < .1,
-                    "The card, actual preview Path and cover must not rearrange again after their first docked frame.");
+                    "The card, details entry and cover must not rearrange again after their first docked frame.");
                 TestAssert.True(await completeOpening.WaitAsync(TimeSpan.FromSeconds(3)) && ReferenceEquals(destination.Content, card)
                     && ReferenceEquals(card.Parent, destination) && source.Content is null && flight.Children.Count == 0
                     && BoundsIn(card, window) == BoundsIn(destination, window) && Math.Abs(BoundsIn(card, window).Y - original.Y) < .1,
@@ -149,38 +147,32 @@ namespace MajMusic.Tests
             }
         }
 
-        /// <summary>Reads actual painted cover coordinates through the Viewbox's scale as well as the preview button and outer card.</summary>
+        /// <summary>Reads actual painted cover coordinates through the Viewbox's scale as well as the details entry and outer card.</summary>
         /// <param name="main">The production desktop view.</param>
         /// <param name="window">The rendering viewport.</param>
         /// <param name="card">The same real information card throughout the move.</param>
-        /// <returns>The independently transformed card, button, source Path and cover rectangles, plus the Path's template transforms.</returns>
-        private static (Rect Card, Rect Preview, Rect Glyph, Rect Artwork, string GlyphTransforms) CaptureSharedCardElements(MainView main, Window window, Border card)
+        /// <returns>The card, details entry and artwork rectangles.</returns>
+        private static (Rect Card, Rect Entry, Rect Artwork) CaptureSharedCardElements(MainView main, Window window, Border card)
         {
-            var preview = main.FindControl<Control>("DesktopChartPreviewButton")!;
-            var glyph = (ShapePath)((TKCode.Arc.Button)preview).Content!;
-            var glyphBounds = PaintedIconBounds(glyph, window);
-            var transforms = IconTransformDescription(glyph, preview);
-            TestAssert.True(transforms.Length == 0,
-                "The preview source Path must not inherit a label entrance or nested scale during the card flight: " + transforms);
+            var entry = main.FindControl<Control>("DesktopExpandDetailsButton")!;
             var artwork = main.FindControl<Viewbox>("DesktopDetailsCover")!.Child!;
             var artworkStart = artwork.TranslatePoint(default, window)!.Value;
             var artworkEnd = artwork.TranslatePoint(new Point(artwork.Bounds.Width, artwork.Bounds.Height), window)!.Value;
-            return (BoundsIn(card, window), BoundsIn(preview, window), glyphBounds, new Rect(artworkStart, artworkEnd), transforms);
+            return (BoundsIn(card, window), BoundsIn(entry, window), new Rect(artworkStart, artworkEnd));
         }
 
         /// <summary>Rejects a new geometry step when destination ownership replaces the flight layer at the end of a decelerating move.</summary>
         /// <param name="before">The 350ms actual frame.</param>
         /// <param name="last">The 359ms actual frame, before docking.</param>
         /// <param name="docked">The 365ms actual frame, after docking.</param>
-        private static void AssertSharedCardDockContinuity((Rect Card, Rect Preview, Rect Glyph, Rect Artwork, string GlyphTransforms) before,
-            (Rect Card, Rect Preview, Rect Glyph, Rect Artwork, string GlyphTransforms) last,
-            (Rect Card, Rect Preview, Rect Glyph, Rect Artwork, string GlyphTransforms) docked)
+        private static void AssertSharedCardDockContinuity((Rect Card, Rect Entry, Rect Artwork) before,
+            (Rect Card, Rect Entry, Rect Artwork) last,
+            (Rect Card, Rect Entry, Rect Artwork) docked)
         {
             foreach (var (name, earlier, previous, current) in new[]
             {
                 ("card", before.Card, last.Card, docked.Card),
-                ("preview button", before.Preview, last.Preview, docked.Preview),
-                ("preview source Path", before.Glyph, last.Glyph, docked.Glyph),
+                ("details entry", before.Entry, last.Entry, docked.Entry),
                 ("cover", before.Artwork, last.Artwork, docked.Artwork)
             })
             {

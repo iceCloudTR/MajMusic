@@ -51,80 +51,209 @@ index 0000000..03a899b
 +fileFormatVersion: 2
 +guid: 1a345a7f3ad5403babce49465f90a20e
 diff --git a/Assets/HandleJSMessages.cs b/Assets/HandleJSMessages.cs
-index 2418265..95473af 100644
+index 2418265..9a5bdbd 100644
 --- a/Assets/HandleJSMessages.cs
 +++ b/Assets/HandleJSMessages.cs
-@@ -1,6 +1,5 @@
- using System;
- using System.Collections;
--using System.Collections.Generic;
- using System.Runtime.InteropServices;
- using UnityEngine;
- 
-@@ -11,46 +10,28 @@ public class HandleJSMessages : MonoBehaviour
+@@ -11,45 +11,175 @@ public class HandleJSMessages : MonoBehaviour
      [DllImport("__Internal")]
      private static extern void UnityLoaded();
  
 -    private void Awake()
 +    private IEnumerator Start()
      {
--        Application.targetFrameRate = 5;
--        if (Application.platform == RuntimePlatform.WebGLPlayer)
 +        if (Application.platform != RuntimePlatform.WebGLPlayer)
-         {
--            WebGLInput.captureAllKeyboardInput = false;
--            Debug.Log("HandleJSMessages Activated");//look for this message in the browser to ensure its working, delete before production
--            DontDestroyOnLoad(this);
--            try
--            {
--                UnityLoaded();
--            }
--            catch (Exception e)
--            {
--                Debug.Log("UnityLoaded() failed: " + e.Message);
--            }
++        {
 +            yield break;
-         }
- 
-+        Application.targetFrameRate = 5;
++        }
++
+         Application.targetFrameRate = 5;
+-        if (Application.platform == RuntimePlatform.WebGLPlayer)
 +        WebGLInput.captureAllKeyboardInput = false;
 +        DontDestroyOnLoad(this);
 +        // Local scene components initialize in Start before the host sends the chart.
 +        yield return null;
 +        try
-+        {
+         {
+-            WebGLInput.captureAllKeyboardInput = false;
+-            Debug.Log("HandleJSMessages Activated");//look for this message in the browser to ensure its working, delete before production
+-            DontDestroyOnLoad(this);
+-            try
++            var canvas = GameObject.Find("CanvasMain");
++            canvas.GetComponent<Canvas>().enabled = false;
++            canvas.GetComponent<UnityEngine.UI.GraphicRaycaster>().enabled = false;
++            foreach (var slider in canvas.GetComponentsInChildren<TimelineSlider>(true))
+             {
+-                UnityLoaded();
++                slider.enabled = false;
+             }
+-            catch (Exception e)
 +            UnityLoaded();
 +        }
 +        catch (Exception e)
 +        {
 +            Debug.Log("UnityLoaded() failed: " + e.Message);
 +        }
++    }
++
++    [DllImport("__Internal")]
++    private static extern void MajMusicPosition(float time, float length, int playing);
++
++    [DllImport("__Internal")]
++    private static extern void MajMusicNoteTimes(int kind, int[] milliseconds, int length);
++
++    private float nextReport;
++    private bool ready;
++    private bool reportedPlaying;
++
++    private void LateUpdate()
++    {
++        var game = gameMainManager;
++        if (game == null || game.bgm.clip == null || !game.menuManager.PlayPause.interactable)
++        {
++            return;
++        }
++        var duration = game.bgm.clip.length;
++        if (duration <= 0f || SimaiProcess.notelist.Count == 0)
++        {
++            return;
++        }
++        if (!ready)
++        {
++            ready = true;
++            PublishNoteTimes();
++        }
++        var playing = game.timeProvider.isStart;
++        if (playing != reportedPlaying || Time.unscaledTime >= nextReport)
++        {
++            ReportPosition();
++        }
++    }
++
++    // Export the judgement times once. Holds and slide paths finish at their tails;
++    // slide heads count independently as TAP or BREAK, including simultaneous heads.
++    private static void PublishNoteTimes()
++    {
++        const int tap = 0, hold = 1, slide = 2, touch = 3, brk = 4;
++        var times = new[] { new List<int>(), new List<int>(), new List<int>(), new List<int>(), new List<int>() };
++        foreach (var point in SimaiProcess.notelist)
++        {
++            foreach (var note in point.getNotes())
+             {
+-                Debug.Log("UnityLoaded() failed: " + e.Message);
++                if (note.noteType == SimaiNoteType.Slide)
++                {
++                    if (!note.isSlideNoHead)
++                    {
++                        times[note.isBreak ? brk : tap].Add(Milliseconds(point.time));
++                    }
++                    times[note.isSlideBreak ? brk : slide].Add(Milliseconds(note.slideStartTime + note.slideTime));
++                }
++                else
++                {
++                    var longNote = note.noteType == SimaiNoteType.Hold || note.noteType == SimaiNoteType.TouchHold;
++                    var kind = note.isBreak ? brk : longNote ? hold : note.noteType == SimaiNoteType.Touch ? touch : tap;
++                    times[kind].Add(Milliseconds(point.time + (longNote ? note.holdTime : 0)));
++                }
+             }
+         }
++        for (var kind = 0; kind < times.Length; kind++)
++        {
++            var values = times[kind].ToArray();
++            MajMusicNoteTimes(kind, values, values.Length);
++        }
++    }
+ 
++    private static int Milliseconds(double seconds)
++    {
++        return (int)Math.Min(int.MaxValue, Math.Max(0, Math.Round(seconds * 1000)));
      }
  
 -#if UNITY_EDITOR
 -    public void Start()
--    {
++    private void ReportPosition()
+     {
 -        StartCoroutine(startAfter());
--    }
++        var game = gameMainManager;
++        reportedPlaying = game.timeProvider.isStart;
++        nextReport = Time.unscaledTime + (reportedPlaying ? 0.10f : 1f);
++        MajMusicPosition(game.timeProvider.AudioTime, game.bgm.clip.length, reportedPlaying ? 1 : 0);
+     }
 -    IEnumerator startAfter()
--    {
++
++    // Absolute commands are idempotent. The host only sends seeks on a new seek revision.
++    public void SetPreviewPlaying(float play)
+     {
 -        yield return new WaitForSeconds(1);
 -        Application.targetFrameRate = -1;
 -        var apiroot = "file://C:/Users/bengy/Downloads/test1/";
 -        gameMainManager = GameObject.Find("GameMain").GetComponent<GameMainManager>();
--
++        if (ready && gameMainManager.timeProvider.isStart != (play != 0))
++        {
++            gameMainManager.OnPlayPauseButtonClick();
++        }
++        ReportPosition();
++    }
+ 
 -        gameMainManager.WebLoad(apiroot+ "maidata.txt",
 -            apiroot +  "bg.jpg",
 -            apiroot + "track.mp3",
 -            apiroot + "bg.mp4",
 -            6);
--    }
++    public void SeekPreview(float seconds)
++    {
++        if (ready)
++        {
++            gameMainManager.WebSeek(seconds);
++            ReportPosition();
++        }
++    }
++
++    [Serializable]
++    private sealed class Options
++    {
++        public float noteSpeed, touchSpeed, shade, offsetMs, gain, effects, speed;
++    }
++
++    public void ConfigurePreview(string json)
++    {
++        var options = JsonUtility.FromJson<Options>(json);
++        var game = gameMainManager;
++        var settings = game.settings;
++        var redraw = settings.hostNoteSpeed != options.noteSpeed || settings.hostTouchSpeed != options.touchSpeed;
++        settings.hostNoteSpeed = options.noteSpeed;
++        settings.hostTouchSpeed = options.touchSpeed;
++        settings.hostShade = options.shade;
++        settings.hostOffset = options.offsetMs / 1000f;
++        game.simailoader.noteSpeed = settings.noteSpeed;
++        game.simailoader.touchSpeed = settings.touchSpeed;
++        if (!Mathf.Approximately(game.audioSpeed, options.speed))
++        {
++            game.WebSetPlaybackSpeed(options.speed.ToString(System.Globalization.CultureInfo.InvariantCulture));
++        }
++        // Music uses the same linear gain as the native player. The legacy BGM mixer attenuates it by 3 dB.
++        game.bgm.outputAudioMixerGroup = null;
++        game.bgm.spatialBlend = 0f;
++        game.bgm.volume = options.gain;
++        var effects = game.SE;
++        var gain = options.gain * options.effects;
++        effects.answerStream.volume = effects.judgeStream.volume = effects.judgeBreakStream.volume = gain;
++        effects.breakStream.volume = effects.judgeExStream.volume = effects.hanabiStream.volume = gain;
++        effects.holdRiserStream.volume = effects.trackStartStream.volume = effects.slideStream.volume = gain;
++        effects.touchStream.volume = effects.allperfectStream.volume = effects.clockStream.volume = gain;
++        if (effects.fanfareStream != null)
++        {
++            effects.fanfareStream.volume = gain;
++        }
++        if (redraw)
++        {
++            game.WebRefreshTimelineAfterVisualSpeedChange("NativeSettings");
++        }
+     }
 -#endif
--
+ 
      /// <summary>
      /// Receive message from the nextjs app that has webgl-nextjs package
-     /// </summary>
-@@ -74,4 +55,4 @@ public class HandleJSMessages : MonoBehaviour
+@@ -74,4 +204,4 @@ public class HandleJSMessages : MonoBehaviour
              int.Parse(level[2].ToString()));
          
      }
@@ -132,24 +261,27 @@ index 2418265..95473af 100644
 \ No newline at end of file
 +}
 diff --git a/Assets/JSScript.jslib b/Assets/JSScript.jslib
-index e8b9136..bba9350 100644
+index e8b9136..e46fc98 100644
 --- a/Assets/JSScript.jslib
 +++ b/Assets/JSScript.jslib
-@@ -7,6 +7,13 @@ mergeInto(LibraryManager.library,
+@@ -7,6 +7,16 @@ mergeInto(LibraryManager.library,
  		else
  			console.log("window.onUnityLoaded is undefined")
    	},
-+	MajMusicSetViewport: function(left, top, width, height) {
-+		var style = Module.canvas.parentElement.style;
-+		style.setProperty("--chart-left", left * 100 + "%");
-+		style.setProperty("--chart-top", top * 100 + "%");
-+		style.setProperty("--chart-width", width * 100 + "%");
-+		style.setProperty("--chart-height", height * 100 + "%");
-+	},
++    MajMusicAudioClock__deps: ['$WEBAudio'],
++    MajMusicAudioClock: function() {
++        return WEBAudio.audioContext.currentTime;
++    },
++	MajMusicPosition: function(time, duration, playing) {
++        if (window.majPosition) window.majPosition(time, duration, playing !== 0);
++    },
++    MajMusicNoteTimes: function(kind, address, length) {
++        if (window.majNoteTimes) window.majNoteTimes(kind, Array.from(HEAP32.subarray(address >> 2, (address >> 2) + length)));
++    },
  	SetLocalStorge: function(name, value) {
  		localStorage.setItem(UTF8ToString(name), UTF8ToString(value));
  	},
-@@ -19,4 +26,4 @@ mergeInto(LibraryManager.library,
+@@ -19,4 +29,4 @@ mergeInto(LibraryManager.library,
      	stringToUTF8(returnStr, buffer, bufferSize);
      	return buffer;
  	}
@@ -256,55 +388,790 @@ index 40e39bf..292bb00 100644
  --- !u!224 &1311215481
  RectTransform:
    m_ObjectHideFlags: 0
+diff --git a/Assets/Scripts/BGManager.cs b/Assets/Scripts/BGManager.cs
+index 41a66f0..591fd99 100644
+--- a/Assets/Scripts/BGManager.cs
++++ b/Assets/Scripts/BGManager.cs
+@@ -19,6 +19,7 @@ public class BGManager : MonoBehaviour
+     public GameObject videoTarget;
+     public bool isAnyErr = false;
+     float desireSpeed = 1f;
++    float nextVideoCheck;
+ 
+     private bool showIdleVideoFrame = false;
+     private bool lastHideStaticBackground = false;
+@@ -91,6 +92,7 @@ public class BGManager : MonoBehaviour
+     public void SetPlayBackSpeed(float speed)
+     {
+         desireSpeed = speed;
++        nextVideoCheck = Time.unscaledTime + 0.3f;
+         if (videoPlayer.canSetPlaybackSpeed)
+         {
+             videoPlayer.playbackSpeed = desireSpeed;
+@@ -136,30 +138,25 @@ public class BGManager : MonoBehaviour
+             BackgroundCover.color = new UnityEngine.Color(0f, 0f, 0f, settings.bgCover);
+         }
+ 
+-        if (videoPlayer.isPrepared && videoPlayer.isPlaying)
++        if (!videoPlayer.isPrepared || !videoPlayer.isPlaying) return;
++        if (!audioTimeProvider.isStart)
+         {
+-            var delta = videoPlayer.time - audioTimeProvider.AudioTime;
+-            //Debug.Log("[MJV][BGManager] video time delta:" + delta);
+-            if (Math.Abs(delta) > 0.1f)
+-            {
+-                Debug.Log("[MJV][BGManager] video time is behind audio time, try speed up video");
+-                if (videoPlayer.canSetPlaybackSpeed)
+-                {
+-                    float speedchange = 1f + ((float)-delta * 0.8f);
+-                    videoPlayer.playbackSpeed = desireSpeed * speedchange;
+-                }
+-                else
+-                {
+-                    Debug.Log("[MJV][BGManager] videoPlayer.canSetPlaybackSpeed is false");
+-                }
+-            }
+-            else
+-            {
+-                if (videoPlayer.canSetPlaybackSpeed)
+-                {
+-                    videoPlayer.playbackSpeed = desireSpeed;
+-                }
+-            }
++            videoPlayer.Pause();
++            return;
++        }
++        if (Time.unscaledTime < nextVideoCheck) return;
++        nextVideoCheck = Time.unscaledTime + 0.25f;
++        var target = audioTimeProvider.AudioTime;
++        if (videoPlayer.length > 0d) target = Mathf.Min(target, (float)videoPlayer.length);
++        var error = target - (float)videoPlayer.time;
++        if (Mathf.Abs(error) > 0.35f)
++        {
++            videoPlayer.time = target;
++        }
++        if (videoPlayer.canSetPlaybackSpeed)
++        {
++            var correction = Mathf.Abs(error) < 0.045f ? 0f : Mathf.Clamp(error * 0.5f, -0.08f, 0.08f);
++            videoPlayer.playbackSpeed = desireSpeed * (1f + correction);
+         }
+     }
+ }
+diff --git a/Assets/Scripts/Core/AudioTimeProvider.cs b/Assets/Scripts/Core/AudioTimeProvider.cs
+index bde87bd..d52767b 100644
+--- a/Assets/Scripts/Core/AudioTimeProvider.cs
++++ b/Assets/Scripts/Core/AudioTimeProvider.cs
+@@ -1,87 +1,89 @@
+-﻿using System.Collections;
+-using System.Collections.Generic;
++using System.Runtime.InteropServices;
+ using UnityEngine;
+-using System;
+ 
++// Sample Web Audio before the notes and the PV consume this frame's position.
++[DefaultExecutionOrder(-100)]
+ public class AudioTimeProvider : MonoBehaviour
+ {
+-    public float AudioTime = 0f; //notes get this value
+-
+-    float startTime;
+-    float speed;
+-    public bool isStart = false;
+-    public float playStartTime = 0f;
+-    public float audioOffset = 0f;
++    public float AudioTime;
++    public bool isStart;
++    public float playStartTime;
+     public AudioSource bgm;
+     public SoundEffect SE;
+     public SettingsManager settings;
++    private bool heardTrack;
++    private float speed = 1f;
++    private double startedAt;
++
++#if UNITY_WEBGL && !UNITY_EDITOR
++    [DllImport("__Internal")]
++    private static extern double MajMusicAudioClock();
++#else
++    private static double MajMusicAudioClock() => AudioSettings.dspTime;
++#endif
+ 
+-    public void SetStartTime(float _playStartTime, float _speed)
++    private float ReadTrackTime()
+     {
+-        playStartTime = _playStartTime;
+-        AudioTime = playStartTime;
+-        speed = _speed;
+-        SE.generateSoundEffectList(playStartTime);
+-        bgm.pitch = speed;
+-        bgm.time = AudioTime;
+-        bgm.Play();
+-        startTime = Time.realtimeSinceStartup;
+-        isStart = true;
++        return Mathf.Clamp(playStartTime + (float)(MajMusicAudioClock() - startedAt) * speed, 0f, bgm.clip.length);
++    }
++
++    public void SetStartTime(float position, float speed)
++    {
++        AudioTime = Mathf.Clamp(position, 0f, bgm.clip.length);
++        SE.SeekEffects(AudioTime + settings.offset);
++        this.speed = speed;
++        Resume();
+     }
+ 
+     public void Pause()
+     {
++        if (isStart && bgm.isPlaying)
++        {
++            AudioTime = ReadTrackTime();
++        }
+         isStart = false;
+         bgm.Stop();
++        SE.StopEffects();
+     }
+ 
+     public void Resume()
+     {
+-        startTime = Time.realtimeSinceStartup;
+         playStartTime = AudioTime;
+-        isStart = true;
++        // The pinned WebGL backend divides the initial buffer offset by pitch. Start at unity
++        // pitch, then set the rate on the same Web Audio source before returning to the browser.
++        bgm.pitch = 1f;
+         bgm.time = AudioTime;
++        startedAt = MajMusicAudioClock();
+         bgm.Play();
++        bgm.pitch = speed;
++        heardTrack = bgm.isPlaying;
++        isStart = true;
+     }
+ 
+     public void ResetStartTime()
+     {
+-        isStart = false;
++        Pause();
+         AudioTime = playStartTime;
+-        bgm.Stop();
+     }
+ 
+-    void Update()
++    private void Update()
+     {
+-        if (isStart)
++        if (!isStart)
+         {
+-            audioOffset = settings.offset;
+-            if(speed !=1)
+-                AudioTime = (bgm.time);
+-            else
+-                AudioTime = (Time.realtimeSinceStartup - startTime) + playStartTime;
+-            var delta = AudioTime - bgm.time;
+-            //print(delta);
+-            if (AudioTime >= 0 && Mathf.Abs(delta) > 0.03)
+-            {
+-                //Debug.LogError("bgm time delay > 0.03");
+-                if(AudioTime > bgm.clip.length) {
+-                    bgm.Stop();
+-                    isStart = false;
+-                }
+-                if (AudioTime > bgm.time)
+-                    startTime += Mathf.Abs(delta)*0.7f;
+-                else
+-                    startTime -= Mathf.Abs(delta)*0.7f;
+-            }
++            return;
+         }
+-    }
+-
+-    private void FixedUpdate()
+-    {
+-       if(isStart)
++        if (bgm.isPlaying)
++        {
++            heardTrack = true;
++            AudioTime = ReadTrackTime();
++            SE.SoundEffectUpdate(settings.offset);
++        }
++        else if (heardTrack)
+         {
+-            SE.SoundEffectUpdate(audioOffset);
++            // The source resets its cursor to zero on completion. Keep the final frame parked.
++            AudioTime = bgm.clip.length;
++            isStart = false;
++            SE.StopEffects();
+         }
+     }
+ }
+diff --git a/Assets/Scripts/Core/SimaiDataLoader.cs b/Assets/Scripts/Core/SimaiDataLoader.cs
+index ab5886c..083ec73 100644
+--- a/Assets/Scripts/Core/SimaiDataLoader.cs
++++ b/Assets/Scripts/Core/SimaiDataLoader.cs
+@@ -63,9 +63,9 @@ public class SimaiDataLoader : MonoBehaviour
+     }
+ 
+     // MajdataView/JsonDataLoader.cs 的 LoadJson(string json, float ignoreOffset) 方法的改版
+-    public void PlayLevel(float ignoreOffset)
++    public void PlayLevel(float ignoreOffset, bool previewWindow = false)
+     {
+-        CountNoteSum();
++        if (!previewWindow) CountNoteSum();
+         
+         if(SimaiProcess.notelist.Count <= 0) {return;}
+         double lastNoteTime = SimaiProcess.notelist.Last().time;
+@@ -73,8 +73,12 @@ public class SimaiDataLoader : MonoBehaviour
+         foreach (var timing in SimaiProcess.notelist)
+         {
+             try {
+-                if (timing.time < ignoreOffset) {
+-                    CountNoteCount(timing.noteList);
++                if (previewWindow && timing.time > ignoreOffset + 8) continue;
++                if (previewWindow) timing.noteList = timing.getNotes();
++                // Keep long holds and moving slides visible when the cursor is inside them.
++                if (timing.time < ignoreOffset && (!previewWindow || !timing.noteList.Exists(n =>
++                    timing.time + n.holdTime >= ignoreOffset || n.slideStartTime + n.slideTime >= ignoreOffset))) {
++                    if (!previewWindow) CountNoteCount(timing.noteList);
+                     continue;
+                 }
+                 for (int i = 0; i < timing.noteList.Count; i++)
+diff --git a/Assets/Scripts/Core/SoundEffect.cs b/Assets/Scripts/Core/SoundEffect.cs
+index 3b04143..e14c5dc 100644
+--- a/Assets/Scripts/Core/SoundEffect.cs
++++ b/Assets/Scripts/Core/SoundEffect.cs
+@@ -73,6 +73,46 @@ public class SoundEffect: MonoBehaviour
+     public AudioTimeProvider timeProvider;
+ 
+     List<SoundEffectTiming> waitToBePlayed;
++    private int nextEffect;
++
++    public void ResetEffectTimeline()
++    {
++        waitToBePlayed = null;
++    }
++
++    public void SeekEffects(double position)
++    {
++        if (waitToBePlayed == null)
++        {
++            BuildEffectTimeline();
++        }
++        var low = 0;
++        var high = waitToBePlayed.Count;
++        while (low < high)
++        {
++            var middle = low + (high - low) / 2;
++            if (waitToBePlayed[middle].time < position) low = middle + 1;
++            else high = middle;
++        }
++        nextEffect = low;
++    }
++
++    public void StopEffects()
++    {
++        answerStream.Stop();
++        judgeStream.Stop();
++        judgeBreakStream.Stop();
++        breakStream.Stop();
++        judgeExStream.Stop();
++        touchStream.Stop();
++        slideStream.Stop();
++        hanabiStream.Stop();
++        holdRiserStream.Stop();
++        clockStream.Stop();
++        trackStartStream.Stop();
++        allperfectStream.Stop();
++        if (fanfareStream != null) fanfareStream.Stop();
++    }
+     public class audioUrl
+     {
+         public string downloadUrl;
+@@ -108,13 +148,12 @@ public class SoundEffect: MonoBehaviour
+         
+     }
+ 
+-    public void generateSoundEffectList(double startTime)
++    private void BuildEffectTimeline()
+     {
+         songLength = bgmStream.clip.length;
+         waitToBePlayed = new List<SoundEffectTiming>();
+         foreach (var noteGroup in SimaiProcess.notelist)
+         {
+-            if (noteGroup.time < startTime) { continue; }
+ 
+             SoundEffectTiming stobj;
+ 
+@@ -316,7 +355,7 @@ public class SoundEffect: MonoBehaviour
+                 waitToBePlayed.Add(stobj);
+             }
+         }
+-        waitToBePlayed.Sort((o1, o2) => o1.time < o2.time ? -1 : 1);
++        waitToBePlayed.Sort((o1, o2) => o1.time.CompareTo(o2.time));
+ 
+         double apTime = GetAllPerfectStartTime();
+         if (songLength < apTime + 4.0)
+@@ -367,70 +406,69 @@ public class SoundEffect: MonoBehaviour
+     public void SoundEffectUpdate(float audioOffset)
+     {
+ 
+-            var currentTime = timeProvider.AudioTime + audioOffset;
+-            // var waitToBePlayed = SimaiProcess.notelist.FindAll(o => o.havePlayed == false && o.time > currentTime);
+-            if (waitToBePlayed.Count < 1) return;
+-            var nearestTime = waitToBePlayed[0].time;
+-            //Console.WriteLine(nearestTime);
+-            // if (Math.Abs(currentTime - nearestTime) < 0.055)
+-            if (currentTime - nearestTime > 0)
++        var currentTime = timeProvider.AudioTime + audioOffset;
++        while (nextEffect < waitToBePlayed.Count && waitToBePlayed[nextEffect].time <= currentTime)
++        {
++            var se = waitToBePlayed[nextEffect++];
++            // Drop stale one-shots after a suspended or very slow frame. Never queue them behind new beats.
++            if (currentTime - se.time > 0.1 * bgmStream.pitch)
+             {
+-                SoundEffectTiming se = waitToBePlayed[0];
+-                waitToBePlayed.RemoveAt(0);
+-
+-                if (se.hasTrackStart)
+-                {
+-                    trackStartStream.Play();
+-                }
+-                if (se.hasAnswer)
+-                {
+-                    answerStream.Play();
+-                }
+-                if (se.hasJudge)
+-                {
+-                    judgeStream.Play();
+-                }
+-                if (se.hasJudgeBreak)
+-                {
+-                    judgeBreakStream.Play();
+-                }
+-                if (se.hasJudgeEx)
+-                {
+-                    judgeExStream.Play();
+-                }
+-                if (se.hasBreak)
+-                {
+-                    breakStream.Play();
+-                }
+-                if (se.hasTouch)
+-                {
+-                    touchStream.Play();
+-                }
+-                if (se.hasHanabi) //may cause delay
+-                {
+-                    hanabiStream.Play();
+-                }
+-                if (se.hasTouchHold)
+-                {
+-                    holdRiserStream.Play();
+-                }
+-                if (se.hasTouchHoldEnd)
+-                {
+-                    holdRiserStream.Stop();
+-                }
+-                if (se.hasSlide)
+-                {
+-                    slideStream.Play();
+-                }
+-                if (se.hasAllPerfect)
+-                {
+-                    allperfectStream.Play();
+-                    fanfareStream.Play();
+-                }
+-                if (se.hasClock)
+-                {
+-                    clockStream.Play();
+-                }
++                if (se.hasTouchHoldEnd) holdRiserStream.Stop();
++                continue;
++            }
++            if (se.hasTrackStart)
++            {
++                trackStartStream.Play();
++            }
++            if (se.hasAnswer)
++            {
++                answerStream.Play();
++            }
++            if (se.hasJudge)
++            {
++                judgeStream.Play();
++            }
++            if (se.hasJudgeBreak)
++            {
++                judgeBreakStream.Play();
++            }
++            if (se.hasJudgeEx)
++            {
++                judgeExStream.Play();
+             }
++            if (se.hasBreak)
++            {
++                breakStream.Play();
++            }
++            if (se.hasTouch)
++            {
++                touchStream.Play();
++            }
++            if (se.hasHanabi) //may cause delay
++            {
++                hanabiStream.Play();
++            }
++            if (se.hasTouchHold)
++            {
++                holdRiserStream.Play();
++            }
++            if (se.hasTouchHoldEnd)
++            {
++                holdRiserStream.Stop();
++            }
++            if (se.hasSlide)
++            {
++                slideStream.Play();
++            }
++            if (se.hasAllPerfect)
++            {
++                allperfectStream.Play();
++                fanfareStream.Play();
++            }
++            if (se.hasClock)
++            {
++                clockStream.Play();
++            }
++        }
+     }
+ }
+diff --git a/Assets/Scripts/GameMainManager.cs b/Assets/Scripts/GameMainManager.cs
+index 57fc45f..f044039 100644
+--- a/Assets/Scripts/GameMainManager.cs
++++ b/Assets/Scripts/GameMainManager.cs
+@@ -40,9 +40,8 @@ public class GameMainManager : MonoBehaviour
+     public string editorInitPath;
+ 
+     private bool inited = false;
++    private bool pausedWindow;
+     private int status = 0;
+-    private Coroutine videoSeekCoroutine;
+-    private int videoSeekGeneration = 0;
+ 
+     public void Play()
+     {
+@@ -56,7 +55,7 @@ public class GameMainManager : MonoBehaviour
+         inited = true;
+         menuManager.SetPlayMode();
+ 
+-        QueueVideoSeek(startTime, true, "Play");
++        SyncVideo(startTime, true, "Play");
+     }
+ 
+     public void OnPlayPauseButtonClick()
+@@ -69,22 +68,25 @@ public class GameMainManager : MonoBehaviour
+ 
+         if (timeProvider.isStart)
+         {
++            timeProvider.Pause();
+             startTime = timeProvider.AudioTime;
+             timeProvider.playStartTime = startTime;
+-            timeProvider.Pause();
+-
+-            if (bgManager != null && bgManager.videoPlayer != null && bgManager.videoPlayer.isPrepared)
+-            {
+-                bgManager.videoPlayer.Pause();
+-                bgManager.SetIdleVideoFrameVisible(true, "Pause");
+-            }
+ 
++            SyncVideo(startTime, false, "Pause");
+             menuManager.SetPauseMode();
+         }
+         else
+         {
++            if (pausedWindow)
++            {
++                pausedWindow = false;
++                foreach (Transform child in Notes) Destroy(child.gameObject);
++                objectCounter.Reset();
++                Play();
++                return;
++            }
+             timeProvider.Resume();
+-            QueueVideoSeek(startTime, true, "Resume");
++            SyncVideo(startTime, true, "Resume");
+             menuManager.SetPlayMode();
+         }
+     }
+@@ -119,6 +121,7 @@ public class GameMainManager : MonoBehaviour
+         }
+ 
+         inited = false;
++        pausedWindow = false;
+ 
+         if (objectCounter != null)
+         {
+@@ -166,6 +169,7 @@ public class GameMainManager : MonoBehaviour
+     public void WebLoad(string chartpath, string bgpath, string audiopath, string videopath, int level)
+     {
+         StopAllCoroutines();
++        SE.ResetEffectTimeline();
+         OnStopButtonClick(false);
+         timeProvider.AudioTime = 0f;
+         timeProvider.playStartTime = 0f;
+@@ -280,43 +284,10 @@ public class GameMainManager : MonoBehaviour
+         }
+ 
+         bgManager.UpdateVideoRatio();
+-        yield return StartCoroutine(ShowPreparedVideoFirstFrame());
++        SyncVideo(timeProvider.AudioTime, timeProvider.isStart, "Prepared");
+         callback.Invoke();
+     }
+ 
+-    IEnumerator ShowPreparedVideoFirstFrame()
+-    {
+-        if (bgManager == null || bgManager.videoPlayer == null || !bgManager.videoPlayer.isPrepared)
+-        {
+-            yield break;
+-        }
+-
+-        try
+-        {
+-            bgManager.videoPlayer.time = 0d;
+-            bgManager.videoPlayer.Play();
+-        }
+-        catch (Exception e)
+-        {
+-            Debug.LogError("[MJV][FirstFrame] Play exception: " + e);
+-            yield break;
+-        }
+-
+-        yield return null;
+-        yield return new WaitForEndOfFrame();
+-
+-        try
+-        {
+-            bgManager.videoPlayer.Pause();
+-            bgManager.videoPlayer.time = 0d;
+-            bgManager.SetIdleVideoFrameVisible(true, "ShowPreparedVideoFirstFrame");
+-        }
+-        catch (Exception e)
+-        {
+-            Debug.LogError("[MJV][FirstFrame] Pause/reset exception: " + e);
+-        }
+-    }
+-
+     IEnumerator SeeIfitisDoneLater()
+     {
+         while (!bgManager.videoPlayer.isPrepared)
+@@ -326,99 +297,22 @@ public class GameMainManager : MonoBehaviour
+         }
+         bgManager.UpdateVideoRatio();
+         bgManager.isAnyErr = false;
+-        yield return StartCoroutine(ShowPreparedVideoFirstFrame());
+-    }
+-
+-    private void QueueVideoSeek(float timelineSeconds, bool playAfterSeek, string reason)
+-    {
+-        if (bgManager == null || bgManager.videoPlayer == null)
+-        {
+-            return;
+-        }
+-
+-        if (!bgManager.videoPlayer.isPrepared)
+-        {
+-            return;
+-        }
+-
+-        if (videoSeekCoroutine != null)
+-        {
+-            StopCoroutine(videoSeekCoroutine);
+-        }
+-
+-        videoSeekGeneration++;
+-        videoSeekCoroutine = StartCoroutine(SeekVideoToTimelineCoroutine(videoSeekGeneration, timelineSeconds, playAfterSeek, reason));
++        SyncVideo(timeProvider.AudioTime, timeProvider.isStart, "Prepared");
+     }
+ 
+-    private IEnumerator SeekVideoToTimelineCoroutine(int generation, float timelineSeconds, bool playAfterSeek, string reason)
++    // HTML media seeks are asynchronous. Apply the latest absolute state immediately; a stale
++    // completion must never play an already paused PV, or resume an earlier scrub position.
++    private void SyncVideo(float seconds, bool playing, string reason)
+     {
+         var player = bgManager.videoPlayer;
+-        var videoTime = Mathf.Max(0f, timelineSeconds - offset);
+-
+-        if (player.length > 0d)
+-        {
+-            videoTime = Mathf.Min(videoTime, (float)player.length);
+-        }
+-
+-        var seekDone = false;
+-
+-        void OnSeekCompleted(UnityEngine.Video.VideoPlayer source)
+-        {
+-            seekDone = true;
+-        }
+-
+-        player.seekCompleted += OnSeekCompleted;
+-
+-        try
+-        {
+-            player.Pause();
+-            bgManager.SetIdleVideoFrameVisible(true, reason + ":SeekStart");
+-            player.time = videoTime;
+-        }
+-        catch (Exception e)
+-        {
+-            player.seekCompleted -= OnSeekCompleted;
+-            Debug.LogError("[MJV][VideoSeek] request exception reason=" + reason + " error=" + e);
+-            yield break;
+-        }
+-
+-        var waitStart = Time.realtimeSinceStartup;
+-        while (!seekDone && generation == videoSeekGeneration && Time.realtimeSinceStartup - waitStart < 2f)
+-        {
+-            yield return null;
+-        }
+-
+-        player.seekCompleted -= OnSeekCompleted;
+-
+-        if (generation != videoSeekGeneration)
+-        {
+-            yield break;
+-        }
+-
+-        if (playAfterSeek)
+-        {
+-            if (player.canSetPlaybackSpeed)
+-            {
+-                player.playbackSpeed = audioSpeed;
+-            }
+-            player.Play();
+-            bgManager.SetIdleVideoFrameVisible(false, reason + ":PlayAfterSeek");
+-        }
+-        else
+-        {
+-            player.Play();
+-            yield return new WaitForEndOfFrame();
+-
+-            if (generation != videoSeekGeneration)
+-            {
+-                yield break;
+-            }
+-
+-            player.Pause();
+-            bgManager.SetIdleVideoFrameVisible(true, reason + ":PausedFrame");
+-        }
+-
+-        videoSeekCoroutine = null;
++        if (!player.isPrepared) return;
++        var position = Mathf.Max(0f, seconds - offset);
++        if (player.length > 0d) position = Mathf.Min(position, (float)player.length);
++        player.Pause();
++        player.time = position;
++        bgManager.SetPlayBackSpeed(audioSpeed);
++        bgManager.SetIdleVideoFrameVisible(true, reason);
++        if (playing && (player.length <= 0d || position < player.length)) player.Play();
+     }
+ 
+     public void WebSeek(float seconds)
+@@ -433,16 +327,23 @@ public class GameMainManager : MonoBehaviour
+             timeProvider.Pause();
+         }
+ 
+-        if (inited)
++        // Build notes even on a paused first seek, so practice scrubbing shows the target frame.
+         {
++            objectCounter.Reset();
++            simailoader.noteSpeed = settings.noteSpeed;
++            simailoader.touchSpeed = settings.touchSpeed;
+             foreach (Transform child in Notes.transform)
+             {
+                 GameObject.Destroy(child.gameObject);
+             }
+-            simailoader.PlayLevel(target);
++            pausedWindow = !wasPlaying;
++            simailoader.PlayLevel(target, pausedWindow);
++            multTouchHandler.clearSlots();
++            objectCounter.ComboSetActive(settings.combo);
++            inited = true;
+         }
+ 
+-        QueueVideoSeek(target, wasPlaying, "WebSeek");
++        SyncVideo(target, wasPlaying, "WebSeek");
+ 
+         if (wasPlaying)
+         {
+@@ -460,12 +361,16 @@ public class GameMainManager : MonoBehaviour
+     public void WebSetPlaybackSpeed(string rawSpeed)
+     {
+         float speed;
+-        if (!float.TryParse(rawSpeed, out speed))
++        if (!float.TryParse(rawSpeed, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out speed))
+         {
+             return;
+         }
+ 
+         audioSpeed = Mathf.Clamp(speed, 0.25f, 2f);
++        if (inited && !timeProvider.isStart)
++        {
++            pausedWindow = true;
++        }
+ 
+         var timeline = startTime;
+         var wasPlaying = false;
+@@ -489,7 +394,7 @@ public class GameMainManager : MonoBehaviour
+ 
+             if (wasPlaying)
+             {
+-                QueueVideoSeek(timeline, true, "PlaybackSpeed");
++                SyncVideo(timeline, true, "PlaybackSpeed");
+             }
+         }
+     }
+diff --git a/Assets/Scripts/SettingsManager.cs b/Assets/Scripts/SettingsManager.cs
+index cc92ce7..d9c2182 100644
+--- a/Assets/Scripts/SettingsManager.cs
++++ b/Assets/Scripts/SettingsManager.cs
+@@ -72,20 +72,22 @@ public class SettingsManager : MonoBehaviour
+         GetSliderDisplay("BGCover").text = (GetSlider("BGCover").value / 10).ToString();
+     }
+ 
++    public float hostNoteSpeed = 7f, hostTouchSpeed = 7f, hostShade = 0.6f, hostOffset;
++
+     public float offset {get {
+-        return GetSlider("Offset").value / 1000;
++        return hostOffset;
+     }}
+ 
+     public float noteSpeed {get {
+-        return (float)(107.25 / (71.4184491 * Mathf.Pow(GetSlider("NoteSpeed").value / 10 + 0.9975f, -0.985558604f)));
++        return (float)(107.25 / (71.4184491 * Mathf.Pow(hostNoteSpeed + 0.9975f, -0.985558604f)));
+     }}
+ 
+     public float touchSpeed {get {
+-        return GetSlider("TouchSpeed").value / 10;
++        return hostTouchSpeed;
+     }}
+ 
+     public float bgCover {get {
+-        return GetSlider("BGCover").value / 10;
++        return hostShade;
+     }}
+     
+     public bool combo
 diff --git a/Assets/Scripts/UI/EmbeddedViewport.cs b/Assets/Scripts/UI/EmbeddedViewport.cs
 new file mode 100644
-index 0000000..1908211
+index 0000000..5c6a0a8
 --- /dev/null
 +++ b/Assets/Scripts/UI/EmbeddedViewport.cs
-@@ -0,0 +1,45 @@
-+using System.Runtime.InteropServices;
+@@ -0,0 +1,11 @@
 +using UnityEngine;
 +
++/// <summary>The host supplies a square viewport and owns all controls around the disc.</summary>
 +[RequireComponent(typeof(Camera))]
 +public sealed class EmbeddedViewport : MonoBehaviour
 +{
-+    // CanvasMain is scaled from a 108-unit square. Reserve room for its anchored controls.
-+    private const float ReferenceSize = 108f;
-+    private const float HeaderHeight = 10f;
-+    private const float TransportHeight = 15f;
-+
-+    private Camera chartCamera;
-+    private Vector2Int screenSize;
-+
-+    [DllImport("__Internal")]
-+    private static extern void MajMusicSetViewport(float left, float top, float width, float height);
-+
 +    private void Awake()
 +    {
-+        chartCamera = GetComponent<Camera>();
-+        chartCamera.aspect = 1f;
-+    }
-+
-+    private void LateUpdate()
-+    {
-+        var size = new Vector2Int(Screen.width, Screen.height);
-+        if (size == screenSize)
-+        {
-+            return;
-+        }
-+
-+        screenSize = size;
-+        var scale = Mathf.Min(size.x, size.y) / ReferenceSize;
-+        var header = HeaderHeight * scale;
-+        var transport = TransportHeight * scale;
-+        var contentHeight = size.y - header - transport;
-+        var side = Mathf.Floor(Mathf.Min(size.x, contentHeight));
-+        var viewport = new Rect((size.x - side) / 2f, transport + (contentHeight - side) / 2f, side, side);
-+        chartCamera.pixelRect = viewport;
-+
-+#if UNITY_WEBGL && !UNITY_EDITOR
-+        MajMusicSetViewport(viewport.x / size.x, 1f - viewport.yMax / size.y, side / size.x, side / size.y);
-+#endif
++        GetComponent<Camera>().aspect = 1f;
 +    }
 +}
 diff --git a/Assets/Scripts/UI/EmbeddedViewport.cs.meta b/Assets/Scripts/UI/EmbeddedViewport.cs.meta

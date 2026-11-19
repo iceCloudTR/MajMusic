@@ -17,7 +17,7 @@ using global::Android.Widget;
 namespace MajMusic.Android.Preview
 {
     /// <summary>Hosts the system WebView in the assigned Android Avalonia preview region.</summary>
-    internal sealed class AndroidMajViewHost : NativeControlHost, IMajViewNavigator
+    internal sealed class AndroidMajViewHost : NativeControlHost, IMajViewNavigator, IPracticeDisc
     {
         private Uri _address;
         private readonly Action<string> _failed;
@@ -27,6 +27,7 @@ namespace MajMusic.Android.Preview
         private PreviewContainer? _container;
         private InterruptibleSongSheet? _sheet;
         private TopLevel? _root;
+        private double _aperture = 1;
         private bool _attached;
         private bool _reported;
         private int _attachmentVersion;
@@ -38,6 +39,13 @@ namespace MajMusic.Android.Preview
         {
             _address = address;
             _failed = failed;
+        }
+
+        /// <inheritdoc />
+        public void SetAperture(double fraction)
+        {
+            _aperture = fraction;
+            _container?.SetAperture(fraction);
         }
 
         public void NavigatePreview(Uri target)
@@ -56,10 +64,11 @@ namespace MajMusic.Android.Preview
             _attached = true;
             _reported = false;
             base.OnAttachedToVisualTree(args);
+            PracticeStage.ReportNativeClip(this, true);
             _client?.SetFailureHandler(ReportFailure);
             _root = TopLevel.GetTopLevel(this);
             _sheet = this.FindAncestorOfType<InterruptibleSongSheet>();
-            if (_sheet is null || _container is null)
+            if (_sheet is null)
             {
                 return;
             }
@@ -75,7 +84,7 @@ namespace MajMusic.Android.Preview
                 }
             }
             _sheet.SizeChanged += OnSheetSizeChanged;
-            _container.LayoutChange += OnContainerLayoutChanged;
+            LayoutUpdated += OnSheetTransformChanged;
             UpdateSheetPlacement();
         }
 
@@ -90,10 +99,7 @@ namespace MajMusic.Android.Preview
                 transform.Changed -= OnSheetTransformChanged;
             }
             _sheetTransforms.Clear();
-            if (_container is not null)
-            {
-                _container.LayoutChange -= OnContainerLayoutChanged;
-            }
+            LayoutUpdated -= OnSheetTransformChanged;
             if (_sheet is not null)
             {
                 _sheet.SizeChanged -= OnSheetSizeChanged;
@@ -107,23 +113,30 @@ namespace MajMusic.Android.Preview
 
         private void OnSheetSizeChanged(object? sender, SizeChangedEventArgs e) => UpdateSheetPlacement();
 
-        private void OnContainerLayoutChanged(object? sender, View.LayoutChangeEventArgs e) => UpdateSheetPlacement();
-
-        /// <summary>Moves the native surface with its Avalonia pane and clips it to the drawer's viewport.</summary>
+        /// <summary>Keeps the native margins, translated disc and drawer clip in the AvaloniaView's client coordinates.</summary>
         private void UpdateSheetPlacement()
         {
-            if (_container is not { Width: > 0, Height: > 0 } container || _sheet is not { } sheet || _root is not { } root
-                || this.TranslatePoint(default, root) is not { } origin
-                || sheet.TranslatePoint(default, root) is not { } viewport)
+            if (!_attached || _container is not { Width: > 0, Height: > 0 } container || _sheet is not { } sheet ||
+                _root is not { } root || this.TranslatePoint(default, root) is not { } origin ||
+                sheet.TranslatePoint(default, root) is not { } viewport)
             {
                 return;
             }
-
+            // Android's attachment is a direct child of the AvaloniaView. System bars can move the entire
+            // view on screen. Subtracting a screen origin here would apply that movement a second time.
             var scale = root.RenderScaling;
             var left = (int)Math.Round(origin.X * scale);
             var top = (int)Math.Round(origin.Y * scale);
-            container.TranslationX = left - container.Left;
-            container.TranslationY = top - container.Top;
+            var x = left - container.Left;
+            var y = top - container.Top;
+            if (container.TranslationX != x)
+            {
+                container.TranslationX = x;
+            }
+            if (container.TranslationY != y)
+            {
+                container.TranslationY = y;
+            }
             container.ClipToViewport(
                 (int)Math.Ceiling(viewport.X * scale) - left,
                 (int)Math.Ceiling(viewport.Y * scale) - top,
@@ -155,12 +168,16 @@ namespace MajMusic.Android.Preview
                 settings.AllowContentAccess = false;
                 settings.JavaScriptCanOpenWindowsAutomatically = false;
                 settings.SetSupportMultipleWindows(false);
-                settings.MediaPlaybackRequiresUserGesture = true;
+                // Only the trusted loopback chart is loaded. Its user gesture originates on the native transport.
+                settings.MediaPlaybackRequiresUserGesture = false;
+                view.Focusable = false;
+                view.Clickable = false;
                 _client = new PreviewClient(_address, ReportFailure);
                 view.SetWebViewClient(_client);
                 // Avalonia disposes the attached native view before calling DestroyNativeControlCore.
                 // Give it the container so the WebView can be destroyed after it has been detached.
-                container = new PreviewContainer(context);
+                container = new PreviewContainer(context, UpdateSheetPlacement) { OutlineProvider = DiscOutline.Instance, ClipToOutline = true };
+                container.SetAperture(_aperture);
                 container.AttachWebView(view);
                 view.LoadUrl(_address.AbsoluteUri);
                 var handle = new AndroidViewControlHandle(container);
@@ -235,13 +252,51 @@ namespace MajMusic.Android.Preview
             });
         }
 
+        /// <summary>Lets the app draw native controls in the WebView's four transparent corners.</summary>
+        private sealed class DiscOutline : ViewOutlineProvider
+        {
+            internal static readonly DiscOutline Instance = new();
+
+            /// <inheritdoc />
+            public override void GetOutline(View? view, global::Android.Graphics.Outline? outline)
+            {
+                if (view is PreviewContainer container && outline is not null)
+                {
+                    // A round rect is supported by outline clipping on every supported Android version.
+                    var clip = container.DiscClip;
+                    outline.SetRoundRect(clip.X, clip.Y, clip.Right, clip.Bottom, clip.Width / 2f);
+                }
+            }
+        }
+
         /// <summary>Keeps native painting and hit testing inside the same visible sheet rectangle.</summary>
-        private sealed class PreviewContainer(Context context) : FrameLayout(context)
+        private sealed class PreviewContainer(Context context, Action layoutChanged) : FrameLayout(context)
         {
             private WebView? _webView;
             private (int Left, int Top, int Right, int Bottom)? _viewport;
             private global::Android.Graphics.Rect? _clip;
             private bool _isClipped;
+
+            private double _aperture = 1;
+            internal PixelRect DiscClip => PracticeStage.GetDiscClip(Width, Height, _aperture);
+
+            internal void SetAperture(double fraction)
+            {
+                if (_aperture != fraction)
+                {
+                    _aperture = fraction;
+                    InvalidateOutline();
+                }
+            }
+
+            protected override void OnLayout(bool changed, int left, int top, int right, int bottom)
+            {
+                base.OnLayout(changed, left, top, right, bottom);
+                if (changed)
+                {
+                    layoutChanged();
+                }
+            }
 
             /// <summary>Parent the WebView while keeping its disposal with the preview host.</summary>
             /// <param name="view">The WebView rendered inside this container.</param>
@@ -259,6 +314,13 @@ namespace MajMusic.Android.Preview
                     _webView = null;
                     RemoveView(view);
                 }
+            }
+
+            /// <inheritdoc />
+            protected override void OnSizeChanged(int width, int height, int oldWidth, int oldHeight)
+            {
+                base.OnSizeChanged(width, height, oldWidth, oldHeight);
+                InvalidateOutline();
             }
 
             /// <summary>Clips the viewport without measuring or laying out the embedded engine again.</summary>
@@ -291,11 +353,15 @@ namespace MajMusic.Android.Preview
             /// <inheritdoc />
             public override bool DispatchTouchEvent(MotionEvent? e)
             {
-                if (e?.ActionMasked == MotionEventActions.Down && _viewport is { } viewport)
+                if (e?.ActionMasked == MotionEventActions.Down)
                 {
                     var x = e.GetX();
                     var y = e.GetY();
-                    if (x < viewport.Left || x >= viewport.Right || y < viewport.Top || y >= viewport.Bottom)
+                    var radius = DiscClip.Width / 2f;
+                    var dx = x - Width / 2f;
+                    var dy = y - Height / 2f;
+                    if (dx * dx + dy * dy > radius * radius || _viewport is { } viewport &&
+                        (x < viewport.Left || x >= viewport.Right || y < viewport.Top || y >= viewport.Bottom))
                     {
                         return false;
                     }

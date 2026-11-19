@@ -264,7 +264,7 @@ namespace MajMusic.Presentation.ViewModels
                     && endpoint.SelectedAccountId == item.AccountId && endpoint.Accounts.Any(account => account.Id == item.AccountId && account.AutoLogin))).ToArray();
                 if (failures.Length > 0)
                 {
-                    Status = failures.Length == 1 && failures[0].Error is "账号或密码错误" or "接入点需要浏览器验证" or "接入点拒绝访问"
+                    Status = failures.Length == 1 && failures[0].Error is "账号或密码错误" or "账号尚未完成验证" or "账号已被封禁" or "接入点需要浏览器验证" or "接入点拒绝访问"
                         ? failures[0].Error! : $"{failures.Length} 个账号未能自动登录";
                 }
             }

@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.IO.Compression;
 using System.Net;
 using System.Text;
 using MajMusic.Core.Models;
@@ -71,6 +72,22 @@ namespace MajMusic.Tests
             TestAssert.True(withVideo.Difficulties.SequenceEqual(expected), "Difficulty slots must be selectable even when nonconsecutive or missing a level label.");
             var withoutVideo = await workspace.ResolveChartPreviewAsync(imported, false);
             TestAssert.True(withoutVideo.VideoPath is null && handler.Requests.Count == 0, "Disabling local PV must not perform network requests.");
+            using var exported = new MemoryStream();
+            await workspace.WriteTrackArchiveAsync(imported, exported);
+            exported.Position = 0;
+            using (var archive = new ZipArchive(exported, ZipArchiveMode.Read, leaveOpen: true))
+            {
+                var expectedFiles = new[] { ("track.mp3", audio), ("maidata.txt", chart), ("bg.png", cover), ("pv.mp4", video) };
+                TestAssert.Equal(expectedFiles.Length, archive.Entries.Count, "A local song ZIP must only contain its conventional assets.");
+                foreach (var (name, path) in expectedFiles)
+                {
+                    var originalBytes = await File.ReadAllBytesAsync(path);
+                    var exportedBytes = await ReadArchiveEntryAsync(archive, name);
+                    TestAssert.True(originalBytes.AsSpan().SequenceEqual(exportedBytes),
+                        $"{name} must contain the exact original bytes, including any chart BOM.");
+                }
+            }
+            TestAssert.Equal(0, handler.Requests.Count, "A local song ZIP must be prepared entirely offline.");
             var previewedChartBytes = await File.ReadAllBytesAsync(chart);
             TestAssert.True(files.Order().SequenceEqual(Directory.GetFiles(local).Order()) && originalChartBytes.SequenceEqual(previewedChartBytes),
                 "Preview must not change files in the imported directory.");
@@ -121,9 +138,35 @@ namespace MajMusic.Tests
                 TestAssert.True(handler.Requests.Count(request => request == ("/api/asset-chart", "Alice")) == 1
                     && handler.Requests.Count(request => request == ("/api/asset-chart", "Bob")) == 1,
                     "Warm preview must use the saved Music chart while the other source fetches its own chart.");
+                handler.Requests.Clear();
+                using var exported = new MemoryStream();
+                await workspace.WriteTrackArchiveAsync(first, exported);
+                exported.Position = 0;
+                using (var archive = new ZipArchive(exported, ZipArchiveMode.Read, leaveOpen: true))
+                {
+                    TestAssert.Equal(4, archive.Entries.Count, "An online archive with a PV must include four assets.");
+                    TestAssert.Equal("audio-Alice", Encoding.UTF8.GetString(await ReadArchiveEntryAsync(archive, "track.mp3")),
+                        "The ZIP must use the selected endpoint's original audio.");
+                    TestAssert.Equal(ChartText.Replace("Generated chart", "Alice", StringComparison.Ordinal),
+                        Encoding.UTF8.GetString(await ReadArchiveEntryAsync(archive, "maidata.txt")), "The ZIP must contain the exact source chart.");
+                    TestAssert.Equal("full-cover-Alice", Encoding.UTF8.GetString(await ReadArchiveEntryAsync(archive, "bg.jpg")),
+                        "The ZIP must prefer full-size artwork over the cached card thumbnail.");
+                    TestAssert.Equal("pv-Alice", Encoding.UTF8.GetString(await ReadArchiveEntryAsync(archive, "pv.mp4")), "The PV must stay in the ZIP.");
+                }
+                TestAssert.True(handler.Requests.All(request => request.Account == "Alice"), "An archive must keep all media in the selected endpoint's session.");
+                using var noPv = new MemoryStream();
+                await workspace.WriteTrackArchiveAsync(second, noPv);
+                noPv.Position = 0;
+                using (var archive = new ZipArchive(noPv, ZipArchiveMode.Read, leaveOpen: true))
+                {
+                    TestAssert.Equal(3, archive.Entries.Count, "A missing optional PV must not prevent the archive.");
+                }
                 using var cancelled = new CancellationTokenSource();
                 cancelled.Cancel();
                 await TestAssert.ThrowsAsync<OperationCanceledException>(() => workspace.ResolveChartPreviewAsync(first, true, cancelled.Token));
+                using var cancelledArchive = new MemoryStream();
+                await TestAssert.ThrowsAsync<OperationCanceledException>(() => workspace.WriteTrackArchiveAsync(first, cancelledArchive, cancelled.Token));
+                TestAssert.Equal(0L, cancelledArchive.Length, "Cancellation before assembly must not write any output.");
             }
 
             handler.Requests.Clear();
@@ -135,6 +178,9 @@ namespace MajMusic.Tests
             var cached = await reopened.ResolveChartPreviewAsync(first, true);
             TestAssert.True(cached.VideoPath == videoPath && cached.ChartText.Contains("&title=Alice", StringComparison.Ordinal) && handler.Requests.Count == 0,
                 "Cached chart, audio, and PV must remain usable after restart with networking disabled.");
+            using var offlineArchive = new MemoryStream();
+            await reopened.WriteTrackArchiveAsync(first, offlineArchive);
+            TestAssert.True(offlineArchive.Length > 0 && handler.Requests.Count == 0, "A previously cached song must export without source requests.");
             await reopened.RemoveTrackMediaAsync(first);
             await TestAssert.ThrowsAsync<FileNotFoundException>(() => reopened.ResolveChartPreviewAsync(first, true));
             TestAssert.True(!File.Exists(videoPath) && (await reopened.ResolveChartPreviewAsync(second, true)).ChartText.Contains("&title=Bob", StringComparison.Ordinal),
@@ -181,6 +227,19 @@ namespace MajMusic.Tests
                 "An authorization failure must stop before any direct media fallback.");
         }
 
+        /// <summary>Reads the bytes from a required, non-path-dependent ZIP entry.</summary>
+        /// <param name="archive">The generated song archive.</param>
+        /// <param name="name">The expected name at the archive root.</param>
+        /// <returns>The decompressed entry bytes.</returns>
+        /// <exception cref="InvalidOperationException">The entry is missing.</exception>
+        private static async Task<byte[]> ReadArchiveEntryAsync(ZipArchive archive, string name)
+        {
+            using var entry = (archive.GetEntry(name) ?? throw new InvalidOperationException($"Missing ZIP entry {name}.")).Open();
+            using var data = new MemoryStream();
+            await entry.CopyToAsync(data);
+            return data.ToArray();
+        }
+
         private sealed class PreviewTransport : HttpMessageHandler
         {
             private const string Meta = """{"id":"same-song","title":"Preview","hash":"revision-a"}""";
@@ -216,6 +275,7 @@ namespace MajMusic.Tests
                     "/api/maichart/same-song/chart" => Text(ChartText.Replace("Generated chart", account, StringComparison.Ordinal)),
                     "/api/maichart/same-song/video" => Text("pv-" + account),
                     "/api/maichart/same-song/track" => Text("audio-" + account),
+                    "/api/maichart/same-song/image" when request.RequestUri.Query == "?fullImage=true" => Text("full-cover-" + account),
                     "/api/maichart/same-song/image" => Text("cover-" + account),
                     _ => new HttpResponseMessage(HttpStatusCode.NotFound)
                 };

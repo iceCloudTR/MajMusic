@@ -53,9 +53,9 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Gets the shared play/pause action.</summary>
         public AsyncCommand TogglePlayPauseCommand { get; private set; } = null!;
         /// <summary>Gets the action label of the compact transport button.</summary>
-        public string TransportButtonText => _playback.Snapshot.State == PlaybackState.Playing ? "暂停" : CanResume ? "继续" : "播放";
+        public string TransportButtonText => IsPlaying ? "暂停" : CanResume ? "继续" : "播放";
         /// <summary>Gets whether the authoritative playback owner is currently playing.</summary>
-        public bool IsPlaying => _playback.Snapshot.State == PlaybackState.Playing;
+        public bool IsPlaying => IsSongChartPreviewSelected ? _chartPlaying : _playback.Snapshot.State == PlaybackState.Playing;
 
         /// <summary>Gets or sets application volume without changing the operating system's global volume.</summary>
         public double Volume
@@ -66,6 +66,7 @@ namespace MajMusic.Presentation.ViewModels
                 if (double.IsFinite(value) && SetField(ref _volume, Math.Clamp(value, 0, 100)))
                 {
                     OnPropertyChanged(nameof(VolumeText));
+                    PublishChartIntent();
                     QueueAudioSettingsUpdate();
                 }
             }
@@ -79,6 +80,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 if (SetField(ref _isMuted, value))
                 {
+                    PublishChartIntent();
                     QueueAudioSettingsUpdate();
                 }
             }
@@ -110,6 +112,17 @@ namespace MajMusic.Presentation.ViewModels
             }, () => CanConfigureAudio);
             TogglePlayPauseCommand = CreateTransportCommand(async () =>
             {
+                if (IsSongChartPreviewSelected)
+                {
+                    ToggleChartPlayback();
+                    return;
+                }
+                await _returnToMusic;
+                if (PendingMusic is { } pending)
+                {
+                    await PlayPendingMusicAsync(pending);
+                    return;
+                }
                 if (_playback.Snapshot.State is PlaybackState.Playing or PlaybackState.Loading)
                 {
                     await _playback.PauseAsync(_lifetime.Token);
@@ -123,7 +136,7 @@ namespace MajMusic.Presentation.ViewModels
                 {
                     await PlayAsync();
                 }
-            }, () => CanPlay && (SelectedTrack is not null || _playback.Snapshot.Track is not null));
+            }, () => IsSongChartPreviewSelected ? _chartReady : CanPlay && (PendingMusic is not null || SelectedTrack is not null || _playback.Snapshot.Track is not null));
         }
 
         /// <summary>Restores saved application controls before opening any music.</summary>

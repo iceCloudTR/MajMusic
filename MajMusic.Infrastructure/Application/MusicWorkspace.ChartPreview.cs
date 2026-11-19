@@ -19,7 +19,7 @@ namespace MajMusic.Infrastructure.Application
         {
             return WithChartPreviewSourceAsync(track, false, async (source, token) =>
             {
-                var parsed = await ReadPlayableChartAsync(source.ChartPath, token).ConfigureAwait(false);
+                var parsed = await ReadPlayableChartAsync(source.ChartPath!, token).ConfigureAwait(false);
                 await ValidatePreviewSourceAsync(source, token).ConfigureAwait(false);
                 return parsed.Difficulties;
             }, cancellationToken);
@@ -33,7 +33,7 @@ namespace MajMusic.Infrastructure.Application
         }
 
         private async Task<TResult> WithChartPreviewSourceAsync<TResult>(MusicTrack track, bool includeVideo,
-            Func<ChartPreviewSource, CancellationToken, Task<TResult>> use, CancellationToken cancellationToken)
+            Func<ChartPreviewSource, CancellationToken, Task<TResult>> use, CancellationToken cancellationToken, bool allowMissingChart = false)
         {
             ArgumentNullException.ThrowIfNull(track);
             cancellationToken.ThrowIfCancellationRequested();
@@ -116,7 +116,7 @@ namespace MajMusic.Infrastructure.Application
                 }
             }
 
-            if (chartPath is null)
+            if (chartPath is null && !allowMissingChart)
             {
                 throw new FileNotFoundException("没有可预览的谱面文件。");
             }
@@ -128,17 +128,8 @@ namespace MajMusic.Infrastructure.Application
         private async Task<ChartPreviewAssets> CompleteChartPreviewAsync(ChartPreviewSource source, CancellationToken cancellationToken)
         {
             var track = source.Track;
-            var (chartText, difficulties) = await ReadPlayableChartAsync(source.ChartPath, cancellationToken).ConfigureAwait(false);
-            string audioPath;
-            try
-            {
-                audioPath = await ResolveAudioCoreAsync(track, false, source.ResolveOnlineAudioDetails, cancellationToken).ConfigureAwait(false);
-            }
-            catch (HttpRequestException exception) when (source.ResolveOnlineAudioDetails && exception.StatusCode is
-                HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented)
-            {
-                audioPath = await ResolveAudioCoreAsync(track, false, false, cancellationToken).ConfigureAwait(false);
-            }
+            var (chartText, difficulties) = await ReadPlayableChartAsync(source.ChartPath!, cancellationToken).ConfigureAwait(false);
+            var audioPath = await ResolvePreviewAudioAsync(source, cancellationToken).ConfigureAwait(false);
 
             string? coverPath;
             try
@@ -152,6 +143,23 @@ namespace MajMusic.Infrastructure.Application
 
             await ValidatePreviewSourceAsync(source, cancellationToken).ConfigureAwait(false);
             return new ChartPreviewAssets(chartText, audioPath, coverPath, source.VideoPath, difficulties);
+        }
+
+        /// <summary>Resolves the audio for a chart asset set, including older sources with direct routes only.</summary>
+        /// <param name="source">The source and its supported resource routes.</param>
+        /// <param name="cancellationToken">Cancels resolution.</param>
+        /// <returns>The original playable file or document reference.</returns>
+        private async Task<string> ResolvePreviewAudioAsync(ChartPreviewSource source, CancellationToken cancellationToken)
+        {
+            try
+            {
+                return await ResolveAudioCoreAsync(source.Track, false, source.ResolveOnlineAudioDetails, cancellationToken).ConfigureAwait(false);
+            }
+            catch (HttpRequestException exception) when (source.ResolveOnlineAudioDetails && exception.StatusCode is
+                HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented)
+            {
+                return await ResolveAudioCoreAsync(source.Track, false, false, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         private async Task<(string Text, IReadOnlyList<ChartPreviewDifficulty> Difficulties)> ReadPlayableChartAsync(string chartPath,
@@ -184,7 +192,7 @@ namespace MajMusic.Infrastructure.Application
             cancellationToken.ThrowIfCancellationRequested();
         }
 
-        private sealed record ChartPreviewSource(MusicTrack Track, string ChartPath, string? VideoPath, long MediaVersion,
+        private sealed record ChartPreviewSource(MusicTrack Track, string? ChartPath, string? VideoPath, long MediaVersion,
             string MediaRoot, bool ResolveOnlineAudioDetails);
 
         private async Task<string?> ReadPreviewCacheAsync(MusicTrack track, MediaResource? resource, CancellationToken token)

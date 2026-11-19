@@ -48,6 +48,14 @@ namespace MajMusic.Infrastructure.Network
                 video is null ? null : new PreviewResource(video with { RemoteUri = videoRoute }, video.RemoteUri!), false);
         }
 
+        /// <summary>Gets the original cover route used by MajNet song exports.</summary>
+        /// <param name="remoteId">The chart identifier within the current endpoint.</param>
+        /// <returns>The full-size cover address.</returns>
+        internal Uri GetFullCoverAddress(string remoteId)
+        {
+            return new Uri(_apiRoot, $"maichart/{EscapeIdentifier(remoteId)}/image?fullImage=true");
+        }
+
         /// <summary>Separates a cache's stable identity from the server's possibly temporary transfer URL.</summary>
         internal sealed record PreviewResource(MediaResource Descriptor, Uri RequestAddress);
     }

@@ -73,8 +73,6 @@ namespace MajMusic.Presentation.ViewModels
         public AsyncCommand OpenExpandedSongDetailsCommand { get; private set; } = null!;
         /// <summary>Gets the action returning to the compact details presentation.</summary>
         public AsyncCommand CloseExpandedSongDetailsCommand { get; private set; } = null!;
-        /// <summary>Gets the action opening the chart preview controls for the inspected song.</summary>
-        public AsyncCommand OpenSongChartPreviewCommand { get; private set; } = null!;
         /// <summary>Gets the action returning the expanded center pane to source comments.</summary>
         public AsyncCommand ShowSongCommentsCommand { get; private set; } = null!;
         /// <summary>Gets or sets whether expanded details display the chart viewport.</summary>
@@ -83,10 +81,21 @@ namespace MajMusic.Presentation.ViewModels
             get => _isSongChartPreviewSelected;
             set
             {
-                if (SetField(ref _isSongChartPreviewSelected, value) && !value)
+                if (_isSongChartPreviewSelected == value)
+                {
+                    return;
+                }
+                CancelSeek();
+                if (value && SelectedTrack is { } track)
+                {
+                    PrimeChartClock(track);
+                }
+                SetField(ref _isSongChartPreviewSelected, value);
+                if (!value)
                 {
                     CancelMajView();
                 }
+                NotifyChartOwner();
             }
         }
         /// <summary>Gets the independent chart upvote action, separate from favorites.</summary>
@@ -163,7 +172,6 @@ namespace MajMusic.Presentation.ViewModels
                 IsSongDetailsExpanded = false;
                 return Task.CompletedTask;
             });
-            OpenSongChartPreviewCommand = CreateSongSocialCommand(OpenDefaultMajViewAsync, () => SelectedTrack is not null);
             ShowSongCommentsCommand = CreateSongSocialCommand(() =>
             {
                 IsSongChartPreviewSelected = false;
@@ -559,7 +567,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 OnPropertyChanged(name);
             }
-            foreach (var command in new[] { OpenExpandedSongDetailsCommand, CloseExpandedSongDetailsCommand, OpenSongChartPreviewCommand, ShowSongCommentsCommand, ToggleSongLikeCommand,
+            foreach (var command in new[] { OpenExpandedSongDetailsCommand, CloseExpandedSongDetailsCommand, ShowSongCommentsCommand, ToggleSongLikeCommand,
                 RefreshSongSocialCommand, LoadMoreSongCommentsCommand, PostSongCommentCommand, CancelSongReplyCommand })
             {
                 command?.NotifyCanExecuteChanged();

@@ -293,6 +293,16 @@ namespace MajMusic.Tests
                 TestAssert.True(provider.IsLoggedIn, "Maj's legacy and current already-logged-in codes are accepted");
             }
 
+            using (var policy = new NetworkAccessPolicy())
+            {
+                policy.SetEnabled(true);
+                using var transport = new HttpClient(new LoginStatusTransport(HttpStatusCode.OK, "{\"code\":114514}", includeSessionCookie: false));
+                using var provider = new MajNetClient(Endpoint("missing-session"), policy, transport);
+                await TestAssert.ThrowsAsync<HttpRequestException>(() => provider.LoginAsync("account", "password"));
+                TestAssert.True(!provider.IsLoggedIn,
+                    "A nominally successful response without a session cookie must not create a false login state");
+            }
+
             foreach (var body in new[] { "{\"code\":60003}", "{\"success\":false}", "{\"code\":\"60003\",\"success\":false}" })
             {
                 using var policy = new NetworkAccessPolicy();
@@ -466,14 +476,18 @@ namespace MajMusic.Tests
 
             /// <summary>Stores the status body to return.</summary>
             private readonly string _body;
+            /// <summary>Controls whether the fixture establishes a cookie-backed session.</summary>
+            private readonly bool _includeSessionCookie;
 
             /// <summary>Constructs a login-status fixture.</summary>
             /// <param name="status">The HTTP status.</param>
             /// <param name="body">The status object.</param>
-            public LoginStatusTransport(HttpStatusCode status, string body)
+            /// <param name="includeSessionCookie">Whether the response includes a valid source session cookie.</param>
+            public LoginStatusTransport(HttpStatusCode status, string body, bool includeSessionCookie = true)
             {
                 _status = status;
                 _body = body;
+                _includeSessionCookie = includeSessionCookie;
             }
 
             /// <summary>Returns the controlled login response.</summary>
@@ -483,7 +497,13 @@ namespace MajMusic.Tests
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return Task.FromResult(new HttpResponseMessage(_status) { Content = new StringContent(_body, Encoding.UTF8, "application/json") });
+                var response = new HttpResponseMessage(_status) { Content = new StringContent(_body, Encoding.UTF8, "application/json") };
+                if (_includeSessionCookie)
+                {
+                    response.Headers.TryAddWithoutValidation("Set-Cookie", "session=fixture; Path=/api; Secure");
+                }
+
+                return Task.FromResult(response);
             }
         }
     }

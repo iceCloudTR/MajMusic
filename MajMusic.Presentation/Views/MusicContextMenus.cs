@@ -62,12 +62,30 @@ namespace MajMusic.Presentation.Views
             menu.Items.Add(add);
             menu.Items.Add(Action(owner.IsTrackFavoriteForMenu(track) ? "取消喜欢" : "喜欢", owner,
                 () => owner.ToggleTrackFavoriteFromMenuAsync(track), () => owner.IsIdle && owner.HasFavorites, ArcIcons.Heart));
-            menu.Items.Add(Action("下载", owner, () => owner.DownloadTrackFromMenuAsync(track),
-                () => owner.OnlineEnabled && track.RemoteId is not null, ArcIcons.Download));
-            var removeLocal = Action("删除本地文件", owner, () => owner.RemoveTrackMediaFromMenuAsync(track),
-                () => owner.CanRemoveTrackMediaForMenu(track), ArcIcons.Trash2);
-            removeLocal.HasSeparatorBefore = true;
-            menu.Items.Add(removeLocal);
+            if (owner.CanDownloadTrackForMenu(track))
+            {
+                menu.Items.Add(Action("下载", owner, () => owner.DownloadTrackFromMenuAsync(track),
+                    () => owner.CanDownloadTrackForMenu(track), ArcIcons.Download));
+            }
+            var topLevel = TopLevel.GetTopLevel(target);
+            var nativeArchive = owner.TrackArchiveDestination;
+            var archive = nativeArchive ?? (topLevel is null || OperatingSystem.IsAndroid() ? null : new DesktopTrackArchiveDestination(topLevel));
+            if (archive is not null)
+            {
+                var save = Action("保存到本地", owner, () => owner.ExportTrackFromMenuAsync(track, archive, share: false),
+                    () => owner.CanPrepareTrackArchive && (nativeArchive is not null || topLevel?.StorageProvider.CanSave == true), ArcIcons.Archive);
+                save.HasSeparatorBefore = true;
+                menu.Items.Add(save);
+                menu.Items.Add(Action("分享", owner, () => owner.ExportTrackFromMenuAsync(track, archive, share: true),
+                    () => owner.CanPrepareTrackArchive && (nativeArchive is not null || topLevel?.Clipboard is not null), ArcIcons.Share2));
+            }
+            if (owner.CanRemoveTrackMediaForMenu(track))
+            {
+                var removeLocal = Action("删除本地文件", owner, () => owner.RemoveTrackMediaFromMenuAsync(track),
+                    () => owner.CanRemoveTrackMediaForMenu(track), ArcIcons.Trash2);
+                removeLocal.HasSeparatorBefore = true;
+                menu.Items.Add(removeLocal);
+            }
             if (owner.BrowsedPlaylistForMenu is { } browsed)
             {
                 var remove = Action("从当前歌单移除", owner, () => owner.RemoveTrackFromPlaylistFromMenuAsync(track, browsed),

@@ -211,20 +211,25 @@ namespace MajMusic.Presentation.ViewModels
             {
                 var endpoint = await SaveEndpointCardCoreAsync(card);
                 var online = _onlineWorkspace ?? throw new NotSupportedException("当前宿主不支持登录账号。");
-                if (_accountPreferences is not null)
+                if (string.IsNullOrEmpty(password) && _accountPreferences is not null && card.SelectedAccount?.AccountId is { } accountId)
                 {
-                    endpoint = await _accountPreferences.SaveAccountAsync(endpoint, username,
-                        string.IsNullOrEmpty(password) ? null : password, card.RememberPassword, card.AutoLogin, _lifetime.Token);
-                    card.UpdateProfile(new EndpointProfile(endpoint, null), forceAccount: true);
-                }
+                    if (endpoint.SelectedAccountId != accountId)
+                    {
+                        endpoint = await _accountPreferences.SelectAccountAsync(endpoint, accountId, _lifetime.Token);
+                    }
 
-                if (string.IsNullOrEmpty(password) && _accountPreferences is not null && endpoint.SelectedAccountId is { } accountId)
-                {
                     await _accountPreferences.LoginSavedAccountAsync(endpoint, accountId, _lifetime.Token);
                 }
                 else
                 {
                     await online.LoginAsync(endpoint, username, password, _lifetime.Token);
+                }
+
+                if (_accountPreferences is not null)
+                {
+                    endpoint = await _accountPreferences.SaveAccountAsync(endpoint, username,
+                        string.IsNullOrEmpty(password) ? null : password, card.RememberPassword, card.AutoLogin, _lifetime.Token);
+                    card.UpdateProfile(new EndpointProfile(endpoint, null), forceAccount: true);
                 }
             }
             finally

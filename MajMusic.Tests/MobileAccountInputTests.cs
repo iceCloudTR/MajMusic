@@ -1,8 +1,10 @@
 #nullable enable
 
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Input.TextInput;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -10,6 +12,7 @@ using MajMusic.Core.Models;
 using MajMusic.Core.Playback;
 using MajMusic.Presentation.ViewModels;
 using MajMusic.Presentation.Views;
+using MobileSwitch = TKCode.Arc.Mobile.Switch;
 using MobileTextField = TKCode.Arc.Mobile.TextField;
 
 namespace MajMusic.Tests
@@ -56,6 +59,24 @@ namespace MajMusic.Tests
                     view.NavigateToSection(3);
                     Layout(window);
                     var mobile = view.GetVisualDescendants().OfType<MobileMusicView>().Single();
+                    var online = mobile.GetVisualDescendants().OfType<MobileSwitch>().Single();
+                    TestAssert.True(online.IsChecked == false && !model.OnlineEnabled && !workspace.IsOnline,
+                        "The mobile online switch must start disabled with the workspace permission.");
+                    ArcTestVisuals.AssertOnlineSwitchGeometry(online);
+                    TapOnlineSwitch(window, online);
+                    TestAssert.True(online.IsChecked == true && model.OnlineEnabled && workspace.IsOnline && model.SynchronizeAllCommand.CanExecute(null),
+                        "Tapping the mobile online switch must immediately enable the workspace permission.");
+                    ArcTestVisuals.AssertOnlineSwitchGeometry(online);
+                    view.NavigateToSection(4);
+                    Layout(window);
+                    view.NavigateToSection(3);
+                    Layout(window);
+                    online = mobile.GetVisualDescendants().OfType<MobileSwitch>().Single();
+                    TestAssert.True(online.IsChecked == true, "Returning to the account page must show the latest online choice.");
+                    TapOnlineSwitch(window, online);
+                    TestAssert.True(online.IsChecked == false && !model.OnlineEnabled && !workspace.IsOnline && !model.SynchronizeAllCommand.CanExecute(null),
+                        "Tapping the mobile online switch again must immediately disable the workspace permission.");
+                    await model.OnlineSettingsUpdate.WaitAsync(timeout.Token);
                     var fields = mobile.GetVisualDescendants().OfType<MobileTextField>().ToArray();
                     var username = fields.Single(field => field.PlaceholderText == "账号");
                     var password = fields.Single(field => field.PlaceholderText == "密码");
@@ -105,6 +126,17 @@ namespace MajMusic.Tests
 
                 return true;
             }, timeout.Token);
+        }
+
+        /// <summary>Sends a complete touch tap to the center of the realized online switch.</summary>
+        /// <param name="window">The headless input root.</param>
+        /// <param name="online">The rendered online switch.</param>
+        private static void TapOnlineSwitch(Window window, MobileSwitch online)
+        {
+            var center = online.TranslatePoint(new Point(online.Bounds.Width / 2, online.Bounds.Height / 2), window)!.Value;
+            using var touch = window.TouchBegin(center, RawInputModifiers.None);
+            window.TouchEnd(touch, center, RawInputModifiers.None);
+            Layout(window);
         }
 
         /// <summary>Runs queued bindings and actual templates before inspecting or editing mobile inputs.</summary>

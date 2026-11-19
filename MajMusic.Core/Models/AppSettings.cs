@@ -35,6 +35,9 @@ namespace MajMusic.Core.Models
         /// <summary>Gets the maximum size of automatically evictable cached resources in bytes.</summary>
         public long CacheLimitBytes { get; init; } = 1024L * 1024 * 1024;
 
+        /// <summary>Gets native chart practice preferences.</summary>
+        public ChartPracticeOptions ChartPractice { get; init; } = new();
+
         /// <summary>Gets persistent application-volume and native-device preferences.</summary>
         public AudioOutputPreferences AudioOutput { get; init; } = new();
     }

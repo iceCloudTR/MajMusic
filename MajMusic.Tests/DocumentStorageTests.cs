@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Security.Cryptography;
@@ -60,7 +61,7 @@ namespace MajMusic.Tests
             var nested = provider.Folder("nested", "Numeric 123", tree);
             var chartBytes = Encoding.UTF8.GetBytes("&title=从谱面读取的歌名\n&artist=文档作者\n&inote_1=(120){4}1,2,3,4,E\n");
             provider.File("chart-opaque", "maidata.txt", chartBytes, nested);
-            var audio = provider.File("audio-opaque", "track.mp3", "large original music bytes"u8.ToArray(), nested);
+            var audio = provider.File("audio-opaque", "track.aac", "large original music bytes"u8.ToArray(), nested);
             using var pixels = new SKBitmap(32, 32);
             pixels.Erase(SKColors.CornflowerBlue);
             using var png = pixels.Encode(SKEncodedImageFormat.Png, 100);
@@ -100,6 +101,17 @@ namespace MajMusic.Tests
             provider.Available = false;
             TestAssert.Equal(cachedCover, await workspace.ResolveCoverAsync(track), "An existing private cover remains usable without reopening a temporarily unavailable provider.");
             provider.Available = true;
+            using (var songZip = new MemoryStream())
+            {
+                await workspace.WriteTrackArchiveAsync(track, songZip);
+                songZip.Position = 0;
+                using var archive = new ZipArchive(songZip, ZipArchiveMode.Read);
+                var entry = archive.GetEntry("track.aac");
+                TestAssert.True(entry is not null && archive.GetEntry("maidata.txt") is not null && archive.GetEntry("bg.png") is not null,
+                    "A provider-only song must export its original format, chart, and cover even with opaque content URIs.");
+                using var storedAudio = new StreamReader(entry!.Open());
+                TestAssert.Equal("large original music bytes", await storedAudio.ReadToEndAsync(), "The archive must stream the original granted audio bytes.");
+            }
             await using (var covers = new CoverThumbnailCache(workspace, CancellationToken.None))
             using (var card = new SongCardViewModel(track with { RemoteId = "legacy-document-reference" }, covers))
             {
@@ -131,7 +143,7 @@ namespace MajMusic.Tests
             }
 
             TestAssert.True(provider.Items.Values.OfType<FakeFile>().Where(file => !file.Writable).All(file => file.WriteCount == 0)
-                && !Directory.EnumerateFiles(data, "*.mp3", SearchOption.AllDirectories).Any(),
+                && !Directory.EnumerateFiles(data, "*.aac", SearchOption.AllDirectories).Any(),
                 "Music roots and imported JSON remain read-only and no audio copy can appear in private storage.");
             using var canceled = new CancellationTokenSource();
             canceled.Cancel();

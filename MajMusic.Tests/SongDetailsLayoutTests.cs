@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -100,14 +101,17 @@ namespace MajMusic.Tests
                     TestAssert.True(ReferenceEquals(source.Content, card) && destination.Content is null,
                         "Closing expanded details must return the same card to its original sidebar slot.");
                     AssertFillsSlot(card, source, "The returned card must fill the original sidebar slot at the current window size.");
-                    Tap(window, main.FindControl<Control>("DesktopChartPreviewButton")!);
+                    TestAssert.True(main.GetVisualDescendants().All(view => view.Name != "DesktopChartPreviewButton"), "Artwork must have no separate chart entry.");
+                    Tap(window, main.FindControl<Control>("DesktopExpandDetailsButton")!);
                     await flight.MoveUpdate.WaitAsync(timeout.Token);
                     await model.SongSocialUpdate.WaitAsync(timeout.Token);
                     Layout(window);
+                    await ValidateDesktopPracticeAsync(window, desktop, model, workspace, timeout.Token);
+                    Layout(window);
                     TestAssert.True(model.IsSongDetailsExpanded && model.IsSongChartPreviewSelected
                         && Find(desktop, "ChartPreviewHost").IsEffectivelyVisible && !Find(desktop, "SongCommentsList").IsEffectivelyVisible,
-                        "The artwork preview action must open the reserved chart viewport directly, instead of playing or opening the discussion first.");
-                    AssertPlaybackUnchanged(playback, backend, playing, queue);
+                        "Selecting a difficulty from song details must mount the chart in its dedicated pane.");
+                    AssertPlaybackUnchanged(playback, backend, playing, queue, PlaybackState.Paused);
                     SaveFrame(window, Path.Combine(output, "ui-social-desktop-chart-preview.png"));
                     TapTab(window, desktop, "DesktopSongPreviewTabs", 0);
                     TestAssert.True(!model.IsSongChartPreviewSelected && Find(desktop, "SongCommentsList").IsEffectivelyVisible,
@@ -216,7 +220,7 @@ namespace MajMusic.Tests
                         "The expanded close action returns to the compact content height.");
                     AssertCompactPanel(sheet, panel, header);
                     TestAssert.Equal(0, workspace.Posts.Count, "Rendering and inspecting synthetic source comments must never submit a comment implicitly.");
-                    AssertPlaybackUnchanged(playback, backend, playing, queue);
+                    AssertPlaybackUnchanged(playback, backend, playing, queue, PlaybackState.Paused);
                     await ValidatePreviewDrawerMotionAsync(window, sheet, workspace, model, timeout.Token);
                 }
                 finally
@@ -225,6 +229,121 @@ namespace MajMusic.Tests
                 }
                 return true;
             }, timeout.Token);
+        }
+
+        /// <summary>Checks the normal desktop entry, corner clearance, client-area fullscreen and return to the same chart.</summary>
+        private static async Task ValidateDesktopPracticeAsync(Window window, Control desktop, MainViewModel model, DetailsWorkspace workspace, CancellationToken token)
+        {
+            var factory = ChartPreviewPane.CreateEmbeddedView;
+            var renderer = new MeasuringDisc();
+            var session = new DrawerPreviewSession();
+            workspace.Preview = session;
+            ChartPreviewPane.CreateEmbeddedView = (_, _) => renderer;
+            try
+            {
+                TapTab(window, desktop, "DesktopSongPreviewTabs", 2);
+                Layout(window);
+                var host = (ContentControl)Find(desktop, "PreviewSurface");
+                TestAssert.True(ReferenceEquals(host.Content, renderer), "The normal difficulty tab must mount the tested renderer.");
+                var original = (window.WindowState, window.ClientSize, window.Position);
+                var document = session.Intent!;
+                var times = ChartNoteTimeline.Create([[1000], [2000], [3000], [4000], [5000]], 120)!;
+                session.Report(new(document.Generation, document.Revision, 0, 120, false, Notes: times));
+                session.Report(new(document.Generation, document.Revision, 62, 120, false));
+                Layout(window);
+                var stage = (PracticeStage)Find(desktop, "Stage");
+                var inlineDisc = BoundsIn(host, stage);
+                AssertCornerLayout(stage, inlineDisc);
+                Tap(window, Find(desktop, "PracticeFullscreen"));
+                Layout(window);
+                var pane = desktop.GetVisualDescendants().OfType<ChartPreviewPane>().Single();
+                var bounds = BoundsIn(pane, window);
+                TestAssert.True(original == (window.WindowState, window.ClientSize, window.Position) && model.IsChartFullscreen
+                    && Math.Abs(bounds.X) < 2 && Math.Abs(bounds.Y) < 2 && Math.Abs(bounds.Width - window.ClientSize.Width) < 3
+                    && Math.Abs(bounds.Height - window.ClientSize.Height) < 3 && !Find(window, "PlaybackBar").IsEffectivelyVisible,
+                    $"Practice should fill the existing app client area, with no desktop chrome: {bounds} within {window.ClientSize}.");
+                window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+                window.KeyRelease(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+                Layout(window);
+                TestAssert.True(!model.IsChartFullscreen && model.IsSongDetailsExpanded && model.SelectedMajViewDifficulty == 2
+                    && model.PositionSeconds == 62 && ReferenceEquals(host.Content, renderer) && !session.IsReleased
+                    && BoundsIn(host, stage) == inlineDisc && original == (window.WindowState, window.ClientSize, window.Position),
+                    "Escape must restore the exact inline chart, cursor and window.");
+
+                TestAssert.True(PracticeStage.GetDiscClip(435, 434, 1) == new PixelRect(0, 0, 434, 434)
+                    && PracticeStage.GetDiscClip(400, 650, .5) == new PixelRect(100, 225, 200, 200),
+                    "DPI rounding and a rotating rectangular host must keep the native aperture circular and centered.");
+                ArcMotion.SetLevel(pane, ArcMotionLevel.Full);
+                async Task WaitForAsync(Func<bool> condition)
+                {
+                    while (!condition())
+                    {
+                        await Task.Delay(8, token);
+                        Layout(window);
+                    }
+                }
+                void Back() => window.RaiseEvent(new RoutedEventArgs(TopLevel.BackRequestedEvent));
+
+                model.TogglePlayPauseCommand.Execute(null);
+                Tap(window, Find(desktop, "PracticeFullscreen"));
+                TestAssert.True(!model.IsPlaying, "The first touch must pause at the current beat.");
+                await WaitForAsync(() => renderer.LastAperture < .98);
+                Back();
+                await WaitForAsync(() => renderer.LastAperture == 1);
+                TestAssert.True(!model.IsChartFullscreen && ReferenceEquals(host.Content, renderer),
+                    "Back during the closing iris must cancel entry without remounting the chart.");
+                Tap(window, Find(desktop, "PracticeFullscreen"));
+                await WaitForAsync(() => model.IsChartFullscreen && renderer.LastAperture == 1);
+                renderer.SawIntermediate = false;
+                Back();
+                await WaitForAsync(() => !model.IsChartFullscreen && renderer.LastAperture == 1);
+                TestAssert.True(renderer.SawIntermediate && model.PositionSeconds == 62 && BoundsIn(host, stage) == inlineDisc,
+                    "Returning must animate the native surface and restore the original bounds and playhead.");
+                ArcMotion.SetLevel(pane, ArcMotionLevel.Off);
+            }
+            finally
+            {
+                ChartPreviewPane.CreateEmbeddedView = factory;
+            }
+        }
+
+        /// <summary>Records the aperture delivered to the same surface that owns the native pixels.</summary>
+        private sealed class MeasuringDisc : Border, IPracticeDisc
+        {
+            public double LastAperture { get; private set; } = 1;
+            public bool SawIntermediate { get; set; }
+
+            public void SetAperture(double fraction)
+            {
+                LastAperture = fraction;
+                SawIntermediate |= fraction is > 0 and < 1;
+            }
+        }
+
+        /// <summary>Verifies four native corner groups clear the disc and the limiting dimension is actually used.</summary>
+        private static void AssertCornerLayout(PracticeStage stage, Rect disc)
+        {
+            var navigation = BoundsIn(Find(stage, "PracticeNavigation"), stage);
+            var options = BoundsIn(Find(stage, "PracticeTools"), stage);
+            var left = BoundsIn(Find(stage, "PracticeNotes"), stage);
+            var right = BoundsIn(Find(stage, "PracticeRightNotes"), stage);
+            var area = new Rect(stage.Bounds.Size);
+            TestAssert.True(navigation.X < 8 && navigation.Y < 8 && options.Y < 8 && area.Right - options.Right < 8
+                && left.X < 8 && area.Bottom - left.Bottom < 8 && area.Right - right.Right < 8 && area.Bottom - right.Bottom < 8,
+                "The two tool groups and two note groups must occupy the stage corners.");
+            TestAssert.True(Math.Abs(disc.Width - disc.Height) <= 1 && Math.Abs(disc.Center.X - area.Center.X) <= 1
+                && Math.Abs(disc.Center.Y - area.Center.Y) <= 1 && disc.Width > 0,
+                $"The centered chart must use the available short side: {disc} in {area}.");
+            var maximum = Math.Min(area.Width, area.Height) / 2 - 4;
+            foreach (var corner in new[] { navigation, options, left, right })
+            {
+                var closest = new Point(Math.Clamp(disc.Center.X, corner.X, corner.Right), Math.Clamp(disc.Center.Y, corner.Y, corner.Bottom));
+                var distance = new Vector(closest.X - disc.Center.X, closest.Y - disc.Center.Y).Length;
+                maximum = Math.Min(maximum, distance - 4);
+                TestAssert.True(distance >= disc.Width / 2 - 1,
+                    $"Neither a corner button nor the count text may cover the playfield: {corner} / {disc}.");
+            }
+            TestAssert.True(Math.Abs(disc.Width - 2 * maximum) <= 3, $"Use the largest centered disc up to layout rounding: {disc.Width} / {maximum * 2}.");
         }
 
         /// <summary>Keeps the same rendered preview in the drawer through a pressed drag, reversal and collapse.</summary>
@@ -243,13 +362,86 @@ namespace MajMusic.Tests
             {
                 var session = new DrawerPreviewSession();
                 workspace.Preview = session;
-                model.IsSongDetailsExpanded = true;
+                var entry = (ContentControl)Find(sheet, "MobileExpandDetailsButton");
+                TestAssert.Equal("歌曲详情", entry.Content as string, "The compact card must expose the named song details entry.");
+                Tap(window, entry);
                 await sheet.SheetUpdate.WaitAsync(token);
                 Layout(window);
                 await model.SelectMajViewDifficultyAsync(2).WaitAsync(token);
                 Layout(window);
                 var host = (ContentControl)Find(sheet, "PreviewSurface");
                 TestAssert.True(ReferenceEquals(host.Content, preview), "A resolved chart must mount its preview before the drawer moves.");
+
+                var document = session.Intent!;
+                var notes = ChartNoteTimeline.Create([[500, 5000, 5000], [], [], [8000], []], 90)!;
+                session.Report(new(document.Generation, document.Revision, 0, 90, false, Notes: notes));
+                session.Report(new(document.Generation, document.Revision, 5, 90, false));
+                Layout(window);
+                var inlineStage = (PracticeStage)Find(sheet, "Stage");
+                AssertCornerLayout(inlineStage, BoundsIn(host, inlineStage));
+                var legend = (TextBlock)Find(sheet, "PracticeNotes");
+                var tapCount = legend.Inlines!.OfType<Avalonia.Controls.Documents.Run>().Single(run => run.Text == "3/3");
+                TestAssert.True(model.BeginSeek(), "Practice must allow scrubbing a prepared chart.");
+                model.PositionSeconds = 1;
+                TestAssert.Equal("1/3", tapCount.Text, "The on-screen note row must update backwards during the drag.");
+                await model.CommitSeekAsync();
+                Layout(window);
+                var lockButton = Find(sheet, "PracticeLock");
+                var lockPoint = lockButton.TranslatePoint(new Point(lockButton.Bounds.Width / 2, lockButton.Bounds.Height / 2), window)!.Value;
+                Tap(window, lockButton);
+                TestAssert.True(model.IsPracticeLocked, "Inline practice must lock with one tap.");
+                Tap(window, Find(sheet, "CloseExpandedSongDetailsButton"));
+                window.RaiseEvent(new RoutedEventArgs(TopLevel.BackRequestedEvent));
+                TestAssert.True(model.IsPracticeLocked && sheet.IsExpanded, "Locked practice must consume sheet actions and system back.");
+                using (var hold = window.TouchBegin(lockPoint, RawInputModifiers.None))
+                {
+                    await Task.Delay(180, token);
+                    window.TouchEnd(hold, lockPoint, RawInputModifiers.None);
+                }
+                TestAssert.True(model.IsPracticeLocked, "Releasing before half a second must cancel unlock.");
+                using (var hold = window.TouchBegin(lockPoint, RawInputModifiers.None))
+                {
+                    await Task.Delay(580, token);
+                    window.TouchEnd(hold, lockPoint, RawInputModifiers.None);
+                }
+                TestAssert.True(!model.IsPracticeLocked, "A continuous half-second hold must unlock without another tap.");
+                Tap(window, Find(sheet, "PracticeFullscreen"));
+                Layout(window);
+                TestAssert.True(model.IsChartFullscreen && ReferenceEquals(host.Content, preview) && !model.IsPlaying,
+                    "Entering practice must keep the renderer mounted and pause it.");
+                var timeline = (PracticeTimeline)Find(sheet, "PracticeOverview");
+                TestAssert.True(!timeline.Vertical && timeline.IsEffectivelyVisible, "Portrait practice uses a horizontal timeline.");
+                var width = window.Width;
+                var height = window.Height;
+                window.Width = 844;
+                window.Height = 390;
+                Layout(window);
+                TestAssert.True(timeline.Vertical && ReferenceEquals(host.Content, preview), "Rotating must preserve the chart and turn its time axis vertical.");
+                window.Width = width;
+                window.Height = height;
+                Layout(window);
+                window.RaiseEvent(new RoutedEventArgs(TopLevel.BackRequestedEvent));
+                Layout(window);
+                TestAssert.True(!model.IsChartFullscreen && sheet.IsExpanded && host.IsEffectivelyVisible && ReferenceEquals(host.Content, preview),
+                    "System back must return to the same inline difficulty.");
+                Tap(window, Find(sheet, "PracticeSettings"));
+                Layout(window);
+                var settings = window.GetVisualDescendants().OfType<ChartPracticeDialog>().Single();
+                var rows = settings.GetVisualDescendants().OfType<TKCode.Arc.Slider>().ToArray();
+                var list = settings.GetVisualDescendants().OfType<ScrollViewer>().First();
+                TestAssert.True(!host.IsVisible && rows.Length == 6 && list.Extent.Height <= list.Viewport.Height + 1,
+                    "The anchored settings must cover the native surface and show all six controls together in a tall viewport.");
+                var speed = rows.Single(row => Avalonia.Automation.AutomationProperties.GetName(row) == "音符流速");
+                var saved = model.ChartOptions.NoteSpeed;
+                speed.Value = saved + 1;
+                window.RaiseEvent(new RoutedEventArgs(TopLevel.BackRequestedEvent));
+                Layout(window);
+                while (!host.IsVisible)
+                {
+                    await Task.Delay(16, token);
+                    Layout(window);
+                }
+                TestAssert.True(ReferenceEquals(host.Content, preview) && model.ChartOptions.NoteSpeed == saved, "Backing out must discard the draft and restore the same renderer after the exit motion.");
 
                 var origin = BoundsIn(preview, window);
                 var handle = Find(sheet, "PART_Handle");
@@ -416,10 +608,11 @@ namespace MajMusic.Tests
         /// <param name="backend">The controlled native-audio replacement.</param>
         /// <param name="playing">The originally loaded song identity.</param>
         /// <param name="queue">The originally loaded ordered queue.</param>
-        private static void AssertPlaybackUnchanged(PlaybackService playback, LibraryExperienceTests.ExperienceBackend backend, string playing, string[] queue)
+        /// <param name="expected">The expected transport state after the inspected action.</param>
+        private static void AssertPlaybackUnchanged(PlaybackService playback, LibraryExperienceTests.ExperienceBackend backend, string playing, string[] queue, PlaybackState expected = PlaybackState.Playing)
         {
             TestAssert.True(backend.OpenCount == 1 && playback.Snapshot.Track?.Id == playing && playback.Queue.Current?.Id == playing
-                && playback.Snapshot.State == PlaybackState.Playing && playback.Queue.Tracks.Select(track => track.Id).SequenceEqual(queue),
+                && playback.Snapshot.State == expected && playback.Queue.Tracks.Select(track => track.Id).SequenceEqual(queue),
                 "Expanding, moving and previewing the inspected song must preserve the original audio, playing state and queue without reopening it.");
         }
 
@@ -509,7 +702,7 @@ namespace MajMusic.Tests
                     && local.X >= -1 && local.X + control.Bounds.Width <= clip.Bounds.Width + 1
                     && local.Y >= -1 && local.Y + control.Bounds.Height <= clip.Bounds.Height + 1
                     && tabLocal.Y >= -1 && tabLocal.Y + control.Bounds.Height <= tabs.Bounds.Height + 1,
-                    "The complete composer and send control must fit inside the real detail viewport: " + control.Name);
+                    $"Composer {control.Name} must fit the sheet ({clip.Bounds.Height:F1}) and the tab viewport ({tabs.Bounds.Height:F1}).");
             }
             var inputTop = input.TranslatePoint(default, root)!.Value.Y;
             var sendTop = send.TranslatePoint(default, root)!.Value.Y;
@@ -612,6 +805,10 @@ namespace MajMusic.Tests
         /// <summary>Records exactly when the visible chart's renderer can be released.</summary>
         private sealed class DrawerPreviewSession : IMajViewPreviewSession
         {
+            public event Action<ChartFrame>? FrameReceived;
+            public ChartIntent? Intent { get; private set; }
+            public void SetIntent(ChartIntent intent) => Intent = intent;
+            public void Report(ChartFrame frame) => FrameReceived?.Invoke(frame);
             public Uri Address { get; } = new("http://127.0.0.1:1234/drawer-preview/");
             public bool IsReleased { get; private set; }
 

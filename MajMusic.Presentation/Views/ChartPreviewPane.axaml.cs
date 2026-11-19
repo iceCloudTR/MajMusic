@@ -40,6 +40,7 @@ namespace MajMusic.Presentation.Views
             InitializeComponent();
             _surface = this.FindControl<ContentControl>("PreviewSurface")!;
             _setup = this.FindControl<StackPanel>("PreviewSetup")!;
+            InitializePracticeLayout();
             DataContextChanged += (_, _) =>
             {
                 if (TopLevel.GetTopLevel(this) is not null)
@@ -53,6 +54,7 @@ namespace MajMusic.Presentation.Views
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
+            ConnectPracticeInput();
             _ancestors.AddRange(this.GetVisualAncestors());
             foreach (var ancestor in _ancestors)
             {
@@ -64,6 +66,7 @@ namespace MajMusic.Presentation.Views
         /// <inheritdoc />
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
+            DisconnectPracticeInput();
             ObserveOwner(null);
             foreach (var ancestor in _ancestors)
             {
@@ -103,6 +106,7 @@ namespace MajMusic.Presentation.Views
                 CloseOwnedPreview();
             }
             _owner = owner;
+            UpdateNoteLegend();
             if (owner is not null)
             {
                 owner.PropertyChanged += OnOwnerChanged;
@@ -112,6 +116,18 @@ namespace MajMusic.Presentation.Views
 
         private void OnOwnerChanged(object? sender, PropertyChangedEventArgs args)
         {
+            if (args.PropertyName == nameof(MainViewModel.IsChartFullscreen))
+            {
+                ArrangePractice();
+            }
+            if (args.PropertyName == nameof(MainViewModel.ChartNotes))
+            {
+                UpdateNoteLegend();
+            }
+            if (args.PropertyName == nameof(MainViewModel.IsPracticeLocked) && _owner?.IsPracticeLocked == true)
+            {
+                PracticeLock.Focus();
+            }
             if (args.PropertyName is nameof(MainViewModel.MajViewAddress) or nameof(MainViewModel.IsSongChartPreviewSelected)
                 or nameof(MainViewModel.IsSongDetailsExpanded))
             {
@@ -191,11 +207,12 @@ namespace MajMusic.Presentation.Views
                 var embedded = create(WithViewOptions(address), message =>
                     Dispatcher.UIThread.Post(() =>
                     {
-                        if (CanMount(owner, address, version))
+                        if (_displayedAddress is { } currentAddress && CanMount(owner, currentAddress, version))
                         {
-                            owner.ReportMajViewFailure(address, message);
+                            owner.ReportMajViewFailure(currentAddress, message);
                         }
                     }));
+                Stage.SetRoundHost(embedded is not IMajViewNavigator);
                 _surface.Content = embedded;
             }
             catch (Exception)
@@ -208,12 +225,13 @@ namespace MajMusic.Presentation.Views
         }
 
         private bool CanMount(MainViewModel owner, Uri address, long version) => version == _mountVersion
-            && ReferenceEquals(_owner, owner) && owner.MajViewAddress is { } active && SameSession(active, address) && IsPaneActive(owner)
+            && ReferenceEquals(_owner, owner) && owner.MajViewAddress == address && IsPaneActive(owner)
             && TopLevel.GetTopLevel(this) is not null;
 
         private Uri WithViewOptions(Uri address)
         {
             var theme = ActualThemeVariant == ThemeVariant.Light ? "light" : "dark";
+            _owner?.SetChartTheme(theme == "light");
             var query = address.Query.TrimStart('?') + "&theme=" + theme;
             if (ArcMotion.GetEffectiveLevel(this) != ArcMotionLevel.Full)
             {
@@ -237,9 +255,12 @@ namespace MajMusic.Presentation.Views
 
         private void ClearSurface()
         {
+            ResetFullscreenMotion();
+            DismissPracticeSettings();
             _mountVersion++;
             _displayedAddress = null;
             _surface.Content = null;
+            Stage.SetRoundHost(true);
             _surface.IsVisible = false;
             _setup.IsVisible = true;
         }

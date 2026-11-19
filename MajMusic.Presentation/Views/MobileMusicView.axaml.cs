@@ -92,6 +92,7 @@ namespace MajMusic.Presentation.Views
             var contentChanged = e.Property == InterruptibleSongSheet.ShowsExpandedContentProperty;
             if (detentChanged || e.Property == BoundsProperty)
             {
+                this.FindControl<Grid>("MobileExpandedMetadata")!.IsVisible = !sheet.IsExpanded || sheet.Bounds.Height is not (> 0 and < 310);
                 this.FindControl<StackPanel>("MobileSongQuickActions")!.IsVisible =
                     !sheet.IsExpanded || sheet.Bounds.Height is not (> 0 and < 460);
             }
@@ -293,8 +294,22 @@ namespace MajMusic.Presentation.Views
         private void OnMobileSizeChanged(object? sender, SizeChangedEventArgs e)
         {
             ReleaseMiniPlayerGesture();
+            SetShortPlayerLayout(e.NewSize.Height is > 0 and < 540);
             UpdateSheetViewport();
             UpdateBrowseViewport();
+        }
+
+        private bool _shortPlayer;
+
+        private void SetShortPlayerLayout(bool compact)
+        {
+            if (compact == _shortPlayer) return;
+            _shortPlayer = compact;
+            MobilePlayerRows.RowDefinitions = new RowDefinitions(compact ? "44" : "44,44,14");
+            MobilePlayerRows.ColumnDefinitions = new ColumnDefinitions(compact ? "1.3*,*" : "*");
+            Grid.SetRow(MobileSeekRow, compact ? 0 : 1);
+            Grid.SetColumn(MobileSeekRow, compact ? 1 : 0);
+            MobilePlayerStatus.IsVisible = !compact;
         }
 
         /// <summary>Keeps the sheet's clipped bottom on the actual navigation bar after safe-area or footer layout changes.</summary>
@@ -309,17 +324,25 @@ namespace MajMusic.Presentation.Views
         private void UpdateSheetViewport()
         {
             var sheet = this.FindControl<InterruptibleSongSheet>("MobileTrackSheet");
-            var navigation = this.FindControl<Tabbar>("MobileNavigationBar");
-            if (!_attached || sheet?.GetVisualParent() is not Visual overlay || navigation is null ||
-                overlay.Bounds.Height <= 0 || navigation.Bounds.Height <= 0 ||
-                navigation.TranslatePoint(default, overlay) is not { } top || !double.IsFinite(top.Y))
+            var player = this.FindControl<Border>("MobileMiniPlayer");
+            if (!_attached || sheet?.GetVisualParent() is not Visual overlay || overlay.Bounds.Height <= 0)
             {
                 return;
             }
-
-            var inset = Math.Clamp(overlay.Bounds.Height - top.Y, 0, overlay.Bounds.Height);
-            var safeTop = this.FindControl<Navbar>("MobileNavbar")?.TranslatePoint(default, overlay) is { } navbarTop
-                ? Math.Clamp(navbarTop.Y, 0, overlay.Bounds.Height) : 0;
+            var inset = 0d;
+            var safeTop = 0d;
+            if (_owner?.IsChartFullscreen != true)
+            {
+                if (player is null || player.Bounds.Height <= 0 || player.TranslatePoint(default, overlay) is not { } top || !double.IsFinite(top.Y))
+                {
+                    return;
+                }
+                inset = Math.Clamp(overlay.Bounds.Height - top.Y + player.Margin.Top, 0, overlay.Bounds.Height);
+                if (this.FindControl<Navbar>("MobileNavbar")?.TranslatePoint(default, overlay) is { } navbarTop)
+                {
+                    safeTop = Math.Clamp(navbarTop.Y, 0, overlay.Bounds.Height);
+                }
+            }
             if (Math.Abs(sheet.Margin.Top - safeTop) > 0.1)
             {
                 sheet.Margin = new Thickness(sheet.Margin.Left, safeTop, sheet.Margin.Right, sheet.Margin.Bottom);
@@ -336,7 +359,7 @@ namespace MajMusic.Presentation.Views
         private void OnMiniPlayerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (sender is not Border player || !_attached || _miniPlayerPointer is not null
-                || DataContext is not MainViewModel { PlaybackTrack: { } playing } owner
+                || DataContext is not MainViewModel { IsSongChartPreviewSelected: false, TransportTrack: { } playing } owner
                 || e.Pointer.Type == PointerType.Mouse && !e.GetCurrentPoint(player).Properties.IsLeftButtonPressed)
             {
                 return;
@@ -442,7 +465,7 @@ namespace MajMusic.Presentation.Views
                     ? -_miniPlayerVelocityY : 0;
                 var sheet = this.FindControl<InterruptibleSongSheet>("MobileTrackSheet")!;
                 sheet.UpdateInteractiveOpen(-movement.Y);
-                sheet.EndInteractiveOpen(velocity);
+                sheet.EndInteractiveOpen(velocity, reachedUpperHalf: e.GetPosition(this).Y <= Bounds.Height * 0.5);
                 _miniPlayerDragging = false;
                 ReleaseMiniPlayerGesture();
                 e.Handled = true;
@@ -499,7 +522,7 @@ namespace MajMusic.Presentation.Views
         private bool HasCurrentPlayerGestureOwner()
         {
             return ReferenceEquals(DataContext, _miniPlayerOwner) && _miniPlayerTrack is { } captured &&
-                _miniPlayerOwner?.PlaybackTrack is { } current && current.Id == captured.Id &&
+                _miniPlayerOwner?.TransportTrack is { } current && current.Id == captured.Id &&
                 current.EndpointId == captured.EndpointId && current.SourceId == captured.SourceId &&
                 current.Revision == captured.Revision;
         }
@@ -573,6 +596,11 @@ namespace MajMusic.Presentation.Views
                 ReleaseMiniPlayerGesture();
             }
 
+            if (e.PropertyName == nameof(MainViewModel.IsChartFullscreen) && sender is MainViewModel practice)
+            {
+                MobileTrackSheet.SetPracticeFullscreen(practice.IsChartFullscreen);
+                UpdateSheetViewport();
+            }
             if (e.PropertyName == nameof(MainViewModel.HomeMode))
             {
                 RestoreBrowsingMode();

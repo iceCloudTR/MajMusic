@@ -2,6 +2,7 @@
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
@@ -161,7 +162,22 @@ namespace MajMusic.Tests
                     tabs.SelectedItem = view.FindControl<TabItem>("AccountsTab");
                     Dispatcher.UIThread.RunJobs();
                     var permission = view.FindControl<ArcSwitch>("OnlineModeToggle")!;
-                    TestAssert.True(permission.IsChecked != true, "Online permission must default to disabled.");
+                    TestAssert.True(permission.IsChecked == false && !viewModel.OnlineEnabled && !workspace.IsOnline,
+                        "Online permission must default to disabled.");
+                    window.UpdateLayout();
+                    ArcTestVisuals.AssertOnlineSwitchGeometry(permission);
+                    var switchCenter = permission.TranslatePoint(new Point(permission.Bounds.Width / 2, permission.Bounds.Height / 2), window)!.Value;
+                    window.MouseDown(switchCenter, MouseButton.Left);
+                    window.MouseUp(switchCenter, MouseButton.Left);
+                    TestAssert.True(permission.IsChecked == true && viewModel.OnlineEnabled && workspace.IsOnline,
+                        "Clicking the desktop online switch must immediately enable the workspace permission.");
+                    window.UpdateLayout();
+                    ArcTestVisuals.AssertOnlineSwitchGeometry(permission);
+                    window.MouseDown(switchCenter, MouseButton.Left);
+                    window.MouseUp(switchCenter, MouseButton.Left);
+                    TestAssert.True(permission.IsChecked == false && !viewModel.OnlineEnabled && !workspace.IsOnline,
+                        "Clicking the desktop online switch again must immediately disable the workspace permission.");
+                    await viewModel.OnlineSettingsUpdate.WaitAsync(timeout.Token);
                     var preferences = await workspace.LoadSettingsAsync(timeout.Token);
                     await workspace.SaveSettingsAsync(preferences with
                     {
@@ -727,10 +743,16 @@ namespace MajMusic.Tests
                         }))
                         : path.EndsWith("/info", StringComparison.Ordinal) && !path.Contains("/maichart/", StringComparison.Ordinal)
                             ? "{\"id\":\"visual-server\",\"name\":\"MajNet\"}" : null;
-                return Task.FromResult(new HttpResponseMessage(json is null ? HttpStatusCode.NotFound : HttpStatusCode.OK)
+                var loginResponse = new HttpResponseMessage(json is null ? HttpStatusCode.NotFound : HttpStatusCode.OK)
                 {
                     Content = new StringContent(json ?? "{}", Encoding.UTF8, "application/json")
-                });
+                };
+                if (path.EndsWith("account/login", StringComparison.Ordinal))
+                {
+                    loginResponse.Headers.TryAddWithoutValidation("Set-Cookie", "session=fixture; Path=/; Secure");
+                }
+
+                return Task.FromResult(loginResponse);
             }
 
             /// <summary>Creates distinct deterministic artwork without external media resources.</summary>
@@ -888,6 +910,36 @@ namespace MajMusic.Tests
     /// <summary>Locates the interactive Arc visual elements used by real input regressions.</summary>
     internal static class ArcTestVisuals
     {
+        /// <summary>Checks both painted track layers and the resting thumb of a realized online switch.</summary>
+        /// <param name="toggle">The desktop or mobile account switch to inspect after layout.</param>
+        /// <exception cref="InvalidOperationException">The template parts are missing or their visual geometry is incorrect.</exception>
+        public static void AssertOnlineSwitchGeometry(ToggleButton toggle)
+        {
+            var parts = toggle.GetVisualDescendants().OfType<Border>().ToArray();
+            var track = parts.Single(part => part.Name == "PART_Track");
+            var trackOn = parts.Single(part => part.Name == "PART_TrackOn");
+            var thumb = parts.Single(part => part.Name == "PART_Thumb");
+            var scale = TopLevel.GetTopLevel(toggle)!.RenderScaling;
+            var radius = track.Bounds.Height / 2;
+            TestAssert.Equal(track.Bounds, trackOn.Bounds, "Both online track layers must have the same bounds.");
+            foreach (var layer in new[] { track, trackOn })
+            {
+                var corners = layer.CornerRadius;
+                TestAssert.True(layer.Bounds.Width > layer.Bounds.Height && corners.IsUniform
+                    && Math.Abs(corners.TopLeft - radius) * scale <= 0.51,
+                    $"{toggle.Name}/{layer.Name} must have semicircular ends and straight sides. Radius was {corners}, expected about {radius}.");
+            }
+
+            var isOn = toggle.IsChecked == true;
+            TestAssert.Equal(isOn ? 1d : 0d, trackOn.Opacity, "The accent track must only show when the switch is on.");
+            var offset = thumb.TranslatePoint(default, track)!.Value;
+            var endInset = isOn ? track.Bounds.Width - thumb.Bounds.Width - offset.X : offset.X;
+            var verticalInset = (track.Bounds.Height - thumb.Bounds.Height) / 2;
+            TestAssert.True(verticalInset > 0 && Math.Abs(offset.Y - verticalInset) * scale <= 1
+                && Math.Abs(endInset - verticalInset) * scale <= 1,
+                "The online thumb must be vertically centered with an even inset at the active end of the track.");
+        }
+
         /// <summary>Finds the slider's actual focusable thumb instead of focusing its noninteractive group.</summary>
         /// <param name="slider">The realized single-value Arc slider.</param>
         /// <returns>The real pointer and keyboard target.</returns>

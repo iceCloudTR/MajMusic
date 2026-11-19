@@ -106,6 +106,7 @@ namespace MajMusic.Presentation.ViewModels
             ArgumentNullException.ThrowIfNull(workspace);
             ArgumentNullException.ThrowIfNull(playback);
             _workspace = workspace;
+            _onlineEnabled = workspace.IsOnline;
             _collections = collections;
             _metadata = metadata;
             _onlineWorkspace = workspace as IOnlineMusicWorkspace;
@@ -123,12 +124,12 @@ namespace MajMusic.Presentation.ViewModels
             CheckAppUpdateCommand = new AsyncCommand(() => RunTrackedAsync(() => CheckAppUpdateAsync(releases!)),
                 _ => AppUpdateStatus = "无法检查更新，请稍后重试", () => releases is not null && !_isDisposing);
             SynchronizeCommand = CreateCommand(SynchronizeAsync, () => OnlineEnabled);
-            DownloadCommand = CreateCommand(DownloadAsync, () => OnlineEnabled && SelectedTrack is not null);
+            DownloadCommand = CreateCommand(DownloadAsync, () => ShowSelectedDownload);
             ClearCacheCommand = CreateCommand(ClearCacheAsync);
             PlayCommand = CreateTransportCommand(PlayAsync, () => CanPlay && (SelectedTrack is not null || CanResume));
             PauseCommand = CreateTransportCommand(() => _playback.PauseAsync(_lifetime.Token), () => CanPlay && _playbackSnapshot.State is PlaybackState.Playing or PlaybackState.Loading);
-            NextCommand = CreateTransportCommand(() => _playback.NextAsync(_lifetime.Token), () => CanPlay && _playback.Queue.Tracks.Count > 0);
-            PreviousCommand = CreateTransportCommand(() => _playback.PreviousAsync(_lifetime.Token), () => CanPlay && _playback.Queue.Tracks.Count > 0);
+            NextCommand = CreateTransportCommand(() => SkipFromTransportAsync(false), () => HasSkipContext);
+            PreviousCommand = CreateTransportCommand(() => SkipFromTransportAsync(true), () => _chartReady || PendingMusic is not null && CanPlay || HasSkipContext);
             ToggleFavoriteCommand = CreateCommand(ToggleFavoriteAsync, () => HasFavorites && SelectedTrack is not null);
             OpenFavoritesCommand = CreateCommand(OpenFavoritesAsync, () => HasFavorites);
             RescanCommand = CreateCommand(RescanAsync, () => _settings.LocalDirectorySources.Count > 0);
@@ -230,31 +231,50 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Gets a truthful playback availability hint.</summary>
         public string PlaybackHint => _playbackSnapshot.Error ?? (CanPlay ? string.Empty : "音频播放组件不可用");
         /// <summary>Gets whether the current known media timeline supports user seeking.</summary>
-        public bool CanSeek => !Volatile.Read(ref _isDisposing) && HasSeekableMedia;
+        public bool CanSeek => !Volatile.Read(ref _isDisposing) && (IsSongChartPreviewSelected ? _chartDuration > 0 && !_practiceLocked : PendingMusic is not null && CanPlay || HasSeekableMedia);
+        /// <summary>Gets whether the chart is still resolving an unknown audio duration.</summary>
+        public bool IsChartDurationPending => IsSongChartPreviewSelected && _chartDuration <= 0;
         /// <summary>Gets whether the user currently owns a timeline preview.</summary>
-        public bool IsSeeking => _isSeeking;
+        public bool IsSeeking => _chartDragging || _pendingSongDragging || _isSeeking;
         /// <summary>Gets a nonzero slider maximum while unknown durations remain disabled.</summary>
-        public double DurationSeconds => _playbackSnapshot.Duration is { TotalSeconds: > 0 } duration ? duration.TotalSeconds : 1;
+        public double DurationSeconds => Math.Max(1, IsSongChartPreviewSelected ? _chartDuration :
+            PendingMusic?.Duration ?? _playbackSnapshot.Duration?.TotalSeconds ?? 0);
         /// <summary>Gets the backend position or updates only an active user preview.</summary>
         public double PositionSeconds
         {
-            get => _isSeeking ? _seekPreviewSeconds : _committedSeek?.Seconds ?? ClampPosition(_playbackSnapshot.Position.TotalSeconds);
+            get
+            {
+                if (IsSeeking) return _seekPreviewSeconds;
+                if (IsSongChartPreviewSelected) return _chartPosition;
+                return PendingMusic?.Position ?? _committedSeek?.Seconds ?? ClampPosition(_playbackSnapshot.Position.TotalSeconds);
+            }
             set
             {
-                if (!_isSeeking || !double.IsFinite(value))
+                if (!IsSeeking || !double.IsFinite(value))
                 {
                     return;
                 }
 
-                _seekPreviewSeconds = ClampPosition(value);
+                _seekPreviewSeconds = _chartDragging || _pendingSongDragging ? Math.Clamp(value, 0, DurationSeconds) : ClampPosition(value);
+                if (_chartDragging && Math.Abs(_chartPosition - _seekPreviewSeconds) > 0.025 &&
+                    System.Diagnostics.Stopwatch.GetElapsedTime(_lastScrub).TotalMilliseconds >= 140)
+                {
+                    _lastScrub = System.Diagnostics.Stopwatch.GetTimestamp();
+                    SeekChart(_seekPreviewSeconds);
+                }
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(PositionText));
+                if (_chartDragging)
+                {
+                    UpdatePassedNotes();
+                }
             }
         }
         /// <summary>Gets the formatted backend position or current user preview.</summary>
         public string PositionText => FormatTime(TimeSpan.FromSeconds(PositionSeconds));
         /// <summary>Gets the formatted media duration or the unknown-duration marker.</summary>
-        public string DurationText => _playbackSnapshot.Duration is { } duration ? FormatTime(duration) : "--:--";
+        public string DurationText => (IsSongChartPreviewSelected ? _chartDuration > 0 : PendingMusic is not null || _playbackSnapshot.Duration is not null)
+            ? FormatTime(TimeSpan.FromSeconds(DurationSeconds)) : "--:--";
         /// <summary>Gets whether a prepared resource provides an authoritative seekable duration.</summary>
         private bool HasSeekableMedia => CanPlay && _playback.Capabilities.HasFlag(PlaybackCapabilities.Seeking)
             && _playbackSnapshot.Track is not null && _playbackSnapshot.Duration > TimeSpan.Zero
@@ -328,22 +348,20 @@ namespace MajMusic.Presentation.ViewModels
             get => _onlineEnabled;
             set
             {
-                if (!Volatile.Read(ref _isDisposing) && SetField(ref _onlineEnabled, value))
+                if (Volatile.Read(ref _isDisposing) || _onlineEnabled == value)
                 {
-                    _workspace.SetOnlineEnabled(value);
-                    OnOnlinePreferenceChanged();
-                    if (value)
-                    {
-                        BeginAutomaticLogin();
-                    }
-                    else
-                    {
-                        CancelAutomaticLogin();
-                    }
+                    return;
+                }
 
-                    QueueWarmBrowsePreviews();
-                    RefreshCommands();
-                    OnPropertyChanged(nameof(HasMoreRecommendations));
+                ApplyOnlinePermission(value);
+                RecordOnlinePreferenceEdit();
+                if (value)
+                {
+                    BeginAutomaticLogin();
+                }
+                else
+                {
+                    CancelAutomaticLogin();
                 }
             }
         }
@@ -404,12 +422,15 @@ namespace MajMusic.Presentation.ViewModels
                 await PrepareAppearanceSettingsAsync();
                 await PrepareCardLayoutSettingsAsync();
                 _settings = LocalDirectorySettings.Normalize(await _workspace.LoadSettingsAsync(_lifetime.Token));
+                _lifetime.Token.ThrowIfCancellationRequested();
+                RestoreOnlinePreference(_settings.OnlineEnabled);
+                CompleteOnlinePreferencesInitialization();
                 await PrepareMediaStorageSettingsAsync();
                 InitializeMediaStorageSettings();
                 _lifetime.Token.ThrowIfCancellationRequested();
+                ChartOptions = (_settings.ChartPractice ?? new()).Normalize();
                 RestoreAppearanceSettings(_settings.Appearance);
                 RestoreCardLayoutSettings(_settings.CardLayout);
-                RestoreOnlinePreference(_settings.OnlineEnabled);
                 var endpoint = _settings.Endpoints.FirstOrDefault(item => item.Id == _settings.ActiveEndpointId)
                     ?? _settings.Endpoints.FirstOrDefault();
                 ReloadEndpointProfiles(endpoint?.Id);
@@ -420,7 +441,6 @@ namespace MajMusic.Presentation.ViewModels
                 await ReloadLibraryAsync();
                 await InitializeAudioSettingsAsync();
                 Status = string.Empty;
-                CompleteOnlinePreferencesInitialization();
                 _accountSettingsLoaded = true;
                 QueueAudioMetadataUpgrade();
                 if (OnlineEnabled)
@@ -480,6 +500,26 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>Whether the current media can accept the gesture.</returns>
         public bool BeginSeek()
         {
+            if (IsSongChartPreviewSelected)
+            {
+                if (!CanSeek)
+                {
+                    return false;
+                }
+                if (_chartDragging) return true;
+                _resumeAfterScrub = _chartPlaying;
+                _scrubOrigin = _seekPreviewSeconds = _chartPosition;
+                _chartDragging = true;
+                _lastScrub = 0;
+                PauseChart();
+                return true;
+            }
+            if (PendingMusic is { } pending && CanPlay)
+            {
+                _seekPreviewSeconds = pending.Position;
+                _pendingSongDragging = true;
+                return true;
+            }
             if (!CanSeek)
             {
                 return false;
@@ -510,6 +550,14 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Discards a preview and cancels any pending seek for that interaction.</summary>
         public void CancelSeek()
         {
+            _pendingSongDragging = false;
+            if (_chartDragging)
+            {
+                _chartDragging = false;
+                _chartPlaying = _resumeAfterScrub;
+                SeekChart(_scrubOrigin);
+                NotifyChartOwner();
+            }
             lock (_seekGate)
             {
                 _seekVersion++;
@@ -528,6 +576,21 @@ namespace MajMusic.Presentation.ViewModels
         /// <returns>A task representing the observed seek, or no action for a canceled gesture.</returns>
         public Task CommitSeekAsync()
         {
+            if (_pendingSongDragging && PendingMusic is { } pending)
+            {
+                _pendingSongDragging = false;
+                _pendingSong = pending with { Position = _seekPreviewSeconds };
+                NotifyTimeline();
+                return Task.CompletedTask;
+            }
+            if (_chartDragging)
+            {
+                _chartDragging = false;
+                _chartPlaying = _resumeAfterScrub;
+                SeekChart(_seekPreviewSeconds);
+                NotifyChartOwner();
+                return Task.CompletedTask;
+            }
             Task operation;
             lock (_seekGate)
             {
@@ -745,7 +808,7 @@ namespace MajMusic.Presentation.ViewModels
             {
                 Status = exception switch
                 {
-                    LoginRejectedException => "账号或密码错误",
+                    LoginRejectedException login => login.UserMessage,
                     BrowserVerificationRequiredException => "接入点需要浏览器验证",
                     TimeoutException => "下载超时",
                     HttpRequestException request => request.StatusCode switch
@@ -1490,7 +1553,12 @@ namespace MajMusic.Presentation.ViewModels
                         || _playbackSnapshot.Error != current.Error;
                     var audioChanged = !ReferenceEquals(_playbackSnapshot.AudioInfo, current.AudioInfo);
                     _playbackSnapshot = current;
-                    if (changed && _majViewSession is not null && current.State is (PlaybackState.Loading or PlaybackState.Playing))
+                    if (current.Track is not null)
+                    {
+                        _pendingSong = null;
+                        _pendingSongDragging = false;
+                    }
+                    if (changed && (_majViewSession is not null || _majViewOpening is not null) && current.State is (PlaybackState.Loading or PlaybackState.Playing))
                     {
                         CloseMajView();
                     }
@@ -1509,6 +1577,8 @@ namespace MajMusic.Presentation.ViewModels
                     }
                     if (changed)
                     {
+                        OnPropertyChanged(nameof(TransportTitle));
+                        OnPropertyChanged(nameof(TransportArtist));
                         OnPropertyChanged(nameof(PlaybackTitle));
                         OnPropertyChanged(nameof(PlaybackArtist));
                         OnPropertyChanged(nameof(PlayButtonText));
@@ -1525,8 +1595,13 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Notifies timeline bindings without submitting a playback operation.</summary>
         private void NotifyTimeline()
         {
-            OnPropertyChanged(nameof(PositionSeconds));
             OnPropertyChanged(nameof(DurationSeconds));
+            OnPropertyChanged(nameof(PositionSeconds));
+            OnPropertyChanged(nameof(IsChartDurationPending));
+            if (IsSongChartPreviewSelected)
+            {
+                UpdatePassedNotes();
+            }
             OnPropertyChanged(nameof(PositionText));
             OnPropertyChanged(nameof(DurationText));
             OnPropertyChanged(nameof(CanSeek));
@@ -1555,6 +1630,7 @@ namespace MajMusic.Presentation.ViewModels
         /// <summary>Refreshes all command availability checks.</summary>
         private void RefreshCommands()
         {
+            OnPropertyChanged(nameof(ShowSelectedDownload));
             foreach (var command in new[] { SearchCommand, CreatePlaylistCommand, AddToPlaylistCommand, OpenPlaylistCommand, ShowAllCommand, SaveSettingsCommand,
                 SynchronizeCommand, DownloadCommand, ClearCacheCommand, CleanupLocalMediaCommand, PlayCommand, PauseCommand, NextCommand, PreviousCommand,
                 ToggleFavoriteCommand, OpenFavoritesCommand, RescanCommand, NewEndpointCommand, RemoveEndpointCommand,

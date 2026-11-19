@@ -89,19 +89,28 @@ namespace MajMusic.Presentation.ViewModels
             return RunBusyAsync(() => ToggleFavoriteTrackCoreAsync(track));
         }
 
+        /// <summary>Checks whether the captured online song can start a new download.</summary>
+        /// <param name="track">The exact song and revision captured by the menu.</param>
+        /// <returns>Whether the missing audio can be downloaded now.</returns>
+        internal bool CanDownloadTrackForMenu(MusicTrack track)
+        {
+            return IsIdle && OnlineEnabled && track.RemoteId is not null
+                && !HasDownloadedTrack(track) && !IsTrackDownloadInProgress(track);
+        }
+
         /// <summary>Downloads the captured online song independently of later inspector selection changes.</summary>
         /// <param name="track">The exact song selected by the menu action.</param>
         /// <returns>A task representing the pinned download and refreshed visible availability.</returns>
         public Task DownloadTrackFromMenuAsync(MusicTrack track)
         {
             ArgumentNullException.ThrowIfNull(track);
+            if (!CanDownloadTrackForMenu(track))
+            {
+                return Task.CompletedTask;
+            }
+
             return RunBusyAsync(async () =>
             {
-                if (!OnlineEnabled || track.RemoteId is null)
-                {
-                    return;
-                }
-
                 await _workspace.ResolveAudioAsync(track, true, _lifetime.Token);
                 await ReloadLibraryCoreAsync(_lifetime.Token, preservePage: true);
                 Status = $"已在本地：{track.Title}";

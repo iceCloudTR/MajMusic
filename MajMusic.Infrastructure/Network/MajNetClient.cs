@@ -175,7 +175,7 @@ namespace MajMusic.Infrastructure.Network
         /// <param name="cancellationToken">Cancels login.</param>
         /// <returns>A task representing the completed login.</returns>
         /// <exception cref="ArgumentException">Credentials are empty.</exception>
-        /// <exception cref="LoginRejectedException">The login response rejects the account name or password with HTTP 401.</exception>
+        /// <exception cref="LoginRejectedException">The login response rejects the credentials or reports an unverified or banned account.</exception>
         /// <exception cref="HttpRequestException">The server refuses login.</exception>
         /// <exception cref="InvalidOperationException">Online activity is disabled.</exception>
         public async Task LoginAsync(string username, string password, CancellationToken cancellationToken = default)
@@ -201,15 +201,22 @@ namespace MajMusic.Infrastructure.Network
                 { new StringContent(digest), "password" }
             };
             using var response = await SendAsync(HttpMethod.Post, "account/login", content, cancellationToken).ConfigureAwait(false);
+            var status = await ReadLoginStatusAsync(response, cancellationToken).ConfigureAwait(false);
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 ClearSession();
-                throw new LoginRejectedException();
+                throw new LoginRejectedException(GetLoginFailureReason(status.Code) ?? LoginFailureReason.InvalidCredentials);
             }
 
-            var status = await ReadLoginStatusAsync(response, cancellationToken).ConfigureAwait(false);
+            if (GetLoginFailureReason(status.Code) is { } failure)
+            {
+                ClearSession();
+                throw new LoginRejectedException(failure);
+            }
+
             if (response.StatusCode == HttpStatusCode.Forbidden && status.Code is 0 or 60001)
             {
+                EnsureSessionCookie(response);
                 InvalidateCanonicalIdentity();
                 IsLoggedIn = true;
                 return;
@@ -227,6 +234,7 @@ namespace MajMusic.Infrastructure.Network
             }
 
             EnsureSuccess(response);
+            EnsureSessionCookie(response);
             InvalidateCanonicalIdentity();
             IsLoggedIn = true;
         }
@@ -586,8 +594,20 @@ namespace MajMusic.Infrastructure.Network
                     return (null, false);
                 }
 
-                int? code = root.TryGetProperty("code", out var value) && value.ValueKind == JsonValueKind.Number
-                    && value.TryGetInt32(out var parsed) ? parsed : null;
+                int? code = null;
+                if (root.TryGetProperty("code", out var value))
+                {
+                    if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var numericCode))
+                    {
+                        code = numericCode;
+                    }
+                    else if (value.ValueKind == JsonValueKind.String
+                        && int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var textCode))
+                    {
+                        code = textCode;
+                    }
+                }
+
                 var rejected = new[] { "success", "isSuccess", "isSuccessfully" }
                     .Any(name => root.TryGetProperty(name, out var flag) && flag.ValueKind == JsonValueKind.False);
                 return (code, rejected);
@@ -596,6 +616,34 @@ namespace MajMusic.Infrastructure.Network
             {
                 return (null, false);
             }
+        }
+
+        /// <summary>Maps a known Maj account status code to a safe login failure.</summary>
+        /// <param name="code">The optional business status code returned by the source.</param>
+        /// <returns>The account failure reason, or null for a non-account status.</returns>
+        private static LoginFailureReason? GetLoginFailureReason(int? code)
+        {
+            return code switch
+            {
+                60003 => LoginFailureReason.InvalidCredentials,
+                60004 => LoginFailureReason.PendingVerification,
+                60005 => LoginFailureReason.UserBanned,
+                _ => null
+            };
+        }
+
+        /// <summary>Requires a cookie-backed source session after a nominally successful login response.</summary>
+        /// <param name="response">The login response whose status is used for a diagnostic failure.</param>
+        /// <exception cref="HttpRequestException">The source did not establish a usable session cookie.</exception>
+        private void EnsureSessionCookie(HttpResponseMessage response)
+        {
+            if (_cookies.GetCookies(_apiRoot).Cast<Cookie>().Any(cookie => !cookie.Expired && cookie.Value.Length > 0))
+            {
+                return;
+            }
+
+            ClearSession();
+            throw new HttpRequestException("登录未建立有效会话。", null, response.StatusCode);
         }
 
         /// <summary>Clears cookies and account state without making a request.</summary>

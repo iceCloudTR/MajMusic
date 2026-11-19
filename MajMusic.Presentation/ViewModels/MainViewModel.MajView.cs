@@ -186,13 +186,16 @@ namespace MajMusic.Presentation.ViewModels
                 try
                 {
                     MajViewStatus = "正在加载谱面";
-                    session = await host.CreateMajViewPreviewAsync(track, ShowPreviewVideo, opening.Token);
-                    opening.Token.ThrowIfCancellationRequested();
                     if (_playback.Snapshot.State is PlaybackState.Playing or PlaybackState.Loading)
                     {
                         await _playback.PauseAsync(opening.Token);
                     }
                     opening.Token.ThrowIfCancellationRequested();
+                    await _returnToMusic;
+                    opening.Token.ThrowIfCancellationRequested();
+                    session = await host.CreateMajViewPreviewAsync(track, ShowPreviewVideo, opening.Token);
+                    opening.Token.ThrowIfCancellationRequested();
+                    session.FrameReceived += OnChartFrame;
                     _majViewSession = session;
                     session = null;
                     MajViewStatus = string.Empty;
@@ -226,9 +229,18 @@ namespace MajMusic.Presentation.ViewModels
 
         private void PublishMajViewAddress()
         {
+            _chartGeneration++;
+            _chartPlaying = false;
+            _resumeAfterScrub = false;
+            _chartReady = false;
+            _chartSeekRevision++;
+            _noteTimeline = _levelNotes.GetValueOrDefault(SelectedMajViewDifficulty);
+            PublishChartIntent();
+            NotifyChartOwner();
+            NotifyChartAnalysis();
             var builder = new UriBuilder(_majViewSession!.Address)
             {
-                Query = FormattableString.Invariant($"level={SelectedMajViewDifficulty}&direction={_majViewDirection}")
+                Query = FormattableString.Invariant($"level={SelectedMajViewDifficulty}&direction={_majViewDirection}&g={_chartGeneration}")
             };
             SetField(ref _majViewAddress, builder.Uri, nameof(MajViewAddress));
         }
@@ -248,7 +260,7 @@ namespace MajMusic.Presentation.ViewModels
 
         internal void ReportMajViewFailure(Uri address, string message)
         {
-            if (_majViewAddress?.GetLeftPart(UriPartial.Path) == address.GetLeftPart(UriPartial.Path))
+            if (_majViewAddress == address)
             {
                 _ = RunTrackedAsync(ReleaseMajViewSessionAsync);
                 MajViewStatus = message;
@@ -274,7 +286,7 @@ namespace MajMusic.Presentation.ViewModels
             SelectedMajViewDifficulty = 0;
             CanRetryMajView = false;
             MajViewStatus = string.Empty;
-            if (_majViewSession is not null)
+            if (_majViewSession is not null || _chartTrack is not null)
             {
                 _ = RunTrackedAsync(ReleaseMajViewSessionAsync);
             }
@@ -283,7 +295,41 @@ namespace MajMusic.Presentation.ViewModels
         private Task ReleaseMajViewSessionAsync()
         {
             var previous = Interlocked.Exchange(ref _majViewSession, null);
+            if (previous is not null)
+            {
+                previous.FrameReceived -= OnChartFrame;
+            }
+            var leavingChart = !IsSongChartPreviewSelected || _isDisposing;
+            if (leavingChart && !_isDisposing && (_chartReady || _chartSeekRequested))
+            {
+                if (_chartTrack is { } inspected && _playback.Snapshot.Track is null && _playback.Queue.Current is null)
+                {
+                    _pendingSong = new(inspected, _chartPosition, _chartDuration);
+                }
+                if (_chartTrack is not null && SamePreviewTrack(_chartTrack, _playback.Snapshot.Track)
+                    && _playback.Snapshot.State == PlaybackState.Paused)
+                {
+                    var trackId = _chartTrack!.Id;
+                    var position = TimeSpan.FromSeconds(_chartPosition);
+                    _returnToMusic = RunTransportAsync(() => _playback.SeekAsync(position, trackId, _lifetime.Token));
+                }
+            }
+            _chartGeneration++;
+            _chartReady = _chartPlaying = _chartDragging = false;
+            if (leavingChart)
+            {
+                _chartTrack = null;
+                _chartDuration = _chartPosition = 0;
+                _chartSeekRequested = false;
+            }
+            _noteTimeline = null;
+            _waveform = null;
+            _levelNotes.Clear();
+            IsChartFullscreen = false;
+            IsPracticeLocked = false;
             SetField(ref _majViewAddress, null, nameof(MajViewAddress));
+            NotifyChartOwner();
+            NotifyChartAnalysis();
             return previous?.DisposeAsync().AsTask() ?? Task.CompletedTask;
         }
 

@@ -7,12 +7,22 @@ using MajMusic.Infrastructure.Storage;
 namespace MajMusic.Infrastructure.Application
 {
     /// <summary>Applies narrow audio preference edits under the existing settings serialization gate.</summary>
-    public sealed partial class MusicWorkspace : IPlaybackPreferencesWorkspace
+    public sealed partial class MusicWorkspace : IPlaybackPreferencesWorkspace, IChartPracticePreferencesWorkspace
     {
         /// <inheritdoc />
-        public async Task<AppSettings> UpdateAudioOutputAsync(AudioOutputPreferences preferences, CancellationToken cancellationToken = default)
+        public Task<AppSettings> UpdateAudioOutputAsync(AudioOutputPreferences preferences, CancellationToken cancellationToken = default)
         {
-            ArgumentNullException.ThrowIfNull(preferences);
+            return UpdatePlayerPreferencesAsync(settings => settings with { AudioOutput = preferences }, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task<AppSettings> UpdateChartPracticeAsync(ChartPracticeOptions options, CancellationToken cancellationToken = default)
+        {
+            return UpdatePlayerPreferencesAsync(settings => settings with { ChartPractice = options.Normalize() }, cancellationToken);
+        }
+
+        private async Task<AppSettings> UpdatePlayerPreferencesAsync(Func<AppSettings, AppSettings> update, CancellationToken cancellationToken)
+        {
             await _settingsGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -25,7 +35,7 @@ namespace MajMusic.Infrastructure.Application
                         throw new InvalidOperationException("Load preferences before updating audio output.");
                     }
 
-                    candidate = _settings with { AudioOutput = preferences };
+                    candidate = update(_settings);
                 }
 
                 JsonSettingsStore.Validate(candidate);

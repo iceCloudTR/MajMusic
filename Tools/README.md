@@ -41,6 +41,18 @@ dotnet workload install android
 
 脚本在 `.work` 检出固定版本的 MajView 工程，应用 `Tools/MajViewEmbedded.patch`，然后生成两个发布脚本共同使用的渲染器文件。定制发行包的 `ThirdPartyNotices/MajViewSource` 附带这两个文件。
 
+# MajView 音画同步回归
+
+在仓库根目录运行下面的检查。需要 Node.js、Playwright 的 `playwright-core`、Chromium，以及支持 `drawtext` 的 FFmpeg。`PLAYWRIGHT_MODULE` 可以指向已安装的 `playwright-core/index.mjs`，`CHROMIUM` 可以指定浏览器程序。
+
+```powershell
+./Tools/Prepare-MajViewRuntime.ps1 -ReleaseRuntime
+./Tools/Diagnostics/MajViewSync/Make-Fixture.ps1 -Ffmpeg ffmpeg
+node Tools/Diagnostics/MajViewSync/check.mjs .work/majview-sync-fixture
+```
+
+测试曲每半秒响一拍，PV 带时间码和独立音轨。检查直接读取浏览器实际播放的音频与视频，在桌面和触屏布局下覆盖 0.25 至 2 倍速、播放中定位、暂停、旋转和曲末，并检查 PV 音轨保持静音。
+
 # Android 冷启动验证
 
 显式指定已授权调试设备，测试其已安装版本：
@@ -50,6 +62,8 @@ dotnet workload install android
 ```
 
 使用 `-ApkPath <apk文件>` 可先覆盖安装包名为 `com.icecloud.majmusic` 的 APK。脚本连续冷启动三次，每次等待五秒，核对进程仍存活、前台 Activity 属于本应用，以及对应 PID 的日志没有致命异常。每次启动的结果与日志保存在 `artifacts/android-startup-*`。
+
+Android 有共享存储访问权限时，MajMusic 的默认数据根为 `/storage/emulated/0/Documents/MajMusic`，并在首次迁移时保留应用私有目录中的旧配置、索引和缓存。没有共享存储权限时使用应用私有目录作为可用回退，登录配置仍能正常工作。默认根下会创建 `Cache`、`Cache/Temp`、`Runtime`、`MaiCharts`、`Skins`、`Logs`、`RecordOutputs`、`AudioMetadata` 和 `DocumentCovers`。
 
 # Android 原生凭据验证
 
